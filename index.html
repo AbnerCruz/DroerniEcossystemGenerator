@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Droerni · Ecossistema DRN2 v17</title>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+<script src="https://unpkg.com/@babel/standalone@7/babel.min.js" crossorigin></script>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.0/marked.min.js" crossorigin></script>
+</head>
+<body>
+<div id="root"></div>
+
+<!--
+  Sem build step: cada arquivo abaixo é transformado (JSX -> JS) e
+  executado pelo Babel Standalone no navegador, em ordem. Scripts
+  clássicos (não-module) compartilham o mesmo escopo global — uma
+  const declarada em 01-core-motor.js é visível em 09-app.js.
+
+  Tudo fica na RAIZ do projeto (sem subpastas) de propósito — só
+  assim dá pra fazer upload direto pelo app do GitHub no celular,
+  que não aceita upload de pasta, só de arquivos soltos.
+
+  Isso EXIGE servir via http(s), não abrir o index.html direto do
+  disco (file://): tanto o Babel (pra buscar o src de cada script)
+  quanto os patchnotes (fetch de patchnotes-manifest.json e .md)
+  usam fetch/XHR, que o navegador bloqueia por CORS em file://.
+
+  Rodar localmente: dentro desta pasta, `python3 -m http.server`
+  e abrir http://localhost:8000
+  Publicar: GitHub Pages já serve por https, funciona direto.
+-->
+<script type="text/babel" data-presets="react">
+const { useState, useMemo, useCallback, useRef, useEffect } = React;
+</script>
+
+<script type="text/babel" data-presets="react" src="01-core-motor.js"></script>
+<script type="text/babel" data-presets="react" src="02-coerencia.js"></script>
+<script type="text/babel" data-presets="react" src="03-zip.js"></script>
+<script type="text/babel" data-presets="react" src="04-ui-fases.js"></script>
+<script type="text/babel" data-presets="react" src="05-ui-especie.js"></script>
+<script type="text/babel" data-presets="react" src="06-ui-biologia.js"></script>
+<script type="text/babel" data-presets="react" src="07-exports.js"></script>
+<script type="text/babel" data-presets="react" src="08-patchnotes.js"></script>
+<script type="text/babel" data-presets="react" src="09-app.js"></script>
+</body>
+</html>
