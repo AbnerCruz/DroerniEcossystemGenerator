@@ -197,9 +197,17 @@ function SeedSearchModal({ onFechar, onAdicionarComoPrimordial, eraAtual, showTo
           {resultado && (
             <div className="space-y-3 border-t border-stone-800 pt-3">
               {resultado.deTexto && (
-                <p className="text-[10px] text-amber-500/80 break-all">
-                  Gerado a partir do texto "{resultado.deTexto}" — seed correspondente: <span className="font-data">{seedColada}</span>. Essa seed já pode ser colada de volta aqui (ou em qualquer outro campo de seed do app) pra reconstruir a mesma criatura sem depender do texto original.
-                </p>
+                <div className="space-y-1">
+                  <p className="text-[10px] text-amber-500/80">
+                    Gerado a partir do texto "{resultado.deTexto}" (hash → endereço, não é a seed em si).
+                  </p>
+                  <div className="text-stone-500 text-[10px] uppercase tracking-widest">Seed numérica correspondente</div>
+                  <div className="flex items-start gap-2">
+                    <div className="flex-1 text-[10px] font-mono text-emerald-300 break-all bg-stone-900/60 border border-stone-800 rounded p-2">{seedColada}</div>
+                    <button onClick={copiarSeed} className="shrink-0 text-[11px] font-mono uppercase text-stone-400 hover:text-emerald-400 border border-stone-800 rounded px-2 py-1.5"><Copy size={12} /></button>
+                  </div>
+                  <p className="text-[10px] text-stone-600">Cole essa seed de volta aqui (ou em qualquer campo de seed do app) pra reconstruir a mesma criatura sem depender do texto original.</p>
+                </div>
               )}
               <div>
                 <h3 className="font-mono text-xs text-emerald-400 uppercase tracking-widest mb-1 flex items-center gap-2">
