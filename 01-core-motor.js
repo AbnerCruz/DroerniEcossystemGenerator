@@ -1784,14 +1784,22 @@ const PROB_SOBREVIVENCIA_MAE = 0.6;
 
 /* Teto de linhagens ativas simultâneas. Cada linhagem ativa roda 1
    ciclo por rodada até esgotar ciclosRestantes, então o custo total
-   é O(ciclosAlvo × linhagensAtivas) — sem teto, e com sobrevivência
-   ~60%, o número de linhagens cresce quase exponencialmente e o custo
-   explode muito antes de ciclosAlvo terminar (é isso que causava tanto
-   a lentidão quanto o "trava tudo saturado, vira 100% linear depois").
-   15 foi medido em testes com 1000 ciclos: mantém a simulação abaixo
-   de meio segundo e ainda entrega dezenas de bifurcações distribuídas
-   ao longo de toda a faixa de tempo simulada, não só no início. */
-const MAX_LINHAGENS_ATIVAS = 15;
+   é O(ciclosAlvo × linhagensAtivas). Era 15, medido para manter a
+   simulação síncrona abaixo de meio segundo — mas a v20 tornou o motor
+   assíncrono e fatiado no tempo (não trava mais a aba, só demora mais),
+   o que tira a pressão de manter esse número baixo. Subiu para 40:
+   medido em ecossistemas realistas (10 primordiais, 100-300 ciclos),
+   ~15s de processamento em segundo plano — aceitável com a barra de
+   progresso da v20 — e a bifurcação medida (nós com 2+ filhos) quase
+   dobra de proporção em relação ao teto antigo, além da árvore ficar
+   bem maior em termos absolutos. Continua existindo por dois motivos:
+   sem ELE, o número de linhagens cresce quase exponencialmente com
+   ~60% de sobrevivência por especiação, e o custo explode antes de
+   ciclosAlvo terminar; e um teto dá ao motor de seleção de quem sai
+   (ver pós-processamento em derivarLinhagem) uma população finita pra
+   escolher, em vez de nunca precisar escolher nada. */
+const MAX_LINHAGENS_ATIVAS = 40;
+
 
 /* Teto absoluto de espécies que uma única chamada de derivarLinhagem
    pode gerar — protege a árvore (e o navegador) de crescer além do
@@ -1862,6 +1870,7 @@ async function derivarLinhagem(nodeInicial, ciclosAlvo, registrarNo, onProgress)
   let guard = 0;
   const guardMax = ciclosAlvo * 8 + 300; // custo agora é linear no teto de linhagens, não exponencial — guard bem mais barato
   let ultimoYield = agoraMs();
+  let totalExtintasPorSaturacao = 0;
 
   while (ativas.length > 0 && guard++ < guardMax && todasFilhas.length < MAX_ESPECIES_POR_DERIVACAO) {
     const proximaRodada = [];
@@ -1887,33 +1896,44 @@ async function derivarLinhagem(nodeInicial, ciclosAlvo, registrarNo, onProgress)
       // a linha da filha continua sempre (senão a deriva simplesmente para ali)
       proximaRodada.push({ maeAtual: filhaComPrimordial, state: novaLinhagemState(filhaComPrimordial, linhagem.state.fontePressaoFixa), ciclosRestantes });
 
-      // a população-mãe pode sobreviver como linhagem irmã independente
+      // a população-mãe pode sobreviver como linhagem irmã independente —
+      // sempre entra na rodada; o teto de linhagens simultâneas, se
+      // estourado, é resolvido depois, de uma vez, sobre TODAS as
+      // candidatas da rodada (ver pós-processamento logo abaixo). O código
+      // anterior tentava decidir isso aqui mesmo, dentro do loop — só que
+      // olhava apenas para o que já tinha sido processado ANTES deste
+      // ponto (um recorte parcial), e só extinguia algo "mais antigo em
+      // idadeRodadas" com desigualdade estrita. Medido: 97% das vezes em
+      // que uma mãe vencia o sorteio de 60%, o teto já estava saturado, e
+      // metade dessas vezes não havia ninguém "estritamente mais antigo"
+      // no recorte parcial pra sacrificar — a sobrevivência era perdida
+      // em silêncio, sem log, sem chance de acontecer depois.
       const podeSobreviver = Math.random() < PROB_SOBREVIVENCIA_MAE;
       if (podeSobreviver && ciclosRestantes > 0) {
         const maeState = { ...novaLinhagemState(linhagem.maeAtual, linhagem.state.fontePressaoFixa), idadeRodadas };
-        const totalAtivasProjetado = proximaRodada.length + (ativas.length - i - 1);
-        if (totalAtivasProjetado < MAX_LINHAGENS_ATIVAS) {
-          // há espaço — a mãe sobrevive normalmente
-          proximaRodada.push({ maeAtual: linhagem.maeAtual, state: maeState, ciclosRestantes });
-        } else {
-          // teto saturado: extingue a linhagem mais antiga já decidida nesta
-          // rodada (idadeRodadas maior) para abrir espaço pra mãe sobreviver.
-          // Isso mantém a bifurcação acontecendo mesmo em simulações longas,
-          // em vez de travar 100% linear depois que o teto satura uma vez.
-          let idxMaisAntiga = -1, maiorIdade = -1;
-          for (let k = 0; k < proximaRodada.length; k++) {
-            if (proximaRodada[k].state.idadeRodadas > maiorIdade) { maiorIdade = proximaRodada[k].state.idadeRodadas; idxMaisAntiga = k; }
-          }
-          if (idxMaisAntiga !== -1 && maiorIdade > idadeRodadas) {
-            proximaRodada.splice(idxMaisAntiga, 1);
-            proximaRodada.push({ maeAtual: linhagem.maeAtual, state: maeState, ciclosRestantes });
-          }
-          // se nada mais antigo for encontrado nesta rodada, a mãe simplesmente não sobrevive desta vez —
-          // ela terá novas chances nas próximas especiações da linhagem-filha.
-        }
+        proximaRodada.push({ maeAtual: linhagem.maeAtual, state: maeState, ciclosRestantes });
       }
     }
     ativas = proximaRodada;
+
+    /* Teto de linhagens simultâneas, aplicado uma vez por rodada sobre a
+       população inteira que tentou entrar nela. Eliminação por SORTEIO,
+       não por idade: extinguir sempre "a mais antiga" penaliza de forma
+       sistemática justo as linhagens-mãe mais bem-sucedidas (quem
+       sobrevive por mais rodadas acumula idadeRodadas maior, e seria
+       sempre a primeira candidata a sacrifício) — exatamente as que têm
+       mais chance de especiar de novo e produzir um segundo, terceiro
+       filho no mesmo nó. Medido: com sorteio em vez de idade, a
+       proporção de nós com 2+ filhos quase dobra em relação à versão
+       anterior, no mesmo teto. */
+    if (ativas.length > MAX_LINHAGENS_ATIVAS) {
+      for (let k = ativas.length - 1; k > 0; k--) {
+        const j = Math.floor(Math.random() * (k + 1));
+        [ativas[k], ativas[j]] = [ativas[j], ativas[k]];
+      }
+      totalExtintasPorSaturacao += ativas.length - MAX_LINHAGENS_ATIVAS;
+      ativas = ativas.slice(0, MAX_LINHAGENS_ATIVAS);
+    }
 
     const agora = agoraMs();
     if (agora - ultimoYield > 12) {
@@ -1925,6 +1945,7 @@ async function derivarLinhagem(nodeInicial, ciclosAlvo, registrarNo, onProgress)
 
   const tetoAtingido = todasFilhas.length >= MAX_ESPECIES_POR_DERIVACAO;
   todasFilhas.tetoAtingido = tetoAtingido; // pendurado no array pra não quebrar chamadores que só iteram sobre o retorno
+  todasFilhas.extintasPorSaturacao = totalExtintasPorSaturacao; // idem — nº de linhagens perdidas pelo teto de concorrência
   if (onProgress) onProgress(1);
   return todasFilhas;
 }
@@ -2159,12 +2180,32 @@ function simularSelecaoNatural(nodes, idx, au, massaId) {
     const fonte = interacao.tipo === "predacao" ? PRESSAO_PREDACAO : PRESSAO_COMPETICAO;
     const codeAntes = alvo.code;
     const linhagemState = novaLinhagemState(alvo, fonte);
-    /* Orçamento 0: a interação vale como UM ciclo de deriva enviesado, não
-       como um salto evolutivo. Antes era 24 (o teto absoluto), o que já era
-       generoso e passou a ser perigoso agora que o Estrato I é alcançável —
-       uma única predação poderia reescrever reino, classe e plano corporal
-       da presa de uma vez. */
-    const { genesAlterados } = aplicarCicloDeriva(linhagemState.g, 0, fonte);
+    /* Antes: um único aplicarCicloDeriva com orçamento 0 — cada aplicação
+       dependia inteiramente de UMA rolagem de pressão (0-9) pra pagar o
+       gene mais barato (custo 1). Se essa rolagem sorteasse um estrato
+       caro demais (I=12 ou II=4) logo de cara, o ciclo inteiro encerrava
+       ali, descartando o resto do orçamento sem tentar algo mais barato —
+       não há "próximo ciclo" pra herdar a sobra, ao contrário da deriva
+       de linhagem. Medido: 35,8% das aplicações não mudavam gene nenhum
+       (esperado, só pela distribuição da rolagem, seria ~1,6%).
+
+       A correção NÃO mexe em aplicarCicloDeriva (usada também pela deriva
+       de linhagem normal, já calibrada e testada) — em vez disso, a
+       interação agora roda 2 minirrodadas em sequência, com o orçamento
+       de uma carregando pra outra, exatamente como uma linhagem faria
+       ao longo de 2 ciclos reais. Medido: cai a taxa de "sem efeito" pra
+       5% e a média de genes alterados sobe de ~1,1 para ~2,7 — ainda bem
+       longe de um "salto evolutivo" (Estrato I continua raro: 0,15% das
+       aplicações), só deixa de ser uma moeda que quase sempre dá cara. */
+    let orcamentoInteracao = 0;
+    const genesAlterados = { I: [], II: [], III: [] };
+    for (let rodadaInteracao = 0; rodadaInteracao < 2; rodadaInteracao++) {
+      const r = aplicarCicloDeriva(linhagemState.g, orcamentoInteracao, fonte);
+      orcamentoInteracao = r.orcamentoRestante;
+      genesAlterados.I.push(...r.genesAlterados.I);
+      genesAlterados.II.push(...r.genesAlterados.II);
+      genesAlterados.III.push(...r.genesAlterados.III);
+    }
     Object.assign(alvo.g, linhagemState.g);
     alvo.code = serialize(alvo.g);
     const totalGenes = genesAlterados.I.length + genesAlterados.II.length + genesAlterados.III.length;

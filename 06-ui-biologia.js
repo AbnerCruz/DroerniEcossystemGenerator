@@ -209,6 +209,7 @@ function PainelBiologia({ eras, nodes, setNodes, individuals, setIndividuals, on
     setGerando(true); setProgresso(0);
     const novos = [];
     let tetoAtingido = false;
+    let extintasPorSaturacao = 0;
     for (let i = 0; i < n; i++) {
       setProgressoLabel(`Primordial ${i + 1} de ${n}…`);
       const massa = eraAtual.massas[Math.floor(Math.random() * eraAtual.massas.length)];
@@ -226,6 +227,7 @@ function PainelBiologia({ eras, nodes, setNodes, individuals, setIndividuals, on
           setProgresso((i + fracaoLocal) / n);
         });
         if (filhas.tetoAtingido) tetoAtingido = true;
+        extintasPorSaturacao += filhas.extintasPorSaturacao || 0;
       }
       setProgresso((i + 1) / n);
     }
@@ -239,7 +241,8 @@ function PainelBiologia({ eras, nodes, setNodes, individuals, setIndividuals, on
     onLog();
     showToast(
       `Ecossistema gerado: ${n} primordial(is), ${novos.length} espécie(s) no total.` +
-      (tetoAtingido ? " Teto de espécies por linhagem atingido — a deriva parou antes do fim." : "")
+      (tetoAtingido ? " Teto de espécies por linhagem atingido — a deriva parou antes do fim." : "") +
+      (extintasPorSaturacao > 0 ? ` ${extintasPorSaturacao} linhagem(ns) perdida(s) por concorrência (teto de ${MAX_LINHAGENS_ATIVAS} ramificações simultâneas).` : "")
     );
   };
 
