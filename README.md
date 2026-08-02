@@ -1,4 +1,4 @@
-# Droerni · Ecossistema DRN2 v18
+# Droerni · Ecossistema DRN2
 
 ## Estrutura (tudo na raiz — de propósito)
 
