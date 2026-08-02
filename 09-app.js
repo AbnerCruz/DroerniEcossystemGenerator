@@ -1,5 +1,5 @@
 /* ============================================================
-   APP PRINCIPAL — v19
+   APP PRINCIPAL — v20
    ============================================================ */
 function App() {
   const [eras, setEras] = useState([]);
@@ -10,6 +10,8 @@ function App() {
   const [selectedSpeciesId, setSelectedSpeciesId] = useState(null);
   const [editor, setEditor] = useState(null); // null | {modo:'criar'} | {modo:'editar', node}
   const [modalDerivarNode, setModalDerivarNode] = useState(null);
+  const [derivando, setDerivando] = useState(false);
+  const [progressoDerivar, setProgressoDerivar] = useState(0);
   const [toast, setToast] = useState("");
   const [logVersion, setLogVersion] = useState(0);
   const [patchnotesAberto, setPatchnotesAberto] = useState(false);
@@ -93,11 +95,13 @@ function App() {
     setLogVersion((v) => v + 1);
     showToast(`${node.clado} clonada como ${novo.clado} (nova espécie primordial independente, mesmo genoma base).`);
   };
-  const derivarEspecie = (node, ciclos) => {
+  const derivarEspecie = async (node, ciclos) => {
+    setDerivando(true); setProgressoDerivar(0);
     const novos = [];
-    derivarLinhagem(node, ciclos, (filha) => novos.push(filha));
+    await derivarLinhagem(node, ciclos, (filha) => novos.push(filha), (fracao) => setProgressoDerivar(fracao));
     setNodes((prev) => [...prev, ...novos]);
     setModalDerivarNode(null); setLogVersion((v) => v + 1);
+    setDerivando(false);
     showToast(`${novos.length} nova(s) espécie(s) derivada(s) de ${node.clado}.`);
   };
   const novoIndividuo = (node) => {
@@ -143,7 +147,7 @@ function App() {
           <div className="w-9 h-9 shrink-0 rounded-full border border-emerald-700 flex items-center justify-center text-emerald-500"><GitBranch size={18} /></div>
           <div className="min-w-0">
             <h1 className="font-display text-lg sm:text-xl font-semibold tracking-tight text-stone-100 leading-none">Droerni · Ecossistema DRN2</h1>
-            <p className="font-data text-[10px] text-stone-500 tracking-wider truncate">v19 · fluxo linear · árvore genealógica navegável</p>
+            <p className="font-data text-[10px] text-stone-500 tracking-wider truncate">v20 · sem teto de ciclos · geração assíncrona</p>
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
@@ -215,14 +219,14 @@ function App() {
       )}
 
       {modalDerivarNode && (
-        <ModalDerivar node={modalDerivarNode} onDerivar={(ciclos) => derivarEspecie(modalDerivarNode, ciclos)} onFechar={() => setModalDerivarNode(null)} />
+        <ModalDerivar node={modalDerivarNode} onDerivar={(ciclos) => derivarEspecie(modalDerivarNode, ciclos)} onFechar={() => setModalDerivarNode(null)} derivando={derivando} progresso={progressoDerivar} />
       )}
 
       {toast && <div className="fixed bottom-4 left-1/2 -translate-x-1/2 bg-stone-900 border border-emerald-800 text-emerald-300 text-xs font-mono px-4 py-2 rounded shadow-lg z-50">{toast}</div>}
 
       {patchnotesAberto && <PainelPatchnotes onFechar={() => setPatchnotesAberto(false)} />}
 
-      <footer className="max-w-4xl mx-auto px-4 sm:px-6 pb-10 pt-4 text-[10px] text-stone-700 font-data">DRN2 v19 · Droerni — fluxo linear, coerência bloqueadora, exports robustos</footer>
+      <footer className="max-w-4xl mx-auto px-4 sm:px-6 pb-10 pt-4 text-[10px] text-stone-700 font-data">DRN2 v20 · Droerni — fluxo linear, coerência bloqueadora, exports robustos</footer>
     </div>
   );
 }

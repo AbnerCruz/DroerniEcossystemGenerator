@@ -1824,7 +1824,36 @@ function novaLinhagemState(node, fontePressaoFixa) {
    (o que trava a bifurcação pro resto da simulação), extingue-se a
    linhagem ativa mais antiga para abrir espaço — assim a bifurcação
    continua acontecendo ao longo de toda a simulação, não só no início. */
-function derivarLinhagem(nodeInicial, ciclosAlvo, registrarNo) {
+/* Ajuda a fatiar o trabalho em pedaços que cabem num frame do navegador. */
+function agoraMs() { return (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now(); }
+function cederControle() {
+  return new Promise((resolve) => {
+    if (typeof requestAnimationFrame !== "undefined") requestAnimationFrame(() => resolve());
+    else setTimeout(resolve, 0);
+  });
+}
+
+/* Roda ciclosAlvo ciclos de deriva a partir de um nó, simulando linhagens
+   vivas em paralelo, respeitando um teto de linhagens simultâneas. Cada
+   especiação corta uma filha nova e, com probabilidade PROB_SOBREVIVENCIA_MAE,
+   mantém a população-mãe como linhagem irmã independente — daí nascem
+   espécies irmãs, primas e tios. Quando o teto está saturado e uma mãe
+   "poderia" sobreviver, em vez de simplesmente negar a sobrevivência
+   (o que trava a bifurcação pro resto da simulação), extingue-se a
+   linhagem ativa mais antiga para abrir espaço — assim a bifurcação
+   continua acontecendo ao longo de toda a simulação, não só no início.
+
+   ASSÍNCRONA e fatiada no tempo: a versão síncrona travava a aba inteira
+   até terminar, o que empurrava o app a limitar ciclosAlvo bem baixo só
+   pra evitar o travamento — e limitar ciclos limita quantas chances de
+   especiação (logo, de bifurcação) uma linhagem tem. O teto real contra
+   explosão é MAX_ESPECIES_POR_DERIVACAO, não um limite artificial de
+   ciclos. Aqui o loop cede o controle ao navegador a cada ~12ms de
+   trabalho contínuo — o suficiente pra manter a UI responsiva e reportar
+   progresso, sem fatiar tão fino a ponto de virar overhead de scheduler.
+   onProgress(fracao 0..1) é opcional; chamadores que não precisam de
+   barra de progresso simplesmente não passam o callback. */
+async function derivarLinhagem(nodeInicial, ciclosAlvo, registrarNo, onProgress) {
   const todasFilhas = [];
   const primordialClado = nodeInicial.isPrimordial ? nodeInicial.clado : (__eventLog.find((e) => e.speciesId === nodeInicial.primordialId)?.clado || nodeInicial.clado);
   const nodeInicialComPrimordial = { ...nodeInicial, primordialClado };
@@ -1832,6 +1861,7 @@ function derivarLinhagem(nodeInicial, ciclosAlvo, registrarNo) {
   let ativas = [{ maeAtual: nodeInicialComPrimordial, state: novaLinhagemState(nodeInicialComPrimordial), ciclosRestantes: ciclosAlvo }];
   let guard = 0;
   const guardMax = ciclosAlvo * 8 + 300; // custo agora é linear no teto de linhagens, não exponencial — guard bem mais barato
+  let ultimoYield = agoraMs();
 
   while (ativas.length > 0 && guard++ < guardMax && todasFilhas.length < MAX_ESPECIES_POR_DERIVACAO) {
     const proximaRodada = [];
@@ -1884,10 +1914,18 @@ function derivarLinhagem(nodeInicial, ciclosAlvo, registrarNo) {
       }
     }
     ativas = proximaRodada;
+
+    const agora = agoraMs();
+    if (agora - ultimoYield > 12) {
+      if (onProgress) onProgress(Math.min(0.99, guard / guardMax));
+      await cederControle();
+      ultimoYield = agoraMs();
+    }
   }
 
   const tetoAtingido = todasFilhas.length >= MAX_ESPECIES_POR_DERIVACAO;
   todasFilhas.tetoAtingido = tetoAtingido; // pendurado no array pra não quebrar chamadores que só iteram sobre o retorno
+  if (onProgress) onProgress(1);
   return todasFilhas;
 }
 
@@ -2154,7 +2192,10 @@ function simularSelecaoNatural(nodes, idx, au, massaId) {
    documento) — automático aqui, pois não há função de cruzamento
    entre árvores diferentes.
    ============================================================ */
-function gerarEcossistema({ quantidade, ciclosPorPrimordial, auInicial, manuaisPorPrimordial, massaIds }) {
+/* Wrapper de conveniência (não usado pela UI, que tem sua própria versão
+   com progresso em 06-ui-biologia.js) — mantido async pra acompanhar
+   derivarLinhagem, que passou a ser assíncrona e fatiada no tempo. */
+async function gerarEcossistema({ quantidade, ciclosPorPrimordial, auInicial, manuaisPorPrimordial, massaIds }) {
   const todosNodes = [];
   const primordiais = [];
   let algumTetoAtingido = false;
@@ -2168,7 +2209,7 @@ function gerarEcossistema({ quantidade, ciclosPorPrimordial, auInicial, manuaisP
     todosNodes.push(p);
     const registrar = (n) => todosNodes.push(n);
     const ciclos = typeof ciclosPorPrimordial === "function" ? ciclosPorPrimordial() : ciclosPorPrimordial;
-    const resultado = derivarLinhagem(p, ciclos, registrar);
+    const resultado = await derivarLinhagem(p, ciclos, registrar);
     if (resultado.tetoAtingido) algumTetoAtingido = true;
   }
   return { nodes: todosNodes, primordiais: primordiais.map((p) => p.id), tetoAtingido: algumTetoAtingido };

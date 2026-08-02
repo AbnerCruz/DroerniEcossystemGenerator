@@ -15,23 +15,36 @@ function gerarPrimordialValido(auInicial, massaId) {
   return commitPrimordialFromGenome(g, auInicial, massaId);
 }
 
-function ModalGerarEcossistema({ eraAtual, onGerar, onFechar }) {
+function BarraProgresso({ fracao, label }) {
+  const pct = Math.round(Math.min(1, Math.max(0, fracao)) * 100);
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-center justify-between text-[10px] font-mono text-stone-500">
+        <span>{label}</span><span>{pct}%</span>
+      </div>
+      <div className="h-1.5 rounded-full bg-stone-900 border border-stone-800 overflow-hidden">
+        <div className="h-full bg-emerald-600 transition-[width] duration-150" style={{ width: `${pct}%` }} />
+      </div>
+    </div>
+  );
+}
+
+function ModalGerarEcossistema({ eraAtual, onGerar, onFechar, gerando, progresso, progressoLabel }) {
   const [qtd, setQtd] = useState("5");
   const [ciclosMin, setCiclosMin] = useState("15");
   const [ciclosMax, setCiclosMax] = useState("35");
 
-  /* A quantidade de primordiais já era limitada a 30, mas os ciclos não
-     tinham teto nenhum — digitar 300 travava a aba por ~18s (medido:
-     1.796 espécies). O custo é O(primordiais x ciclos x linhagens ativas),
-     então o teto de ciclos precisa existir e o usuário precisa ver a
-     estimativa antes de apertar o botão. */
-  const MAX_CICLOS = 150;
+  /* Ciclos deixaram de ter um teto artificial. Ele existia só pra evitar
+     travar a aba — mas limitar ciclos limita quantas chances de
+     especiação (logo, de BIFURCAÇÃO) uma linhagem tem, o que empobrece
+     a árvore justamente no ponto que mais importa. A proteção real
+     contra explosão é MAX_ESPECIES_POR_DERIVACAO no motor (3000 por
+     linhagem); o travamento em si foi resolvido fatiando o trabalho no
+     tempo (derivarLinhagem agora é assíncrona) e mostrando progresso
+     real em vez de congelar a aba sem feedback nenhum. */
   const n = Math.max(1, Math.min(30, Number(qtd) || 1));
-  const cMin = Math.max(0, Math.min(MAX_CICLOS, Number(ciclosMin) || 0));
-  const cMax = Math.max(cMin, Math.min(MAX_CICLOS, Number(ciclosMax) || cMin));
-  // ~1,1ms por espécie gerada + ~0,5ms por ciclo por linhagem ativa (medido)
-  const estimativaMs = Math.round(n * ((cMin + cMax) / 2) * 1.6);
-  const pesado = estimativaMs > 1500;
+  const cMin = Math.max(0, Number(ciclosMin) || 0);
+  const cMax = Math.max(cMin, Number(ciclosMax) || cMin);
 
   const gerar = () => onGerar(n, cMin, cMax);
 
@@ -40,39 +53,47 @@ function ModalGerarEcossistema({ eraAtual, onGerar, onFechar }) {
       <div className="bg-stone-950 border border-stone-800 rounded-lg w-full max-w-sm p-4 space-y-3">
         <div className="flex items-center justify-between">
           <h2 className="font-mono text-sm text-emerald-400 uppercase tracking-widest">Gerar Ecossistema</h2>
-          <button onClick={onFechar} className="text-stone-500 hover:text-stone-200"><X size={18} /></button>
+          {!gerando && <button onClick={onFechar} className="text-stone-500 hover:text-stone-200"><X size={18} /></button>}
         </div>
-        <div>
-          <label className="text-[10px] uppercase text-stone-500 font-mono">Nº de primordiais (1-30)</label>
-          <CampoNumero value={qtd} onChange={setQtd} />
-        </div>
-        <div className="grid grid-cols-2 gap-2">
-          <div><label className="text-[10px] uppercase text-stone-500 font-mono">Ciclos de deriva (mín)</label><CampoNumero value={ciclosMin} onChange={setCiclosMin} /></div>
-          <div><label className="text-[10px] uppercase text-stone-500 font-mono">Ciclos de deriva (máx)</label><CampoNumero value={ciclosMax} onChange={setCiclosMax} /></div>
-        </div>
-        <p className="text-[10px] text-stone-600">Cada primordial nasce em uma massa aleatória da era atual e deriva um nº aleatório de ciclos dentro da faixa acima. Contradições de coerência são corrigidas automaticamente, tanto na criação quanto a cada ciclo de deriva.</p>
-        <div className={`text-[10px] font-data ${pesado ? "text-amber-500" : "text-stone-600"}`}>
-          {pesado && <AlertTriangle size={11} className="inline -mt-0.5 mr-1" />}
-          Estimativa: ~{(estimativaMs / 1000).toFixed(1)}s de processamento{pesado ? " — a aba fica travada nesse período" : ""}.
-          {(Number(ciclosMin) > MAX_CICLOS || Number(ciclosMax) > MAX_CICLOS) && <span className="text-amber-500"> Ciclos limitados a {MAX_CICLOS}.</span>}
-        </div>
-        <BotaoPrimario onClick={gerar}>Gerar</BotaoPrimario>
+
+        {gerando ? (
+          <BarraProgresso fracao={progresso} label={progressoLabel || "Gerando…"} />
+        ) : (
+          <>
+            <div>
+              <label className="text-[10px] uppercase text-stone-500 font-mono">Nº de primordiais (1-30)</label>
+              <CampoNumero value={qtd} onChange={setQtd} />
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div><label className="text-[10px] uppercase text-stone-500 font-mono">Ciclos de deriva (mín)</label><CampoNumero value={ciclosMin} onChange={setCiclosMin} /></div>
+              <div><label className="text-[10px] uppercase text-stone-500 font-mono">Ciclos de deriva (máx)</label><CampoNumero value={ciclosMax} onChange={setCiclosMax} /></div>
+            </div>
+            <p className="text-[10px] text-stone-600">Cada primordial nasce em uma massa aleatória da era atual e deriva um nº aleatório de ciclos dentro da faixa acima. Contradições de coerência são corrigidas automaticamente, tanto na criação quanto a cada ciclo de deriva. Sem teto de ciclos — a geração roda em segundo plano com barra de progresso.</p>
+            <BotaoPrimario onClick={gerar}>Gerar</BotaoPrimario>
+          </>
+        )}
       </div>
     </div>
   );
 }
 
-function ModalDerivar({ node, onDerivar, onFechar }) {
+function ModalDerivar({ node, onDerivar, onFechar, derivando, progresso }) {
   const [ciclos, setCiclos] = useState("5");
   return (
     <div className="fixed inset-0 z-40 bg-black/70 flex items-center justify-center p-4">
       <div className="bg-stone-950 border border-stone-800 rounded-lg w-full max-w-sm p-4 space-y-3">
         <div className="flex items-center justify-between">
           <h2 className="font-mono text-sm text-emerald-400 uppercase tracking-widest">Derivar · {node.clado}</h2>
-          <button onClick={onFechar} className="text-stone-500 hover:text-stone-200"><X size={18} /></button>
+          {!derivando && <button onClick={onFechar} className="text-stone-500 hover:text-stone-200"><X size={18} /></button>}
         </div>
-        <div><label className="text-[10px] uppercase text-stone-500 font-mono">Ciclos de deriva</label><CampoNumero value={ciclos} onChange={setCiclos} /></div>
-        <BotaoPrimario onClick={() => onDerivar(Math.max(1, Math.min(150, Number(ciclos) || 1)))}>Derivar</BotaoPrimario>
+        {derivando ? (
+          <BarraProgresso fracao={progresso} label="Derivando…" />
+        ) : (
+          <>
+            <div><label className="text-[10px] uppercase text-stone-500 font-mono">Ciclos de deriva</label><CampoNumero value={ciclos} onChange={setCiclos} /></div>
+            <BotaoPrimario onClick={() => onDerivar(Math.max(1, Number(ciclos) || 1))}>Derivar</BotaoPrimario>
+          </>
+        )}
       </div>
     </div>
   );
@@ -173,10 +194,23 @@ function PainelBiologia({ eras, nodes, setNodes, individuals, setIndividuals, on
   const eraAtual = eras[eras.length - 1];
   const primordiais = nodes.filter((n) => n.isPrimordial);
 
-  const gerarEcossistema = (n, cMin, cMax) => {
+  const [gerando, setGerando] = useState(false);
+  const [progresso, setProgresso] = useState(0);
+  const [progressoLabel, setProgressoLabel] = useState("");
+
+  /* Assíncrona: cada derivarLinhagem já cede o controle ao navegador
+     periodicamente (fatiamento de tempo no motor), então esperar por ela
+     aqui não trava a aba — só mantém a UI num estado "gerando" enquanto
+     o trabalho corre em segundo plano. O progresso reportado combina
+     "quantos primordiais já terminaram" com o progresso interno do
+     primordial em andamento, para a barra não pular em degraus grandes
+     quando há poucos primordiais. */
+  const gerarEcossistema = async (n, cMin, cMax) => {
+    setGerando(true); setProgresso(0);
     const novos = [];
     let tetoAtingido = false;
     for (let i = 0; i < n; i++) {
+      setProgressoLabel(`Primordial ${i + 1} de ${n}…`);
       const massa = eraAtual.massas[Math.floor(Math.random() * eraAtual.massas.length)];
       /* auInicio + fração aleatória de 1 AU. Antes era `Math.random() * 0.5`
          sobre uma unidade que a UI rotulava como bilhões — cada primordial
@@ -188,12 +222,16 @@ function PainelBiologia({ eras, nodes, setNodes, individuals, setIndividuals, on
       novos.push(primordial);
       const ciclos = cMin + Math.floor(Math.random() * (cMax - cMin + 1));
       if (ciclos > 0) {
-        const filhas = derivarLinhagem(primordial, ciclos, (filha) => novos.push(filha));
+        const filhas = await derivarLinhagem(primordial, ciclos, (filha) => novos.push(filha), (fracaoLocal) => {
+          setProgresso((i + fracaoLocal) / n);
+        });
         if (filhas.tetoAtingido) tetoAtingido = true;
       }
+      setProgresso((i + 1) / n);
     }
     setNodes((prev) => [...prev, ...novos]);
     setModalEcossistema(false);
+    setGerando(false);
     /* Sem este bump o painel de log não atualizava: __eventLog é mutado em
        lugar, então o useMemo do App devolve sempre a MESMA referência de
        array e o React não vê mudança nenhuma. Os eventos do ecossistema
@@ -279,7 +317,7 @@ function PainelBiologia({ eras, nodes, setNodes, individuals, setIndividuals, on
         </>
       )}
 
-      {modalEcossistema && <ModalGerarEcossistema eraAtual={eraAtual} onGerar={gerarEcossistema} onFechar={() => setModalEcossistema(false)} />}
+      {modalEcossistema && <ModalGerarEcossistema eraAtual={eraAtual} onGerar={gerarEcossistema} onFechar={() => setModalEcossistema(false)} gerando={gerando} progresso={progresso} progressoLabel={progressoLabel} />}
     </Section>
   );
 }
