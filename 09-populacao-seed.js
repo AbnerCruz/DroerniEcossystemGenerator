@@ -132,12 +132,30 @@ function SeedSearchModal({ onFechar, onAdicionarComoPrimordial, eraAtual, showTo
 
   const buscar = () => {
     setErro(""); setResultado(null);
-    const digitos = (texto || "").replace(/[^0-9]/g, "");
-    if (!digitos) { setErro("Cole uma seed (só números — pontuação e espaços são ignorados)."); return; }
+    const bruto = (texto || "").trim();
+    if (!bruto) { setErro("Cole uma seed (números), ou digite um texto/nome livre para gerar um endereço a partir dele."); return; }
+    // heurística: se sobrar algum dígito depois de tirar tudo que não é número,
+    // e o texto não tiver nenhuma letra, trata como seed numérica de verdade
+    // (o formato colado da Estação DRN2). Qualquer letra no meio já indica
+    // texto livre — nome, frase, apelido — que vira endereço por hash (FNV-128),
+    // igual a Estação já faz internamente via parseAnySeed, só que essa caixa
+    // nunca chamava essa função: ela sempre descartava letras e ficava só com
+    // os dígitos, por isso um nome puro ("Abner Cruz", sem números) esvaziava
+    // tudo e caía no erro de "seed vazia".
+    const temLetra = /[A-Za-zÀ-ÿ]/.test(bruto);
     try {
-      const r = decodificarSeedColada(digitos);
-      if (!r) { setErro("Não foi possível decodificar essa seed."); return; }
-      setResultado(r);
+      if (!temLetra) {
+        const digitos = bruto.replace(/[^0-9]/g, "");
+        if (!digitos) { setErro("Cole uma seed (só números — pontuação e espaços são ignorados)."); return; }
+        const r = decodificarSeedColada(digitos);
+        if (!r) { setErro("Não foi possível decodificar essa seed."); return; }
+        setResultado(r);
+      } else {
+        // texto livre: endereço determinístico por hash, sempre a mesma espécie pro mesmo texto
+        const enderecoTexto = parseAnySeed(bruto);
+        const built = buildSpecies(enderecoTexto, {}, false, true);
+        setResultado({ g: built.g, code: built.code, speciesSeed: built.speciesSeed, individual: null, isPrimordial: false, deTexto: bruto });
+      }
     } catch (e) {
       setErro("Seed inválida — não foi possível decodificar.");
     }
@@ -160,9 +178,12 @@ function SeedSearchModal({ onFechar, onAdicionarComoPrimordial, eraAtual, showTo
             no visor de espécie ou de indivíduo). O primeiro dígito já indica se é primordial ou
             derivada — não precisa informar isso à parte. O espaço de espécimes possíveis é enorme
             (~10^50) — a seed é o endereço dele, existindo ou não ainda no mundo atual.
+            Também aceita texto livre (nome, apelido, frase): vira um endereço fixo por hash —
+            o mesmo texto sempre decodifica a mesma criatura, mas ela não é "escolhida por você" gene a
+            gene, é só o que aquele endereço específico contém.
           </p>
           <textarea
-            value={texto} onChange={(e) => setTexto(e.target.value)} rows={4} placeholder="Cole a seed aqui…"
+            value={texto} onChange={(e) => setTexto(e.target.value)} rows={4} placeholder="Cole a seed aqui, ou digite um nome/texto…"
             className="w-full bg-stone-950 border border-stone-800 rounded p-2 text-[11px] font-data text-stone-300 resize-y"
           />
           <BotaoPrimario onClick={buscar}><Search size={12} className="inline -mt-0.5 mr-1" />Decodificar</BotaoPrimario>
@@ -170,6 +191,11 @@ function SeedSearchModal({ onFechar, onAdicionarComoPrimordial, eraAtual, showTo
 
           {resultado && (
             <div className="space-y-3 border-t border-stone-800 pt-3">
+              {resultado.deTexto && (
+                <p className="text-[10px] text-amber-500/80">
+                  Gerado a partir do texto "{resultado.deTexto}" (endereço: {resultado.speciesSeed.toString()}) — não é uma seed numérica colada, é um hash desse texto.
+                </p>
+              )}
               <div>
                 <h3 className="font-mono text-xs text-emerald-400 uppercase tracking-widest mb-1 flex items-center gap-2">
                   {resultado.g.clado}{resultado.individual ? ` · ${resultado.individual.nome}` : ""}
