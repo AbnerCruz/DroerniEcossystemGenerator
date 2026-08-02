@@ -163,6 +163,11 @@ function SeedSearchModal({ onFechar, onAdicionarComoPrimordial, eraAtual, showTo
 
   const pesoCal = useMemo(() => (resultado ? calcularPesoCalorias(resultado.g) : null), [resultado]);
   const copiarDNA = () => { navigator.clipboard?.writeText(resultado.code); showToast("DNA copiado."); };
+  const seedColada = useMemo(
+    () => (resultado ? gluedSeedText(resultado.speciesSeed, null, resultado.isPrimordial) : ""),
+    [resultado]
+  );
+  const copiarSeed = () => { navigator.clipboard?.writeText(seedColada); showToast("Seed copiada."); };
 
   return (
     <div className="fixed inset-0 z-50 bg-black/70 flex items-end sm:items-center justify-center p-0 sm:p-4">
@@ -192,8 +197,8 @@ function SeedSearchModal({ onFechar, onAdicionarComoPrimordial, eraAtual, showTo
           {resultado && (
             <div className="space-y-3 border-t border-stone-800 pt-3">
               {resultado.deTexto && (
-                <p className="text-[10px] text-amber-500/80">
-                  Gerado a partir do texto "{resultado.deTexto}" (endereço: {resultado.speciesSeed.toString()}) — não é uma seed numérica colada, é um hash desse texto.
+                <p className="text-[10px] text-amber-500/80 break-all">
+                  Gerado a partir do texto "{resultado.deTexto}" — seed correspondente: <span className="font-data">{seedColada}</span>. Essa seed já pode ser colada de volta aqui (ou em qualquer outro campo de seed do app) pra reconstruir a mesma criatura sem depender do texto original.
                 </p>
               )}
               <div>
@@ -226,6 +231,7 @@ function SeedSearchModal({ onFechar, onAdicionarComoPrimordial, eraAtual, showTo
 
               <div className="flex flex-wrap gap-2">
                 <button onClick={copiarDNA} className="text-[11px] font-mono uppercase text-stone-400 hover:text-emerald-400 border border-stone-800 rounded px-3 py-1.5"><Copy size={12} className="inline -mt-0.5 mr-1" />Copiar DNA</button>
+                <button onClick={copiarSeed} className="text-[11px] font-mono uppercase text-stone-400 hover:text-emerald-400 border border-stone-800 rounded px-3 py-1.5"><Copy size={12} className="inline -mt-0.5 mr-1" />Copiar Seed</button>
                 {resultado.isPrimordial && eraAtual && (
                   <button onClick={() => onAdicionarComoPrimordial(resultado.g)} className="text-[11px] font-mono uppercase text-stone-400 hover:text-emerald-400 border border-stone-800 rounded px-3 py-1.5">
                     <Dices size={12} className="inline -mt-0.5 mr-1" />Adicionar ao mundo como primordial
