@@ -1,5 +1,11 @@
 [
   {
+    "id": "v21",
+    "titulo": "v21",
+    "data": "2026-08-02",
+    "arquivo": "patchnotes-v21.md"
+  },
+  {
     "id": "v20",
     "titulo": "v20",
     "data": "2026-08-02",

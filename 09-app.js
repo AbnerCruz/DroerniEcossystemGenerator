@@ -1,5 +1,5 @@
 /* ============================================================
-   APP PRINCIPAL — v20
+   APP PRINCIPAL — v21
    ============================================================ */
 function App() {
   const [eras, setEras] = useState([]);
@@ -147,7 +147,7 @@ function App() {
           <div className="w-9 h-9 shrink-0 rounded-full border border-emerald-700 flex items-center justify-center text-emerald-500"><GitBranch size={18} /></div>
           <div className="min-w-0">
             <h1 className="font-display text-lg sm:text-xl font-semibold tracking-tight text-stone-100 leading-none">Droerni · Ecossistema DRN2</h1>
-            <p className="font-data text-[10px] text-stone-500 tracking-wider truncate">v20 · sem teto de ciclos · geração assíncrona</p>
+            <p className="font-data text-[10px] text-stone-500 tracking-wider truncate">v21 · correção de genoma · testes de coerência/evolução</p>
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
@@ -226,7 +226,7 @@ function App() {
 
       {patchnotesAberto && <PainelPatchnotes onFechar={() => setPatchnotesAberto(false)} />}
 
-      <footer className="max-w-4xl mx-auto px-4 sm:px-6 pb-10 pt-4 text-[10px] text-stone-700 font-data">DRN2 v20 · Droerni — fluxo linear, coerência bloqueadora, exports robustos</footer>
+      <footer className="max-w-4xl mx-auto px-4 sm:px-6 pb-10 pt-4 text-[10px] text-stone-700 font-data">DRN2 v21 · Droerni — fluxo linear, coerência bloqueadora, exports robustos</footer>
     </div>
   );
 }

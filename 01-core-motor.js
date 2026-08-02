@@ -463,9 +463,9 @@ function runSpeciesSteps(cur, isPrimordialIntent) {
   categoricalStep(cur, "memSup", T.memSup, mergeOpts((g.reino === "Pl" || g.reino === "Fu") ? { fixed: "0S" } : g.isPrimordial ? { restrict: ["0S", "2S"] } : {}, classeOpts(g, "memSup")));
   const memInfClasse = classeOpts(g, "memInf");
   const memInfFixed = { B: "2I", Q: "4I", H: "6I", O: "8I", S: "0I", N: "0I", F: "0I", R: "0I" }[g.locPrimario];
-  if (g.reino === "Sp") g.memInf = "0I";
-  else if (memInfClasse?.fixed) g.memInf = memInfClasse.fixed; // classe vence a derivação por locomoção (pinguim nada e continua bípede)
-  else if (memInfFixed) g.memInf = memInfFixed;
+  if (g.reino === "Sp") { g.memInf = "0I"; g.memInfRaw = undefined; }
+  else if (memInfClasse?.fixed) { g.memInf = memInfClasse.fixed; g.memInfRaw = undefined; } // classe vence a derivação por locomoção (pinguim nada e continua bípede)
+  else if (memInfFixed) { g.memInf = memInfFixed; g.memInfRaw = undefined; }
   else {
     const opt = rawStep(cur, "memInfRaw", 100, {
       decodeFn: (r) => (r < 40 ? "2I" : r < 85 ? "4I" : "0I"),
