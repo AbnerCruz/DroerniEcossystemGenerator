@@ -99,6 +99,38 @@ function ModalDerivar({ node, onDerivar, onFechar, derivando, progresso }) {
   );
 }
 
+/* v23 — pergunta quantos ciclos de seleção natural populacional
+   rodar, toda vez que o botão é apertado (não roda mais um único
+   passe fixo escondido atrás de "Recalcular Interações"). Mesmo
+   padrão visual do ModalDerivar. */
+function ModalSelecaoNatural({ onRodar, onFechar, rodando, progresso }) {
+  const [ciclos, setCiclos] = useState("10");
+  return (
+    <div className="fixed inset-0 z-40 bg-black/70 flex items-center justify-center p-4">
+      <div className="bg-stone-950 border border-stone-800 rounded-lg w-full max-w-sm p-4 space-y-3">
+        <div className="flex items-center justify-between">
+          <h2 className="font-mono text-sm text-emerald-400 uppercase tracking-widest">Rodar Seleção Natural</h2>
+          {!rodando && <button onClick={onFechar} className="text-stone-500 hover:text-stone-200"><X size={18} /></button>}
+        </div>
+        {rodando ? (
+          <BarraProgresso fracao={progresso} label="Simulando colisões de população…" />
+        ) : (
+          <>
+            <div><label className="text-[10px] uppercase text-stone-500 font-mono">Quantos ciclos?</label><CampoNumero value={ciclos} onChange={setCiclos} /></div>
+            <p className="text-[10px] text-stone-600">
+              Cada ciclo agrupa os indivíduos vivos por massa de terra e divisão simulada. Onde indivíduos de
+              espécies diferentes coexistem na mesma divisão, a espécie mais fraca sofre pressão genética
+              (predação ou competição) e perde população local; a mais forte nasce um indivíduo novo ali.
+              O ano atual avança {CICLO_SELECAO_AU} AU por ciclo.
+            </p>
+            <BotaoPrimario onClick={() => onRodar(Math.max(1, Number(ciclos) || 1))}>Rodar</BotaoPrimario>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 /* ============================================================
    LISTA DE ESPÉCIES — agrupada por árvore primordial
    ============================================================ */
@@ -188,8 +220,9 @@ function ArvoreGenealogicaGlobal({ nodes, idx, individuals, onAbrir }) {
   );
 }
 
-function PainelBiologia({ eras, nodes, setNodes, individuals, setIndividuals, onAbrirViewer, onCriarPrimordial, showToast, onLog, idx }) {
+function PainelBiologia({ eras, nodes, setNodes, individuals, setIndividuals, anoAtual, setAnoAtual, onAbrirViewer, onCriarPrimordial, showToast, onLog, idx }) {
   const [modalEcossistema, setModalEcossistema] = useState(false);
+  const [modalSelecaoNatural, setModalSelecaoNatural] = useState(false);
   const [visao, setVisao] = useState("arvore"); // "arvore" | "lista" — árvore é o padrão pedido
   const eraAtual = eras[eras.length - 1];
   const primordiais = nodes.filter((n) => n.isPrimordial);
@@ -197,6 +230,8 @@ function PainelBiologia({ eras, nodes, setNodes, individuals, setIndividuals, on
   const [gerando, setGerando] = useState(false);
   const [progresso, setProgresso] = useState(0);
   const [progressoLabel, setProgressoLabel] = useState("");
+  const [rodandoSelecao, setRodandoSelecao] = useState(false);
+  const [progressoSelecao, setProgressoSelecao] = useState(0);
 
   /* Assíncrona: cada derivarLinhagem já cede o controle ao navegador
      periodicamente (fatiamento de tempo no motor), então esperar por ela
@@ -204,7 +239,14 @@ function PainelBiologia({ eras, nodes, setNodes, individuals, setIndividuals, on
      o trabalho corre em segundo plano. O progresso reportado combina
      "quantos primordiais já terminaram" com o progresso interno do
      primordial em andamento, para a barra não pular em degraus grandes
-     quando há poucos primordiais. */
+     quando há poucos primordiais.
+
+     v23: ao final, toda espécie nova (primordiais + derivadas) ganha
+     automaticamente uma população de indivíduos espalhada pelas
+     divisões simuladas da massa em que nasceu, e a seleção natural
+     populacional roda um lote de ciclos automaticamente sobre o
+     ecossistema recém-criado — "gerar espécies" deixa de ser um passo
+     isolado da simulação de indivíduos/seleção natural. */
   const gerarEcossistema = async (n, cMin, cMax) => {
     setGerando(true); setProgresso(0);
     const novos = [];
@@ -232,6 +274,23 @@ function PainelBiologia({ eras, nodes, setNodes, individuals, setIndividuals, on
       setProgresso((i + 1) / n);
     }
     setNodes((prev) => [...prev, ...novos]);
+
+    // população automática pra cada espécie nova
+    setProgressoLabel("Espalhando populações de indivíduos…");
+    let novosIndividuos = [];
+    for (const node of novos) novosIndividuos = novosIndividuos.concat(gerarPopulacaoParaEspecie(node));
+
+    // seleção natural populacional automática sobre o ecossistema recém-criado
+    setProgressoLabel("Rodando seleção natural sobre as populações…");
+    const idxNovo = buildIndex([...nodes, ...novos]);
+    const CICLOS_AUTOMATICOS = 20;
+    const { individuals: individuosFinais, resumo, auAvancado } = await rodarSelecaoNaturalPopulacional(
+      idxNovo, [...individuals, ...novosIndividuos], eraAtual.massas, CICLOS_AUTOMATICOS, (f) => setProgresso(f)
+    );
+    setIndividuals(individuosFinais);
+    setAnoAtual((a) => novos.reduce((m, no) => Math.max(m, no.auSurgimento), a) + auAvancado);
+    setNodes((prev) => prev.map((n) => ({ ...n }))); // força o React a ver os genomas mutados pela seleção natural
+
     setModalEcossistema(false);
     setGerando(false);
     /* Sem este bump o painel de log não atualizava: __eventLog é mutado em
@@ -240,48 +299,47 @@ function PainelBiologia({ eras, nodes, setNodes, individuals, setIndividuals, on
        ficavam invisíveis até outra ação bumpar a versão por acaso. */
     onLog();
     showToast(
-      `Ecossistema gerado: ${n} primordial(is), ${novos.length} espécie(s) no total.` +
+      `Ecossistema gerado: ${n} primordial(is), ${novos.length} espécie(s) no total, ${novosIndividuos.length} indivíduo(s) espalhados pelo mundo.` +
       (tetoAtingido ? " Teto de espécies por linhagem atingido — a deriva parou antes do fim." : "") +
-      (extintasPorSaturacao > 0 ? ` ${extintasPorSaturacao} linhagem(ns) perdida(s) por concorrência (teto de ${MAX_LINHAGENS_ATIVAS} ramificações simultâneas).` : "")
+      (extintasPorSaturacao > 0 ? ` ${extintasPorSaturacao} linhagem(ns) perdida(s) por concorrência (teto de ${MAX_LINHAGENS_ATIVAS} ramificações simultâneas).` : "") +
+      ` Seleção natural: ${resumo.colisoes} colisão(ões) de população, ${resumo.mortes} morte(s), ${resumo.nascimentos} nascimento(s).`
     );
   };
 
-  /* simularSelecaoNatural, avaliarInteracao, especiesVivasEmAU e
-     auFimDeVida estavam escritos e completos no motor, mas nenhuma delas
-     era chamada em lugar nenhum — a exigência de "mudança numa espécie
-     recalcula as interações" não tinha como ser atendida porque nada
-     recalculava interação nenhuma. Aqui a leitura roda por massa de
-     terra, no AU mais recente em que aquela massa tem espécies vivas:
-     um passe determinístico e limitado, em vez de varrer toda a linha do
-     tempo (que seria O(AUs x espécies²)). */
-  const recalcularInteracoes = () => {
-    const idx = buildIndex(nodes);
-    const massas = eraAtual.massas;
-    let totalAplicadas = 0, totalAvaliadas = 0;
-    for (const massa of massas) {
-      const daMassa = nodes.filter((n) => n.massaId === massa.id);
-      if (daMassa.length < 2) continue;
-      const au = Math.max(...daMassa.map((n) => n.auSurgimento));
-      const { vivas, aplicadas } = simularSelecaoNatural(nodes, idx, au, massa.id);
-      totalAvaliadas += vivas.length;
-      totalAplicadas += aplicadas.length;
-    }
-    if (totalAplicadas > 0) setNodes((prev) => prev.map((n) => ({ ...n })));
+  /* v23 — seleção natural conduzida pelas POPULAÇÕES de indivíduos
+     (rodarSelecaoNaturalPopulacional), não mais por uma leitura de
+     "quem existe agora" sem noção de onde os indivíduos estão. O
+     número de ciclos é sempre perguntado ao usuário (ModalSelecaoNatural,
+     mesmo padrão do "Derivar"). Ao final: os genomas afetados já saem
+     atualizados (mutação em lugar, igual ao resto do motor), a árvore
+     é forçada a re-renderizar, e o "ano atual" avança ciclos × 100 mil
+     anos. */
+  const rodarSelecaoNatural = async (ciclos) => {
+    setRodandoSelecao(true); setProgressoSelecao(0);
+    const idxAtual = buildIndex(nodes);
+    const { individuals: individuosFinais, resumo, auAvancado } = await rodarSelecaoNaturalPopulacional(
+      idxAtual, individuals, eraAtual.massas, ciclos, (f) => setProgressoSelecao(f)
+    );
+    setIndividuals(individuosFinais);
+    setNodes((prev) => prev.map((n) => ({ ...n })));
+    setAnoAtual((a) => a + auAvancado);
+    setModalSelecaoNatural(false);
+    setRodandoSelecao(false);
     onLog();
     showToast(
-      totalAvaliadas < 2
-        ? "Nenhuma massa de terra tem duas espécies contemporâneas para interagir."
-        : `${totalAvaliadas} espécie(s) contemporânea(s) avaliada(s) — ${totalAplicadas} sofreram pressão de predação ou competição.`
+      resumo.colisoes === 0
+        ? `${ciclos} ciclo(s) rodado(s) — nenhuma colisão de população (indivíduos de espécies diferentes não se cruzaram nas mesmas divisões).`
+        : `${ciclos} ciclo(s) rodado(s): ${resumo.colisoes} colisão(ões) de população, ${resumo.mortes} morte(s), ${resumo.nascimentos} nascimento(s). Ano atual avançou ${fmtAU(auAvancado)}.`
     );
   };
 
   return (
-    <Section title="Fase 3 · Biologia" accent="text-emerald-500">
+    <Section title="Fase 3 · Biologia" accent="text-emerald-500" right={<span className="text-[10px] font-mono text-stone-500 uppercase tracking-wider">Ano atual: <span className="text-emerald-500">{fmtAU(anoAtual)}</span></span>}>
       <div className="flex flex-wrap gap-2 mb-4">
         <BotaoPrimario onClick={() => setModalEcossistema(true)}><Sparkles size={12} className="inline -mt-0.5 mr-1" />Gerar Ecossistema</BotaoPrimario>
         <button onClick={onCriarPrimordial} className="text-[11px] font-mono uppercase text-stone-400 hover:text-emerald-400 border border-stone-800 rounded px-3 py-2"><Dices size={12} className="inline -mt-0.5 mr-1" />Criar Primordial Manualmente</button>
         {nodes.length > 1 && (
-          <button onClick={recalcularInteracoes} className="text-[11px] font-mono uppercase text-stone-400 hover:text-emerald-400 border border-stone-800 rounded px-3 py-2"><GitBranch size={12} className="inline -mt-0.5 mr-1" />Recalcular Interações</button>
+          <button onClick={() => setModalSelecaoNatural(true)} className="text-[11px] font-mono uppercase text-stone-400 hover:text-emerald-400 border border-stone-800 rounded px-3 py-2"><GitBranch size={12} className="inline -mt-0.5 mr-1" />Rodar Seleção Natural</button>
         )}
       </div>
 
@@ -321,6 +379,7 @@ function PainelBiologia({ eras, nodes, setNodes, individuals, setIndividuals, on
       )}
 
       {modalEcossistema && <ModalGerarEcossistema eraAtual={eraAtual} onGerar={gerarEcossistema} onFechar={() => setModalEcossistema(false)} gerando={gerando} progresso={progresso} progressoLabel={progressoLabel} />}
+      {modalSelecaoNatural && <ModalSelecaoNatural onRodar={rodarSelecaoNatural} onFechar={() => setModalSelecaoNatural(false)} rodando={rodandoSelecao} progresso={progressoSelecao} />}
     </Section>
   );
 }

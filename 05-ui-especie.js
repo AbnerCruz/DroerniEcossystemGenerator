@@ -194,7 +194,7 @@ function SpeciesEditor({ modo, node, eraAtual, onSalvar, onCancelar }) {
 /* ============================================================
    SPECIES VIEWER — modal ao clicar numa espécie na lista
    ============================================================ */
-function SpeciesViewer({ node, idx, eras, massaIdx, onFechar, onEditar, onDeletar, onClonar, onExportarMd, onDerivar, onNovoIndividuo, onNavegar, individuosDaEspecie, showToast }) {
+function SpeciesViewer({ node, idx, eras, massaIdx, onFechar, onEditar, onDeletar, onClonar, onExportarMd, onDerivar, onNovoIndividuo, onNavegar, onAbrirIndividuo, individuosDaEspecie, showToast }) {
   const pesoCal = useMemo(() => calcularPesoCalorias(node.g), [node]);
   const massa = massaIdx.get(node.massaId);
   const habitat = useMemo(() => readHabitatNaMassa(node.g, massa), [node, massa]);
@@ -207,6 +207,8 @@ function SpeciesViewer({ node, idx, eras, massaIdx, onFechar, onEditar, onDeleta
   const irmaosLista = useMemo(() => irmaos(node.id, idx), [node, idx]);
 
   const copiarDNA = () => { navigator.clipboard?.writeText(node.code); showToast("DNA copiado."); };
+  const speciesSeed = useMemo(() => seedParaGenoma(node.g, node.isPrimordial).seed, [node]);
+  const copiarSeed = () => { navigator.clipboard?.writeText(gluedSeedText(speciesSeed, null, node.isPrimordial)); showToast("Seed da espécie copiada."); };
 
   return (
     <div className="fixed inset-0 z-40 bg-black/70 flex items-end sm:items-center justify-center p-0 sm:p-4">
@@ -273,15 +275,22 @@ function SpeciesViewer({ node, idx, eras, massaIdx, onFechar, onEditar, onDeleta
 
           {individuosDaEspecie.length > 0 && (
             <div className="space-y-1">
+              <div className="text-stone-500 text-[10px] uppercase tracking-widest font-mono">População (clique num indivíduo pra ver o painel completo)</div>
               {individuosDaEspecie.map((ind) => (
-                <div key={ind.id} className="text-xs flex items-center gap-2 text-stone-400"><User size={12} />{ind.nome} — FOR:{ind.attrVaried.FOR} AGI:{ind.attrVaried.AGI} CON:{ind.attrVaried.CON} PER:{ind.attrVaried.PER} INT:{ind.attrVaried.INT} CAR:{ind.attrVaried.CAR}</div>
+                <button key={ind.id} onClick={() => onAbrirIndividuo(ind)}
+                  className={`w-full text-left text-xs flex items-center gap-2 rounded border border-stone-800 hover:border-emerald-800 px-2 py-1.5 ${ind.viva === false ? "text-stone-600" : "text-stone-400 hover:text-emerald-400"}`}>
+                  <User size={12} />{ind.nome}{ind.viva === false && <Badge className="border-red-900 text-red-500">morto</Badge>} — FOR:{ind.attrVaried.FOR} AGI:{ind.attrVaried.AGI} CON:{ind.attrVaried.CON} PER:{ind.attrVaried.PER} INT:{ind.attrVaried.INT} CAR:{ind.attrVaried.CAR}
+                </button>
               ))}
             </div>
           )}
+
+          <PromptImagemBox g={node.g} individual={null} showToast={showToast} />
         </div>
 
         <div className="sticky bottom-0 bg-stone-950 border-t border-stone-800 px-4 py-3 flex flex-wrap gap-2">
           <button onClick={copiarDNA} className="text-[11px] font-mono uppercase text-stone-400 hover:text-emerald-400 border border-stone-800 rounded px-3 py-1.5"><Copy size={12} className="inline -mt-0.5 mr-1" />Copiar DNA</button>
+          <button onClick={copiarSeed} className="text-[11px] font-mono uppercase text-stone-400 hover:text-emerald-400 border border-stone-800 rounded px-3 py-1.5"><Copy size={12} className="inline -mt-0.5 mr-1" />Copiar Seed</button>
           <button onClick={onExportarMd} className="text-[11px] font-mono uppercase text-stone-400 hover:text-emerald-400 border border-stone-800 rounded px-3 py-1.5"><Download size={12} className="inline -mt-0.5 mr-1" />Exportar .md</button>
           <button onClick={onDerivar} className="text-[11px] font-mono uppercase text-stone-400 hover:text-emerald-400 border border-stone-800 rounded px-3 py-1.5"><GitBranch size={12} className="inline -mt-0.5 mr-1" />Derivar</button>
           <button onClick={onNovoIndividuo} className="text-[11px] font-mono uppercase text-stone-400 hover:text-emerald-400 border border-stone-800 rounded px-3 py-1.5"><User size={12} className="inline -mt-0.5 mr-1" />Novo Indivíduo</button>

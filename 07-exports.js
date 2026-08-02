@@ -93,7 +93,7 @@ function fichaObsidianMd(node, idx, massaIdx) {
   const fm = [
     "---",
     `title: ${node.clado}`,
-    `seed: ${node.speciesSeed ?? seedParaGenoma(node.g, node.g.isPrimordial).seed}`,
+    `seed: ${gluedSeedText(node.speciesSeed ?? seedParaGenoma(node.g, node.g.isPrimordial).seed, null, node.isPrimordial)}`,
     `peso_kg: ${pc.pesoKg.toFixed(1)}`,
     `calorias_diarias: ${pc.caloriasDia.toFixed(0)}`,
     `ano_surgimento_au: ${node.auSurgimento}`,
@@ -137,11 +137,12 @@ function serializeProjetoV17(state) {
   }));
   const individualsOut = state.individuals.map((i) => ({ ...i, individualSeed: i.individualSeed !== undefined ? String(i.individualSeed) : undefined }));
   return JSON.stringify({
-    versao: "droerni-v17",
+    versao: "droerni-v23",
     exportadoEm: new Date().toISOString(),
     eras: state.eras,
     nodes: nodesOut,
     individuals: individualsOut,
+    anoAtual: state.anoAtual || 0,
     eventLog: __eventLog,
     faseGeoConfirmada: state.faseGeoConfirmada,
     faseErasConfirmada: state.faseErasConfirmada,
@@ -160,6 +161,7 @@ function deserializarProjetoV17(text) {
     eras: parsed.eras || [],
     nodes,
     individuals,
+    anoAtual: parsed.anoAtual || 0,
     eventLog: parsed.eventLog || [],
     faseGeoConfirmada: !!parsed.faseGeoConfirmada,
     faseErasConfirmada: !!parsed.faseErasConfirmada,
@@ -170,10 +172,10 @@ function deserializarProjetoV17(text) {
 /* ============================================================
    BARRA DE PERSISTÊNCIA
    ============================================================ */
-function PersistenceBar({ eras, nodes, individuals, faseGeoConfirmada, faseErasConfirmada, onImportar, showToast }) {
+function PersistenceBar({ eras, nodes, individuals, anoAtual, faseGeoConfirmada, faseErasConfirmada, onImportar, showToast }) {
   const fileInputRef = useRef(null);
   const exportar = () => {
-    const text = serializeProjetoV17({ eras, nodes, individuals, faseGeoConfirmada, faseErasConfirmada });
+    const text = serializeProjetoV17({ eras, nodes, individuals, anoAtual, faseGeoConfirmada, faseErasConfirmada });
     downloadBlob(`droerni-projeto-${new Date().toISOString().slice(0, 10)}.json`, text, "application/json;charset=utf-8");
     showToast(`Projeto exportado (${(text.length / 1024).toFixed(0)} KB).`);
   };

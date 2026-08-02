@@ -873,22 +873,39 @@ function buildIndividual(speciesCtx, seedBigOrNull) {
    Útil pra copiar/colar um indivíduo específico de uma vez, sem
    precisar carregar as duas seeds separadamente. Usa IND_DIGITS,
    SPECIES_DIGITS e padSeed — definidos mais abaixo, junto do resto do
-   motor de seed de espécie (mesmo padrão que a Estação DRN2 usava). */
-function gluedSeedText(speciesSeed, individualSeed) {
+   motor de seed de espécie (mesmo padrão que a Estação DRN2 usava).
+
+   O primeiro dígito NÃO é dado de espécie — é uma flag: "1" = a
+   espécie é primordial, "0" = é derivada. isPrimordial nunca é um gene
+   "rolado" (é um parâmetro que o motor recebe de fora e usa só pra
+   decidir algumas travas durante a geração), então não tem como
+   recuperá-lo a partir dos dígitos de dados — decodificar a mesma
+   sequência como primordial ou como derivada pode, em casos raros,
+   produzir genomas ligeiramente diferentes justamente nos pontos onde
+   essa trava importa. Embutir a flag elimina essa ambiguidade: quem
+   gera a seed já sabe se a espécie é primordial, então a seed sempre
+   carrega a resposta certa — não precisa mais perguntar a quem
+   decodifica depois. */
+function gluedSeedText(speciesSeed, individualSeed, isPrimordial) {
+  const flag = isPrimordial ? "1" : "0";
   const speciesPart = padSeed(speciesSeed, SPECIES_DIGITS);
-  if (individualSeed === null || individualSeed === undefined) return speciesPart;
-  return speciesPart + padSeed(individualSeed, IND_DIGITS);
+  if (individualSeed === null || individualSeed === undefined) return flag + speciesPart;
+  return flag + speciesPart + padSeed(individualSeed, IND_DIGITS);
 }
-/* Só divide quando o comprimento bate exatamente com o padrão desta
-   ferramenta (155 dígitos = só espécie · 194 = espécie + indivíduo).
-   Qualquer outro comprimento é tratado inteiro como seed de espécie —
-   nunca adivinha, porque uma seed de espécie sozinha já costuma passar
-   dos 39 dígitos reservados ao indivíduo. */
+/* O 1º dígito é sempre a flag de primordial/derivada. Do resto: só
+   divide em espécie+indivíduo quando o comprimento bate exatamente com
+   o padrão desta ferramenta (155 dígitos = só espécie · 194 = espécie +
+   indivíduo). Qualquer outro comprimento é tratado inteiro como seed de
+   espécie — nunca adivinha, porque uma seed de espécie sozinha já
+   costuma passar dos 39 dígitos reservados ao indivíduo. */
 function splitGluedSeed(rawText) {
-  const digits = (rawText || "").replace(/[^0-9]/g, "");
+  const digitsRaw = (rawText || "").replace(/[^0-9]/g, "");
+  if (!digitsRaw) return { speciesDigits: "", individualDigits: "", isPrimordial: true };
+  const isPrimordial = digitsRaw[0] !== "0";
+  const resto = digitsRaw.slice(1);
   const S = Number(SPECIES_DIGITS), I = Number(IND_DIGITS);
-  if (digits.length === S + I) return { speciesDigits: digits.slice(0, S), individualDigits: digits.slice(S) };
-  return { speciesDigits: digits, individualDigits: "" };
+  if (resto.length === S + I) return { speciesDigits: resto.slice(0, S), individualDigits: resto.slice(S), isPrimordial };
+  return { speciesDigits: resto, individualDigits: "", isPrimordial };
 }
 
 /* ---------- leitura de habitat (aproximação) ---------- */
@@ -1238,6 +1255,35 @@ function readHabitat(g) {
     (b.vantagem(g) ? primary : marginal).push(b.nome);
   }
   return { primary, marginal, vedadoLetal, vedadoClima };
+}
+
+/* ---------- busca por seed (v23) ----------
+   Decodifica um texto de seed colado pelo usuário — pode ser só a
+   seed de espécie, ou a seed colada (espécie+indivíduo, gluedSeedText)
+   — de volta em um genoma (e, se houver parte de indivíduo, também um
+   indivíduo). Não valida SE aquela seed já existe no mundo atual: o
+   espaço de espécimes possíveis (~10^50) é muito maior que qualquer
+   mundo gerado, então "buscar uma seed" aqui significa reconstruir o
+   espécime que ela endereça, esteja ele já na árvore ou não.
+   isPrimordial vem embutido no 1º dígito da própria seed (ver
+   splitGluedSeed) — não precisa mais ser informado por quem chama. */
+function decodificarSeedColada(textoSeed) {
+  const { speciesDigits, individualDigits, isPrimordial } = splitGluedSeed(textoSeed);
+  if (!speciesDigits) return null;
+  const speciesSeedBig = BigInt(speciesDigits);
+  const built = buildSpecies(speciesSeedBig, {}, isPrimordial, true);
+  const g = { ...built.g, isPrimordial };
+  let individual = null;
+  if (individualDigits) {
+    const individualSeedBig = BigInt(individualDigits);
+    const r = buildIndividual(g, individualSeedBig);
+    individual = {
+      id: "seedlookup_" + Date.now(), especieId: null, nome: sortNomeIndividuo(),
+      ind: r.ind, code: r.code, individualSeed: r.individualSeed,
+      attrBase: r.attrBase, attrVaried: r.attrVaried, massaId: null, divisao: null, viva: true,
+    };
+  }
+  return { g, code: built.code, speciesSeed: built.speciesSeed, individual, isPrimordial };
 }
 
 /* ---------- 32 dígitos reservados ao indivíduo; 130 à espécie (teto medido: 108) ---------- */
@@ -2127,7 +2173,13 @@ function avaliarInteracao(nodeA, nodeB) {
   return null;
 }
 
-/* Roda a leitura de interações para todas as espécies vivas num AU e
+/* v23: a UI não chama mais esta função — o botão "Recalcular Interações"
+   virou "Rodar Seleção Natural" e passou a usar rodarCicloSelecaoIndividual
+   (mais abaixo), que decide colisões pela posição real dos INDIVÍDUOS nas
+   populações, não por "quem existe agora" no AU mais recente de cada
+   massa. Fica mantida como utilitário (mesmo mecanismo de pressão
+   genética, só que disparado de outra forma) — nada aqui foi alterado.
+   Roda a leitura de interações para todas as espécies vivas num AU e
    massa de terra dados, e aplica UM ciclo extra de deriva forçada (via
    aplicarCicloDeriva com fonteFixa) em cada espécie afetada — na
    direção que a fonte de pressão correspondente já embute
@@ -2225,6 +2277,207 @@ function simularSelecaoNatural(nodes, idx, au, massaId) {
   return { vivas, aplicadas };
 }
 
+
+/* ============================================================
+   POPULAÇÕES DE INDIVÍDUOS — v23. Toda espécie, ao surgir (criação
+   manual, ecossistema, deriva ou clonagem), ganha uma população de
+   indivíduos espalhados por um espaço simulado de N "divisões" da
+   massa de terra em que nasceu (não é geografia real — é só um
+   índice 0..N-1 usado pra saber quais indivíduos estão "perto" o
+   bastante pra colidir). A seleção natural POR INDIVÍDUO (mais
+   abaixo) usa essas populações como gatilho: quando indivíduos de
+   espécies diferentes caem na mesma divisão, isso conta como
+   colisão de populações — e só então a pressão genética de sempre
+   (avaliarInteracao + aplicarCicloDeriva, nenhuma das duas tocada)
+   é aplicada na espécie perdedora.
+   ============================================================ */
+const DIVISOES_POR_MASSA = 8;         // "n divisões" do espaço simulado por massa de terra
+const TAMANHO_POPULACAO_INICIAL = 6;  // indivíduos gerados por espécie ao nascer
+const TETO_POPULACAO_POR_DIVISAO = 10; // limite de indivíduos vivos de uma espécie numa única divisão
+const CICLO_SELECAO_AU = 0.1;         // quanto o "ano atual" avança por ciclo de seleção natural (100 mil anos)
+
+/* Gera `quantidade` indivíduos pra uma espécie, espalhados
+   aleatoriamente pelas divisões simuladas da massa de terra dela.
+   Cada indivíduo é gerado do zero pelo motor de indivíduo de sempre
+   (buildIndividual, seed livre) — nada aqui reinventa a geração,
+   só decide ONDE (qual divisão) cada um nasce. */
+function gerarPopulacaoParaEspecie(node, quantidade = TAMANHO_POPULACAO_INICIAL, divisoes = DIVISOES_POR_MASSA) {
+  const individuos = [];
+  for (let i = 0; i < quantidade; i++) {
+    const r = buildIndividual(node.g, null);
+    individuos.push({
+      id: "ind" + (__idCounter++) + "_" + Math.random().toString(36).slice(2, 6),
+      especieId: node.id,
+      nome: sortNomeIndividuo(),
+      ind: r.ind, code: r.code, individualSeed: r.individualSeed,
+      attrBase: r.attrBase, attrVaried: r.attrVaried,
+      massaId: node.massaId || null,
+      divisao: Math.floor(Math.random() * divisoes),
+      viva: true,
+    });
+  }
+  return individuos;
+}
+
+/* Um ciclo de seleção natural conduzido pelas POPULAÇÕES de
+   indivíduos, não por uma leitura de espécies vivas no mesmo AU
+   (esse era o modelo antigo de recalcularInteracoes, que lia
+   "quem existe agora" sem nenhuma noção de onde os indivíduos
+   realmente estão). Agrupa indivíduos vivos por massa+divisão; toda
+   divisão com indivíduos de 2+ espécies diferentes é uma colisão de
+   população. Cada colisão: (1) aplica a MESMA pressão genética de
+   sempre na espécie perdedora (2 minirrodadas de aplicarCicloDeriva,
+   como já era feito), (2) mata metade dos indivíduos da perdedora
+   naquela divisão, (3) faz nascer 1 indivíduo novo na vencedora,
+   até um teto por divisão. */
+function rodarCicloSelecaoIndividual(idx, individuals, massas) {
+  const eventos = { colisoes: 0, nascimentos: 0, mortes: 0 };
+  let individualsOut = individuals;
+
+  for (const massa of massas) {
+    const porDivisao = new Map();
+    for (const ind of individualsOut) {
+      if (!ind.viva || ind.massaId !== massa.id) continue;
+      const lista = porDivisao.get(ind.divisao) || [];
+      lista.push(ind);
+      porDivisao.set(ind.divisao, lista);
+    }
+
+    for (const [divisao, indsDivisao] of porDivisao) {
+      const especiesPresentes = [...new Set(indsDivisao.map((i) => i.especieId))]
+        .map((id) => idx.get(id)).filter((n) => n && !n.extinta);
+      if (especiesPresentes.length < 2) continue;
+
+      let vencedoraNode = null, perdedoraNode = null, motivo = "", tipo = "";
+      for (let i = 0; i < especiesPresentes.length && !vencedoraNode; i++) {
+        for (let j = i + 1; j < especiesPresentes.length && !vencedoraNode; j++) {
+          const r = avaliarInteracao(especiesPresentes[i], especiesPresentes[j]);
+          if (r) { vencedoraNode = r.vencedora; perdedoraNode = r.perdedora; motivo = r.motivo; tipo = r.tipo; }
+        }
+      }
+      if (!vencedoraNode) continue;
+      eventos.colisoes++;
+
+      const fonte = tipo === "predacao" ? PRESSAO_PREDACAO : PRESSAO_COMPETICAO;
+      const codeAntes = perdedoraNode.code;
+      const linhagemState = novaLinhagemState(perdedoraNode, fonte);
+      let orcamentoInteracao = 0;
+      const genesAlterados = { I: [], II: [], III: [] };
+      for (let r2 = 0; r2 < 2; r2++) {
+        const r = aplicarCicloDeriva(linhagemState.g, orcamentoInteracao, fonte);
+        orcamentoInteracao = r.orcamentoRestante;
+        genesAlterados.I.push(...r.genesAlterados.I);
+        genesAlterados.II.push(...r.genesAlterados.II);
+        genesAlterados.III.push(...r.genesAlterados.III);
+      }
+      Object.assign(perdedoraNode.g, linhagemState.g);
+      perdedoraNode.code = serialize(perdedoraNode.g);
+      const totalGenes = genesAlterados.I.length + genesAlterados.II.length + genesAlterados.III.length;
+      emitirEvento({
+        tipo: "selecao_natural_populacao",
+        tipoLabel: tipo === "predacao" ? "PRESSÃO DE PREDAÇÃO · POPULAÇÃO" : "PRESSÃO DE COMPETIÇÃO · POPULAÇÃO",
+        speciesId: perdedoraNode.id, clado: perdedoraNode.clado,
+        primordialId: perdedoraNode.primordialId, primordialClado: idx.get(perdedoraNode.primordialId)?.clado || perdedoraNode.clado,
+        texto: `${motivo}. Colisão de populações na divisão ${divisao} de ${massa.nome}: ${totalGenes} gene(s) alterado(s) por pressão de indivíduos rivais.`,
+        code: perdedoraNode.code, codeAntes,
+      });
+
+      const indsPerdedora = indsDivisao.filter((i) => i.especieId === perdedoraNode.id && i.viva);
+      const numMortes = Math.ceil(indsPerdedora.length / 2);
+      const idsQueMorrem = new Set(indsPerdedora.slice(0, numMortes).map((i) => i.id));
+      if (idsQueMorrem.size) {
+        individualsOut = individualsOut.map((i) => (idsQueMorrem.has(i.id) ? { ...i, viva: false } : i));
+        eventos.mortes += idsQueMorrem.size;
+      }
+
+      const vivasVencedoraNaDivisao = individualsOut.filter((i) => i.viva && i.especieId === vencedoraNode.id && i.divisao === divisao && i.massaId === massa.id).length;
+      if (vivasVencedoraNaDivisao < TETO_POPULACAO_POR_DIVISAO) {
+        const novo = gerarPopulacaoParaEspecie(vencedoraNode, 1, DIVISOES_POR_MASSA)[0];
+        novo.divisao = divisao; novo.massaId = massa.id;
+        individualsOut = [...individualsOut, novo];
+        eventos.nascimentos++;
+      }
+    }
+  }
+  return { individuals: individualsOut, eventos };
+}
+
+/* Roda `ciclos` ciclos de seleção natural populacional em sequência,
+   fatiado no tempo (mesmo padrão de derivarLinhagem) pra não travar
+   a aba em runs longos. Retorna a lista de indivíduos atualizada, um
+   resumo agregado e quanto o "ano atual" deve avançar (ciclos ×
+   CICLO_SELECAO_AU). Muta os nós de espécie em lugar (mesmo padrão
+   do resto do motor) — quem chama ainda precisa forçar o React a
+   ver a mudança recriando o array de nodes. */
+async function rodarSelecaoNaturalPopulacional(idx, individuals, massas, ciclos, onProgress) {
+  let individualsAtual = individuals;
+  const resumo = { colisoes: 0, nascimentos: 0, mortes: 0 };
+  let ultimoCorte = agoraMs();
+  for (let c = 0; c < ciclos; c++) {
+    const { individuals: out, eventos } = rodarCicloSelecaoIndividual(idx, individualsAtual, massas);
+    individualsAtual = out;
+    resumo.colisoes += eventos.colisoes;
+    resumo.nascimentos += eventos.nascimentos;
+    resumo.mortes += eventos.mortes;
+    if (onProgress) onProgress((c + 1) / ciclos);
+    if (agoraMs() - ultimoCorte > 12) { await cederControle(); ultimoCorte = agoraMs(); }
+  }
+  return { individuals: individualsAtual, resumo, auAvancado: ciclos * CICLO_SELECAO_AU };
+}
+
+/* ============================================================
+   PROMPT DE IMAGEM — monta um texto pronto pra colar numa IA
+   generativa de imagens (Midjourney, DALL·E, Stable Diffusion etc.),
+   reaproveitando describeCreatureProse (a mesma descrição fiel ao
+   genoma usada no visor e nas fichas). As diretivas técnicas
+   (estilo, enquadramento, negative prompt) vão em inglês — é o que
+   a maioria dos geradores de imagem interpreta com mais fidelidade —
+   enquanto a descrição da criatura continua em português, embutida
+   num prompt estruturado; os principais geradores leem isso bem.
+   Quando um indivíduo é passado, acrescenta os traços que tornam
+   ESSE espécime específico diferente da média da espécie (cor/
+   padrão próprios, anomalias, atributo que mais se destaca).
+   ============================================================ */
+function destaquesIndividuoParaPrompt(individual) {
+  if (!individual) return [];
+  const destaques = [];
+  const attrVaried = individual.attrVaried;
+  if (attrVaried) {
+    const ATTR_VISUAL = {
+      FOR: "constituição robusta e musculosa", AGI: "postura ágil, esguia, pronta pra se mover",
+      CON: "aparência resistente, curtida por dificuldades", PER: "sentidos claramente alertas, atentos ao redor",
+      INT: "olhar perspicaz, quase calculista", CAR: "presença marcante, magnética, chama atenção à primeira vista",
+    };
+    const ordenado = Object.entries(attrVaried).sort((a, b) => b[1] - a[1]);
+    const maior = ordenado[0], menor = ordenado[ordenado.length - 1];
+    if (maior && maior[1] >= 7 && ATTR_VISUAL[maior[0]]) destaques.push(ATTR_VISUAL[maior[0]]);
+    if (menor && menor[1] <= 2) destaques.push(`traços visíveis de fragilidade (${menor[0]} baixo)`);
+  }
+  if (individual.ind?.tegCor) destaques.push(`cor de tegumento própria deste indivíduo: ${labelOf(T.tegCor, individual.ind.tegCor).toLowerCase()}`);
+  if (individual.ind?.anomalias?.length) {
+    destaques.push(`anomalia(s) visível(is): ${individual.ind.anomalias.map((a) => labelOf(T.ano, a).toLowerCase()).join(", ")}`);
+  }
+  return destaques;
+}
+function gerarPromptImagem(g, individual) {
+  const descricao = describeCreatureProse(g);
+  const destaques = destaquesIndividuoParaPrompt(individual);
+  const nomeRef = individual?.nome ? `${individual.nome}, an individual of the ${g.clado} species` : `a specimen of the ${g.clado} species`;
+  const linhas = [
+    `Fantasy creature concept art of ${nomeRef}.`,
+    ``,
+    `CREATURE DESCRIPTION (in Portuguese — follow it closely, it is the authoritative source):`,
+    descricao,
+  ];
+  if (destaques.length) linhas.push(``, `INDIVIDUAL TRAITS TO EMPHASIZE (this specimen only): ${destaques.join("; ")}.`);
+  linhas.push(
+    ``,
+    `STYLE: detailed fantasy concept art, digital painting, dramatic rim lighting, anatomically coherent with the description above, highly detailed skin/scale/fur texture, muted natural color palette unless the description states otherwise.`,
+    `COMPOSITION: single full-body reference shot, slight 3/4 angle, plain neutral studio background so the anatomy reads clearly, no other characters, no scenery.`,
+    `NEGATIVE PROMPT: no text, no watermark, no signature, no human clothing or armor unless explicitly described, no extra limbs beyond what is described, not cartoonish, not chibi.`
+  );
+  return linhas.join("\n");
+}
 
 /* ============================================================
    ECOSSISTEMA — N espécies primordiais, cada uma derivada por um

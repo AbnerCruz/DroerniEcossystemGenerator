@@ -1,4 +1,4 @@
-# Droerni · Ecossistema DRN2 v18
+# Droerni · Ecossistema DRN2 v24
 
 ## Estrutura (tudo na raiz — de propósito)
 
@@ -8,15 +8,16 @@ vários arquivos de uma vez, mas não upload de pasta).
 
 ```
 index.html               shell — carrega tudo via <script src>, em ordem
-01-core-motor.js         motor DRN2 (seed Feistel, genes, travas, deriva/especiação, habitat, geografia/eras)
+01-core-motor.js         motor DRN2 (seed Feistel, genes, travas, deriva/especiação, habitat, geografia/eras, populações e seleção natural populacional, prompt de imagem, decodificação de seed)
 02-coerencia.js          peso/calorias derivados + REGRAS_COERENCIA
 03-zip.js                writer de .zip puro em JS (sem libs externas)
 04-ui-fases.js           ícones, helpers de UI, Fase 1 (Geografia) e Fase 2 (Eras)
 05-ui-especie.js         SpeciesEditor (criar/editar) e SpeciesViewer (modal)
-06-ui-biologia.js        Fase 3 (Biologia), geração de ecossistema, log
+06-ui-biologia.js        Fase 3 (Biologia), geração de ecossistema, seleção natural populacional, log
 07-exports.js            os 4 exporters + barra de persistência (projeto .json)
 08-patchnotes.js         painel de patchnotes (lê patchnotes-manifest.json)
-09-app.js                App() principal — junta tudo
+09-populacao-seed.js     IndividualViewer, prompt de imagem, busca por seed
+10-app.js                App() principal — junta tudo
 patchnotes-manifest.json lista de versões — [0] é sempre a aberta por padrão
 patchnotes-v17.md        changelog da v17
 ```
