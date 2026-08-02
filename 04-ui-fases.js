@@ -65,7 +65,18 @@ function CampoNumero({ value, onChange, placeholder, step, className }) {
 }
 function fmtNum(n) { return (n ?? 0).toLocaleString("pt-BR", { maximumFractionDigits: 1 }); }
 function fmtKg(kg) { return kg >= 1000 ? `${fmtNum(kg / 1000)} t` : `${fmtNum(kg)} kg`; }
-function fmtAU(au) { return au === 0 ? "AU 0 (marco zero)" : `${fmtNum(au)} bi anos`; }
+/* 1 AU = 1 milhão de anos (AU_EM_ANOS no motor). Isto rotulava "bi anos",
+   inflando toda a cronologia em 1000x. Abaixo de 1000 AU mostra em
+   milhões; acima, converte para bilhões, que é como o usuário pensa a
+   escala grande. Fração de AU aparece com casas suficientes para não
+   colapsar duas espécies próximas no mesmo rótulo. */
+function fmtAU(au) {
+  if (au === 0) return "AU 0 (marco zero)";
+  if (au < 0.001) return `${(au * 1e6).toLocaleString("pt-BR", { maximumFractionDigits: 0 })} anos`;
+  if (au < 1) return `${(au * 1000).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} mil anos`;
+  if (au < 1000) return `${au.toLocaleString("pt-BR", { maximumFractionDigits: 2 })} mi anos`;
+  return `${(au / 1000).toLocaleString("pt-BR", { maximumFractionDigits: 2 })} bi anos`;
+}
 
 /* ============================================================
    BARRA DE FASES — indicador do fluxo linear travado
@@ -167,7 +178,7 @@ function FaseGeografia({ onConfirmar, jaConfirmada, eras }) {
    com ao menos a Era 1, pode confirmar e seguir pra Fase 3 —
    dividir não é obrigatório.
    ============================================================ */
-function FaseEras({ eras, setEras, onConfirmar, jaConfirmada, bloqueada }) {
+function FaseEras({ eras, setEras, onConfirmar, jaConfirmada, bloqueada, onNovaEra }) {
   const [criando, setCriando] = useState(false);
   const [nomeEra, setNomeEra] = useState("");
   const [auDivisao, setAuDivisao] = useState("");
@@ -197,8 +208,15 @@ function FaseEras({ eras, setEras, onConfirmar, jaConfirmada, bloqueada }) {
     for (const [massaId, partes] of Object.entries(planoPorMassa)) {
       if (partes && partes.length && partes.every((p) => p.nome.trim())) novasMassasPorAntiga[massaId] = partes;
     }
-    const { novaEra } = dividirEra(eraAtual, nomeEra.trim(), novasMassasPorAntiga, Number(auDivisao));
+    const { novaEra, mapaAntigaParaNovas } = dividirEra(eraAtual, nomeEra.trim(), novasMassasPorAntiga, Number(auDivisao));
+    /* O mapa de herança era descartado aqui e aplicarDivisaoEra nunca era
+       chamado em lugar nenhum: dividir uma era criava massas novas mas
+       deixava TODAS as espécies apontando para as massas antigas, então a
+       divisão geográfica não tinha efeito nenhum sobre a biologia (habitat,
+       biomas disponíveis, onde a deriva continua). Agora a migração é
+       aplicada pelo App, que é quem detém os nós. */
     setEras((e) => [...e, novaEra]);
+    if (onNovaEra) onNovaEra(novaEra, mapaAntigaParaNovas);
     setCriando(false); setNomeEra(""); setAuDivisao(""); setPlanoPorMassa({});
   };
 
@@ -214,15 +232,15 @@ function FaseEras({ eras, setEras, onConfirmar, jaConfirmada, bloqueada }) {
         ))}
       </div>
 
-      {!jaConfirmada && !criando && (
+      {!criando && (
         <button onClick={() => setCriando(true)} className="text-[11px] font-mono uppercase text-stone-400 hover:text-emerald-400 border border-stone-800 rounded px-3 py-1.5">+ Nova era (dividir geografia)</button>
       )}
 
-      {!jaConfirmada && criando && (
+      {criando && (
         <div className="rounded border border-stone-800 p-3 bg-stone-950/50 space-y-3">
           <div className="grid grid-cols-2 gap-2">
             <CampoTexto value={nomeEra} onChange={setNomeEra} placeholder="Nome da era" />
-            <CampoNumero value={auDivisao} onChange={setAuDivisao} placeholder="Início (bi anos, ex: 3.2)" />
+            <CampoNumero value={auDivisao} onChange={setAuDivisao} placeholder="Início em AU (1 AU = 1 mi de anos)" />
           </div>
           <div className="text-[10px] uppercase tracking-widest text-stone-500 font-mono">Para cada massa: manter como está, ou dividir em novas massas</div>
           {eraAtual.massas.map((massa) => (

@@ -1,3 +1,20 @@
 [
-  { "id": "v17", "titulo": "v17", "data": "2026-08-01", "arquivo": "patchnotes-v17.md" }
+  {
+    "id": "v19",
+    "titulo": "v19",
+    "data": "2026-08-02",
+    "arquivo": "patchnotes-v19.md"
+  },
+  {
+    "id": "v18",
+    "titulo": "v18",
+    "data": "2026-08-02",
+    "arquivo": "patchnotes-v18.md"
+  },
+  {
+    "id": "v17",
+    "titulo": "v17",
+    "data": "2026-08-01",
+    "arquivo": "patchnotes-v17.md"
+  }
 ]

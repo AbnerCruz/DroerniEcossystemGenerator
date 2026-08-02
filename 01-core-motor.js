@@ -9,7 +9,27 @@
 
 function pick(table, n) { for (const row of table) if (n <= row.max) return row; return table[table.length - 1]; }
 
+/* CACHE de validNumbers. Medido: validNumbers custava ~70% do tempo de
+   runSpeciesSteps (varre 1..100 chamando pick() a cada gene categórico,
+   ~40x por espécie, 2x por buildSpecies). As tabelas são estáticas e o
+   conjunto de restrições possíveis é pequeno e repetitivo, então o
+   resultado é perfeitamente memoizável. A chave usa um id estável por
+   tabela + a assinatura ordenada de restrict/exclude. O array devolvido
+   é CONGELADO para nenhum chamador conseguir mutar o cache por engano. */
+const __tableIds = new WeakMap();
+let __tableIdSeq = 0;
+function tableId(table) {
+  let id = __tableIds.get(table);
+  if (id === undefined) { id = ++__tableIdSeq; __tableIds.set(table, id); }
+  return id;
+}
+const __validNumbersCache = new Map();
 function validNumbers(table, opts = {}) {
+  const r = opts.restrict ? opts.restrict.slice().sort().join(",") : "";
+  const e = opts.exclude ? opts.exclude.slice().sort().join(",") : "";
+  const chave = tableId(table) + "|" + r + "|" + e;
+  const hit = __validNumbersCache.get(chave);
+  if (hit) return hit;
   const nums = [];
   for (let n = 1; n <= 100; n++) {
     const label = pick(table, n).value;
@@ -17,14 +37,22 @@ function validNumbers(table, opts = {}) {
     if (opts.exclude && opts.exclude.includes(label)) continue;
     nums.push(n);
   }
+  Object.freeze(nums);
+  __validNumbersCache.set(chave, nums);
   return nums;
 }
 
 // 3d4-3: enumera as 64 triplas de dados possíveis; TRIPLES[i] = soma (0..9)
 const TRIPLES = (() => { const a = []; for (let x = 0; x < 4; x++) for (let y = 0; y < 4; y++) for (let z = 0; z < 4; z++) a.push(x + y + z); return a; })();
+const __scalarDomainCache = new Map();
 function scalarDomainIdx(min = 0, max = 9) {
+  const chave = min + ":" + max;
+  const hit = __scalarDomainCache.get(chave);
+  if (hit) return hit;
   const idxs = [];
   TRIPLES.forEach((sum, i) => { if (sum >= min && sum <= max) idxs.push(i); });
+  Object.freeze(idxs);
+  __scalarDomainCache.set(chave, idxs);
   return idxs;
 }
 
@@ -61,6 +89,22 @@ function mixInverse(y, halfBits) {
   let L = (y >> halfBits) & mask, R = y & mask;
   for (let i = F_KEYS.length - 1; i >= 0; i--) { const pR = L, pL = R ^ feistelRoundF(pR, F_KEYS[i], mask); L = pL; R = pR; }
   return (L << halfBits) | R;
+}
+
+/* Converte um texto livre (nome, frase) num endereço numérico estável.
+   FNV-1a de 128 bits — determinístico, sem colisão prática pro uso aqui.
+   Existia uma chamada a textToSeed em parseAnySeed sem a função estar
+   definida em lugar nenhum: qualquer seed não-numérica derrubava a
+   aplicação com ReferenceError. */
+function textToSeed(str) {
+  const s = String(str || "");
+  const OFFSET = 0x6C62272E07BB014262B821756295C58Dn;
+  const PRIME = 0x0000000001000000000000000000013Bn;
+  const MASK = (1n << 128n) - 1n;
+  let h = OFFSET;
+  const bytes = new TextEncoder().encode(s);
+  for (const b of bytes) { h = (h ^ BigInt(b)) & MASK; h = (h * PRIME) & MASK; }
+  return { seed: h, texto: s };
 }
 
 /* Entrada única: dígitos puros viram número; qualquer outra coisa vira texto. */
@@ -247,8 +291,12 @@ const CLASSE_TRAVAS = {
     asaTipo: { fixed: "pn" },
     cdaTipo: { restrict: ["pq", "nu"] },
   },
-  REP: { // réptil: escama, ovíparo, sem asa
+  REP: { // réptil: escama, ovíparo, sem asa, crânio ossificado
     locPrimario: { restrict: ["Q", "S", "N", "E", "C", "B"] },
+    // sem esta trava, 3,14% dos répteis nasciam sem crânio definido — e daí
+    // saíam as combinações contraditórias reportadas (réptil sem crânio com
+    // presas). MAM/AVE/PSC/INS/MOL já travavam crnFormato; REP e AMP não.
+    crnFormato: { exclude: ["0", "hu"] },
     memSup: { restrict: ["0S", "2S"] },
     memTerm: { restrict: ["gr", "pa", "ba", "no"] },
     repModo: { restrict: ["ov", "oz"] },
@@ -258,8 +306,9 @@ const CLASSE_TRAVAS = {
     asaQtd: { fixed: 0 },
     cdaTipo: { restrict: ["es", "nu", "pr", "lm"] },
   },
-  AMP: { // anfíbio: pele mucosa, ovíparo, ligado à água
+  AMP: { // anfíbio: pele mucosa, ovíparo, ligado à água, crânio ossificado
     locPrimario: { restrict: ["Q", "S", "N", "B", "E"] },
+    crnFormato: { exclude: ["0", "hu"] },
     memSup: { restrict: ["0S", "2S"] },
     memTerm: { restrict: ["pa", "ve", "ba", "no"] },
     repModo: { fixed: "ov" },
@@ -509,6 +558,11 @@ function runSpeciesSteps(cur, isPrimordialIntent) {
   let repOpts = {};
   if (g.reino === "Fu") repOpts = { fixed: "sp" };
   else if (g.reino === "Ar") repOpts = { fixed: "an" };
+  /* Plantas não tinham trava nenhuma de reprodução: saíam plantas
+     vivíparas, hematófagas de ninhada, e plantas "que não se reproduzem"
+     (0,36% da amostra). Restringido aos modos que uma planta de fato usa. */
+  else if (g.reino === "Pl") repOpts = { restrict: ["sp", "gm", "fs", "ax", "ov"] };
+  else if (g.reino === "Sp") repOpts = { restrict: ["an", "gm", "ax", "ni"] };
   categoricalStep(cur, "repModo", T.repModo, mergeOpts(repOpts, classeOpts(g, "repModo")));
   scalarStep(cur, "repProle", porteRow.n >= 4 ? { max: 3 } : porteRow.n === 0 ? { min: 5 } : {});
   scalarStep(cur, "repMaturacao", porteRow.n >= 4 ? { min: 5 } : {});
@@ -579,7 +633,11 @@ function runSpeciesSteps(cur, isPrimordialIntent) {
   let asaOpts = {};
   if (g.locPrimario === "F") asaOpts = { fixed: 0 };
   else if (g.locPrimario === "V" && !(g.mag && Number(g.mag.slice(1)) >= 4)) asaOpts = { exclude: [0] };
-  else if (g.tolHidrica === "aq") asaOpts = { bias: [0] };
+  /* Aquático obrigatório respira por brânquias — o próprio REGRAS_COERENCIA
+     trata "aquático com asas" como erro BLOQUEANTE, mas o gerador só
+     enviesava contra (bias), então 0,5% das espécies nasciam já violando
+     uma regra que o app recusaria na criação manual. Vira trava dura. */
+  else if (g.tolHidrica === "aq") asaOpts = { fixed: 0 };
   categoricalStep(cur, "asaQtd", T.asaQtd, mergeOpts(asaOpts, classeOpts(g, "asaQtd")));
   if (g.asaQtd !== 0) {
     categoricalStep(cur, "asaTipo", T.asaTipo, mergeOpts(g.isPrimordial ? { exclude: ["et"] } : {}, classeOpts(g, "asaTipo")));
@@ -625,9 +683,26 @@ function runSpeciesSteps(cur, isPrimordialIntent) {
   g.socSenciencia = sencFinal;
   g.socSencienciaPenalizada = penalizado && g.reino !== "Pl" && g.reino !== "Fu";
 
-  // Passo 16 — DEF
+  /* Passo 16 — DEF
+     A arma natural agora depende da estrutura que a produz. Antes o gene
+     era sorteado solto, e saíam espécies com "arma: chifres" sem nenhum
+     chifre (8% da amostra), "arma: presas" sem crânio nem dentição, e
+     "arma: garras" sem membro nenhum onde a garra ficaria. A trava entra
+     como `exclude` no próprio categoricalStep, então a seed continua
+     simétrica (decode/encode/randomize enxergam o mesmo domínio). */
   const defArmaExclude = (g.reino === "Pl" || g.reino === "Fu") ? ["gr", "pr", "cn"] : [];
-  const defArmaOpts = ["cn", "he", "nf"].includes(g.dieBase) ? { exclude: [...defArmaExclude, "0"] } : (defArmaExclude.length ? { exclude: defArmaExclude } : {});
+  const pernasDef = Number(String(g.memInf).replace("I", "")) || 0;
+  const supDef = Number(String(g.memSup).replace("S", "")) || 0;
+  const apendicesDef = Number(String(g.memApendices).replace("X", "")) || 0;
+  if (g.crnChifreQtd === "0") defArmaExclude.push("ch");                       // sem chifre não se ataca com chifre
+  if (g.crnFormato === "0" || g.facDenticao === "0") defArmaExclude.push("pr"); // presa exige crânio com dentição
+  if (pernasDef === 0 && supDef === 0 && apendicesDef === 0) defArmaExclude.push("gr", "cn"); // garra/constrição exigem membro ou corpo preênsil
+  if (g.crnFormato === "0" && g.facFocinho === "0") defArmaExclude.push("cu");  // cuspe/jato precisa de abertura oral
+  const magNivelDef = g.mag ? Number(String(g.mag).slice(1)) || 0 : 0;
+  if (magNivelDef < 3) defArmaExclude.push("au");                              // ataque áurico exige poder mínimo
+  const defArmaOpts = ["cn", "he", "nf"].includes(g.dieBase)
+    ? { exclude: [...defArmaExclude, "0"] }
+    : (defArmaExclude.length ? { exclude: defArmaExclude } : {});
   categoricalStep(cur, "defArma", T.defArma, defArmaOpts);
   scalarStep(cur, "defBlindagem");
   categoricalStep(cur, "defEstrategia", T.defEstrategia, g.locPrimario === "F" ? { restrict: ["ri", "to", "ca", "re"] } : {});
@@ -1043,10 +1118,16 @@ function readHabitatNaMassa(g, massa) {
   return { primary, marginal, vedadoLetal, vedadoClima, vedadoGeografia };
 }
 
-function buildSpecies(seedBigOrNull, manual, isPrimordial) {
+/* comSeed=false pula o segundo passe (encode) do pipeline. buildSpecies
+   rodava runSpeciesSteps SEMPRE duas vezes, mesmo quando o chamador só
+   queria o genoma: o editor de espécie refaz isso a cada tecla e
+   gerarPrimordialValido chega a chamar 6 vezes seguidas. Sem a seed, o
+   custo cai pela metade (medido: 0,64ms -> 0,33ms por espécie). */
+function buildSpecies(seedBigOrNull, manual, isPrimordial, comSeed = true) {
   const address = seedBigOrNull !== null ? mixForward(seedBigOrNull, SPECIES_HALF) : null;
   const cur = address !== null ? newCursor("decode", { seed: address, manual }) : newCursor("randomize", { manual });
   runSpeciesSteps(cur, isPrimordial);
+  if (!comSeed) return { g: cur.ctx, code: serialize(cur.ctx), speciesSeed: undefined };
   const encCur = newCursor("encode", { ctx: { ...cur.ctx } });
   runSpeciesSteps(encCur, isPrimordial);
   const canonical = mixInverse(encCur.outValue, SPECIES_HALF);
@@ -1360,6 +1441,13 @@ function calcularDL(gA, gB) {
    1000 gerações (Parte V do documento). anosGeracao vem da tabela de
    maturação (0-9); o resultado já sai em AU, pronto para somar
    direto ao auSurgimento — sem conversões extras no chamador. */
+/* UNIDADE CANÔNICA DO CALENDÁRIO. 1 AU = 1.000.000 de anos, contados a
+   partir do marco zero (criação do universo). O motor sempre calculou
+   nessa escala, mas a interface e os exports rotulavam AU como "bi anos"
+   e multiplicavam por 1e9 — um fator 1000 de erro entre o que o motor
+   computava e o que o usuário lia. A constante existe para que exibição
+   e export derivem daqui, em vez de repetir o número em cada arquivo. */
+const AU_EM_ANOS = 1e6;
 const DURACAO_GERACAO_ANOS = { 0: 0.01, 1: 0.1, 2: 1, 3: 3, 4: 10, 5: 30, 6: 100, 7: 300, 8: 1000, 9: 3000 };
 function duracaoCicloDeriva(g) {
   const mat = Number(g.repMaturacao ?? 2);
@@ -1401,15 +1489,21 @@ function aplicarCicloDeriva(g, orcamentoAtual, fonteFixa) {
 
   let guard = 0;
   while (guard++ < 200) {
-    const podeI = orcamento >= CUSTO_ESTRATO.I;
-    const podeII = orcamento >= CUSTO_ESTRATO.II;
-    const podeIII = orcamento >= CUSTO_ESTRATO.III;
-    if (!podeIII) break;
-    let estrato;
+    if (orcamento < CUSTO_ESTRATO.III) break;
+    /* O sorteio do estrato agora é INDEPENDENTE do que o orçamento paga.
+       Antes, quando o orçamento não cobria o Estrato I (12), o `else`
+       rebaixava a tentativa para II ou III e o ciclo seguia gastando até
+       zerar — de modo que sobra nunca existia e o teto de 9 por ciclo
+       (3d4-3) jamais alcançava os 12 do Estrato I. Efeito medido no
+       código original: 0 mutações de Estrato I em 29.459 ciclos.
+       Agora, se o estrato sorteado não couber, o ciclo ENCERRA e o saldo
+       fica guardado para o próximo (o chamador o repassa via
+       orcamentoRestante). Alguns ciclos de baixa pressão em sequência
+       acabam financiando um salto estrutural, que é o comportamento
+       descrito na Parte V do documento. */
     const r = Math.random();
-    if (podeI && r < 0.12) estrato = "I";
-    else if (podeII && r < 0.55) estrato = "II";
-    else estrato = "III";
+    const estrato = r < 0.12 ? "I" : r < 0.55 ? "II" : "III";
+    if (orcamento < CUSTO_ESTRATO[estrato]) break; // não cabe: poupa o saldo
 
     const key = sortGeneAlvo(estrato);
     if (estrato === "I" && key === "tolHidrica" && !["Bioma aquático", "Bioma árido"].includes(fonte.nome)) {
@@ -1437,6 +1531,15 @@ function aplicarCicloDeriva(g, orcamentoAtual, fonteFixa) {
     const genomaLimpo = normalizarGenoma(g, g.isPrimordial);
     Object.assign(g, genomaLimpo);
   }
+
+  /* A validação de coerência só rodava no editor manual e no sorteio de
+     primordiais — espécies nascidas de deriva nunca passavam por ela, e
+     saíam com contradições bloqueantes (medido: 1,3% das espécies
+     derivadas, ex.: aquático obrigatório com asas). Aqui as correções
+     automáticas são aplicadas e o genoma é renormalizado, para que
+     nenhuma espécie exista com um erro que o app classificaria como
+     bloqueante se fosse criada à mão. */
+  if (totalMudancasCiclo > 0) aplicarCorrecoesAutomaticas(g);
 
   return { genesAlterados, fonte, pressaoValor, orcamentoRestante: Math.max(0, orcamento) };
 }
@@ -1471,7 +1574,7 @@ let __logVerbosidade = "detalhado"; // "detalhado" | "resumido"
 function setLogVerbosidade(modo) { __logVerbosidade = modo === "resumido" ? "resumido" : "detalhado"; }
 function getLogVerbosidade() { return __logVerbosidade; }
 
-function resetEventLog() { __eventLog = []; __logCounter = 1; }
+function resetEventLog() { __eventLog = []; __logCounter = 1; __logVerbosidade = "detalhado"; }
 
 /* Restaura o log importado. Os contadores (idCounter/logCounter) são
    sempre elevados ao MAIOR entre o valor salvo e o atual — nunca
@@ -1483,9 +1586,35 @@ function restaurarEventLog(eventLogImportado, idCounterImportado, logCounterImpo
   if (typeof logCounterImportado === "number") __logCounter = Math.max(__logCounter, logCounterImportado);
 }
 
+/* Teto duro do log em memória. Medido: um ecossistema de 30 primordiais x
+   50-100 ciclos gerava 7.902 eventos em modo detalhado, e o painel os
+   renderizava todos de uma vez em "ver todos". Passando deste teto, o
+   motor cai sozinho para verbosidade resumida (só primordiais,
+   especiações e seleção natural — os eventos que mudam a árvore) e
+   descarta os ciclos intermediários mais antigos, preservando sempre os
+   eventos estruturais, que são os que o usuário precisa reler. */
+const LIMITE_EVENTOS_LOG = 4000;
+const TIPOS_ESTRUTURAIS = new Set(["primordial", "especiacao", "selecao_natural", "edicao"]);
+
+function podarEventLog() {
+  if (__eventLog.length <= LIMITE_EVENTOS_LOG) return 0;
+  const estruturais = __eventLog.filter((e) => TIPOS_ESTRUTURAIS.has(e.tipo));
+  const resto = __eventLog.filter((e) => !TIPOS_ESTRUTURAIS.has(e.tipo));
+  const espacoParaResto = Math.max(0, LIMITE_EVENTOS_LOG - estruturais.length);
+  const restoMantido = resto.slice(-espacoParaResto);
+  const descartados = resto.length - restoMantido.length;
+  __eventLog = [...estruturais, ...restoMantido].sort((a, b) => a.seq - b.seq);
+  return descartados;
+}
+
 function emitirEvento(evento) {
   const e = { seq: __logCounter++, ts: Date.now(), ...evento };
   __eventLog.push(e);
+  if (__eventLog.length > LIMITE_EVENTOS_LOG) {
+    // a partir daqui só vale a pena gravar o que muda a árvore
+    if (__logVerbosidade === "detalhado") __logVerbosidade = "resumido";
+    podarEventLog();
+  }
   return e;
 }
 
@@ -1549,9 +1678,18 @@ function auTextoLog(au) { return au === 0 ? "AU 0 (marco zero)" : `AU ${au.toLoc
 function avancarCicloNaLinhagem(linhagemState) {
   const vaiLogar = linhagemState.logContext && __logVerbosidade === "detalhado";
   const codeAntes = vaiLogar ? serialize(linhagemState.g) : null;
-  const { genesAlterados, fonte, pressaoValor } = aplicarCicloDeriva(linhagemState.g, linhagemState.orcamento, linhagemState.fontePressaoFixa);
+  const { genesAlterados, fonte, pressaoValor, orcamentoRestante } = aplicarCicloDeriva(linhagemState.g, linhagemState.orcamento, linhagemState.fontePressaoFixa);
   linhagemState.ciclosDecorridos += 1;
-  linhagemState.orcamento = 0;
+  /* O orçamento não zerado sobra para o próximo ciclo. Antes ele era
+     zerado aqui, então o teto por ciclo era sempre 3d4-3 (máximo 9) —
+     abaixo dos 12 que o Estrato I custa. Resultado medido: 0 mutações de
+     Estrato I em 29.459 ciclos, ou seja, reino, classe, locomoção
+     primária, simetria, membros, modo reprodutivo, formato do crânio e
+     tolerância hídrica jamais evoluíam, e a especiação nunca era
+     disparada pela regra "acumEstratoI > 0". Guardando o resto, uma
+     sequência de ciclos de baixa pressão acaba financiando um salto
+     estrutural — que é exatamente o comportamento descrito na Parte V. */
+  linhagemState.orcamento = orcamentoRestante;
   for (const k of genesAlterados.II) linhagemState.acumEstratoII.add(k);
   linhagemState.historico.push({ cd: linhagemState.ciclosDecorridos, pressao: pressaoValor, pressaoNome: nomePressao(pressaoValor), fonte: fonte.nome, genesAlterados });
 
@@ -1582,12 +1720,19 @@ function especiar(mae, linhagemState) {
   const novoClado = sortClado();
   const g2 = { ...linhagemState.g, clado: novoClado, isPrimordial: false };
   const id = novoId();
-  const cdDuracaoAU = duracaoCicloDeriva(mae.g); // já em AU (milhões de anos) por ciclo
+  const cdDuracaoAU = duracaoCicloDeriva(mae.g); // AU = 1 milhão de anos (ver AU_EM_ANOS)
   const auAcumulado = linhagemState.ciclosDecorridos * cdDuracaoAU;
-  // arredonda ao milhão de anos mais próximo (precisão que o documento define para AU),
-  // mas nunca deixa uma especiação real cair a 0 de acréscimo — ela sempre soma pelo
-  // menos 1 AU sobre a mãe, senão duas gerações na mesma linhagem colam no mesmo instante.
-  const auFilha = mae.auSurgimento + Math.max(1, Math.round(auAcumulado));
+  /* Antes: Math.max(1, Math.round(auAcumulado)). Duas coisas quebravam.
+     (1) O piso de 1 AU dominava o cálculo: com maturação típica, 20 ciclos
+     acumulam ~0,02 AU, então praticamente toda especiação somava 1 AU
+     "inventado" — a linha do tempo virava contagem de especiações, não
+     tempo. (2) Como a UI rotulava AU como BILHÕES, um ecossistema padrão
+     (5 primordiais, 15-35 ciclos) produzia espécies datadas em até 13,4
+     bilhões de anos, mais velhas que o universo. Agora o AU carregado é
+     o tempo real acumulado, com um epsilon só para garantir que a filha
+     nunca colida com a mãe no mesmo instante; o arredondamento ao milhão
+     de anos é aplicado só na exibição. */
+  const auFilha = mae.auSurgimento + Math.max(1e-6, auAcumulado);
   const filho = {
     id,
     clado: novoClado,
@@ -1762,6 +1907,19 @@ function caminhoAtePrimordial(nodeId, idx) {
     cur = idx.get(cur.pais[0]);
   }
   return caminho;
+}
+
+/* Espécies com o MESMO ancestral direto — parentesco de primeiro grau
+   "lateral" (a árvore só guarda pais/filhos; irmãos não são um campo,
+   são derivados na hora). Uma primordial não tem irmãos por definição:
+   não tem pai. Usado pelo painel de linhagem do SpeciesViewer, ao lado
+   de caminhoAtePrimordial (a cadeia vertical até a raiz). */
+function irmaos(nodeId, idx) {
+  const node = idx.get(nodeId);
+  if (!node || !node.pais || !node.pais.length) return [];
+  const pai = idx.get(node.pais[0]);
+  if (!pai) return [];
+  return pai.filhos.map((id) => idx.get(id)).filter((n) => n && n.id !== nodeId);
 }
 
 function geracoesAntes(nodeId, n, idx) {
@@ -1963,7 +2121,12 @@ function simularSelecaoNatural(nodes, idx, au, massaId) {
     const fonte = interacao.tipo === "predacao" ? PRESSAO_PREDACAO : PRESSAO_COMPETICAO;
     const codeAntes = alvo.code;
     const linhagemState = novaLinhagemState(alvo, fonte);
-    const { genesAlterados } = aplicarCicloDeriva(linhagemState.g, 24, fonte);
+    /* Orçamento 0: a interação vale como UM ciclo de deriva enviesado, não
+       como um salto evolutivo. Antes era 24 (o teto absoluto), o que já era
+       generoso e passou a ser perigoso agora que o Estrato I é alcançável —
+       uma única predação poderia reescrever reino, classe e plano corporal
+       da presa de uma vez. */
+    const { genesAlterados } = aplicarCicloDeriva(linhagemState.g, 0, fonte);
     Object.assign(alvo.g, linhagemState.g);
     alvo.code = serialize(alvo.g);
     const totalGenes = genesAlterados.I.length + genesAlterados.II.length + genesAlterados.III.length;

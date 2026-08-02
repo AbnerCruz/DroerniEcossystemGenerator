@@ -52,13 +52,14 @@ function SpeciesEditor({ modo, node, eraAtual, onSalvar, onCancelar }) {
   const baseManual = modo === "editar" ? { ...node.g } : {};
   const isPrimordial = modo === "editar" ? node.isPrimordial : true;
   const [overrides, setOverrides] = useState({});
-  const [g, setG] = useState(() => buildSpecies(null, baseManual, isPrimordial).g);
+  const [g, setG] = useState(() => buildSpecies(null, baseManual, isPrimordial, false).g);
   const [auInicial, setAuInicial] = useState(modo === "criar" ? "0" : String(node.auSurgimento));
   const [massaId, setMassaId] = useState(modo === "criar" ? (eraAtual.massas[0]?.id || "") : node.massaId);
 
   const recalcular = (novosOverrides) => {
     const manual = { ...baseManual, ...novosOverrides };
-    const built = buildSpecies(null, manual, isPrimordial);
+    // sem seed: o editor recalcula a cada tecla e não usa speciesSeed
+    const built = buildSpecies(null, manual, isPrimordial, false);
     setG(built.g);
   };
   const setCampo = (chave, valor) => {
@@ -103,7 +104,7 @@ function SpeciesEditor({ modo, node, eraAtual, onSalvar, onCancelar }) {
           {modo === "criar" && (
             <div className="grid grid-cols-2 gap-2">
               <div>
-                <label className="text-[10px] uppercase text-stone-500 font-mono">Ano de surgimento (bi)</label>
+                <label className="text-[10px] uppercase text-stone-500 font-mono">Ano de surgimento (AU = 1 mi anos)</label>
                 <CampoNumero value={auInicial} onChange={setAuInicial} placeholder="0" />
               </div>
               <div>
@@ -144,7 +145,9 @@ function SpeciesEditor({ modo, node, eraAtual, onSalvar, onCancelar }) {
           </div>
 
           <div className="rounded border border-stone-800 bg-stone-900/40 p-3 space-y-2">
-            <div className="text-[10px] font-mono text-stone-500 break-all">{g.code}</div>
+            {/* g é o ctx do genoma, não o objeto retornado por buildSpecies —
+                não existe g.code, então esta linha renderizava vazia. */}
+            <div className="text-[10px] font-mono text-stone-500 break-all">{serialize(g)}</div>
             <div className="grid grid-cols-2 gap-2 text-xs">
               <div><span className="text-stone-500">Peso: </span><span className="text-stone-200 font-data">{fmtKg(pesoCal.pesoKg)}</span></div>
               <div><span className="text-stone-500">Calorias/dia: </span><span className="text-stone-200 font-data">{fmtNum(pesoCal.caloriasDia)} kcal</span></div>
@@ -191,12 +194,17 @@ function SpeciesEditor({ modo, node, eraAtual, onSalvar, onCancelar }) {
 /* ============================================================
    SPECIES VIEWER — modal ao clicar numa espécie na lista
    ============================================================ */
-function SpeciesViewer({ node, idx, eras, massaIdx, onFechar, onEditar, onDeletar, onClonar, onExportarMd, onDerivar, onNovoIndividuo, individuosDaEspecie, showToast }) {
+function SpeciesViewer({ node, idx, eras, massaIdx, onFechar, onEditar, onDeletar, onClonar, onExportarMd, onDerivar, onNovoIndividuo, onNavegar, individuosDaEspecie, showToast }) {
   const pesoCal = useMemo(() => calcularPesoCalorias(node.g), [node]);
   const massa = massaIdx.get(node.massaId);
   const habitat = useMemo(() => readHabitatNaMassa(node.g, massa), [node, massa]);
   const ancestral = node.pais[0] ? idx.get(node.pais[0]) : null;
   const descendentes = node.filhos.map((id) => idx.get(id)).filter(Boolean);
+  // Linhagem completa (caminhoAtePrimordial) e parentesco lateral de
+  // primeiro grau (irmaos) — ambos existiam prontos no motor e nunca
+  // eram chamados por nenhuma tela.
+  const caminho = useMemo(() => caminhoAtePrimordial(node.id, idx), [node, idx]);
+  const irmaosLista = useMemo(() => irmaos(node.id, idx), [node, idx]);
 
   const copiarDNA = () => { navigator.clipboard?.writeText(node.code); showToast("DNA copiado."); };
 
@@ -227,8 +235,38 @@ function SpeciesViewer({ node, idx, eras, massaIdx, onFechar, onEditar, onDeleta
             {habitat.marginal.length > 0 && <div className="text-stone-500 mt-1">Marginal: {habitat.marginal.join(", ")}</div>}
           </div>
 
+          <div className="text-xs">
+            <div className="text-stone-500 mb-1.5">Linhagem até a primordial</div>
+            <div className="flex flex-wrap items-center gap-1">
+              {caminho.map((n, i) => (
+                <React.Fragment key={n.id}>
+                  {i > 0 && <ChevronRight size={10} className="text-stone-700 shrink-0" />}
+                  <button
+                    disabled={n.id === node.id}
+                    onClick={() => onNavegar(n.id)}
+                    className={`font-mono text-[11px] px-1.5 py-0.5 rounded border whitespace-nowrap ${n.id === node.id ? "border-emerald-700 bg-emerald-950/50 text-emerald-400 cursor-default" : "border-stone-800 text-stone-400 hover:text-emerald-400 hover:border-emerald-800"}`}>
+                    {n.clado}{n.isPrimordial ? " · primordial" : ""}
+                  </button>
+                </React.Fragment>
+              ))}
+            </div>
+          </div>
+
+          {irmaosLista.length > 0 && (
+            <div className="text-xs">
+              <div className="text-stone-500 mb-1">Parentesco de primeiro grau · irmãos (mesmo ancestral direto)</div>
+              <div className="flex flex-wrap gap-1.5">
+                {irmaosLista.map((s) => (
+                  <button key={s.id} onClick={() => onNavegar(s.id)} className="font-mono text-[11px] px-1.5 py-0.5 rounded border border-stone-800 text-stone-400 hover:text-emerald-400 hover:border-emerald-800">
+                    {s.clado}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div className="flex items-center gap-4 text-xs">
-            <div><span className="text-stone-500">Ancestral: </span>{ancestral ? <span className="text-emerald-400">{ancestral.clado}</span> : <span className="text-stone-600">nenhum</span>}</div>
+            <div><span className="text-stone-500">Ancestral: </span>{ancestral ? <button onClick={() => onNavegar(ancestral.id)} className="text-emerald-400 hover:underline">{ancestral.clado}</button> : <span className="text-stone-600">nenhum</span>}</div>
             <div><span className="text-stone-500">Descendentes: </span><span className="text-stone-300">{descendentes.length}</span></div>
             <div><span className="text-stone-500">Indivíduos: </span><span className="text-stone-300">{individuosDaEspecie.length}</span></div>
           </div>

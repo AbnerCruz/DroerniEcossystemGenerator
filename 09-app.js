@@ -1,5 +1,5 @@
 /* ============================================================
-   APP PRINCIPAL — v17
+   APP PRINCIPAL — v19
    ============================================================ */
 function App() {
   const [eras, setEras] = useState([]);
@@ -34,6 +34,24 @@ function App() {
   /* ---------- FASE 2 ---------- */
   const confirmarEras = () => { setFaseErasConfirmada(true); showToast(`Eras confirmadas: ${eras.length} era(s). Biologia desbloqueada.`); };
 
+  /* Divisão de era: além de criar as massas novas, migra as espécies das
+     massas antigas para as herdeiras (aplicarDivisaoEra estava escrito e
+     nunca era chamado). Sem isso, uma espécie continuava presa à massa da
+     era anterior e seu habitat era lido contra uma geografia que já não
+     existia. Os nós são mutados em lugar pelo motor, então recriamos o
+     array para o React enxergar a mudança. */
+  const aoCriarNovaEra = (novaEra, mapaAntigaParaNovas) => {
+    const migradas = aplicarDivisaoEra(nodes, mapaAntigaParaNovas);
+    if (migradas > 0) setNodes((prev) => prev.map((n) => ({ ...n })));
+    emitirEvento({
+      tipo: "era", tipoLabel: "NOVA ERA", speciesId: null, clado: novaEra.nome,
+      primordialId: null, primordialClado: novaEra.nome,
+      texto: `${novaEra.nome} começa em ${fmtAU(novaEra.auInicio)} com ${novaEra.massas.length} massa(s) de terra. ${migradas} espécie(s) migrada(s) para as massas herdeiras.`,
+    });
+    setLogVersion((v) => v + 1);
+    showToast(`${novaEra.nome} criada — ${migradas} espécie(s) remapeada(s).`);
+  };
+
   /* ---------- FASE 3 — criar / editar / deletar / clonar ---------- */
   const salvarNovoPrimordial = ({ g, auInicial, massaId }) => {
     const node = commitPrimordialFromGenome(g, auInicial, massaId);
@@ -54,14 +72,26 @@ function App() {
     setNodes((prev) => prev.filter((n) => n.id !== node.id).map((n) => (n.pais.includes(node.id) ? { ...n, pais: [] } : n)));
     if (node.pais[0]) setNodes((prev) => prev.map((n) => (n.id === node.pais[0] ? { ...n, filhos: n.filhos.filter((f) => f !== node.id) } : n)));
     setSelectedSpeciesId(null);
+    setLogVersion((v) => v + 1);
     showToast(`${node.clado} deletada.`);
   };
   const clonarEspecie = (node) => {
     const gClone = JSON.parse(JSON.stringify(node.g));
-    const novo = commitPrimordialFromGenome(gClone, node.auSurgimento, node.massaId);
-    // clone é sempre um novo primordial independente — "mesmo genoma base, nova seed/identidade"
+    /* Duas incoerências no clone original: (1) o nó era marcado como
+       isPrimordial:true mas o GENOMA continuava com isPrimordial:false
+       quando a origem era derivada — e esse flag governa travas reais
+       (magia A0-A3, sem crânio humanoide, sem mente coletiva) e a
+       reconstrução por seed; (2) o clado era copiado igual, criando duas
+       espécies com o mesmo nome, o que colide os [[wikilinks]] da ficha
+       Obsidian. O clone agora é um primordial de verdade, com identidade
+       própria e genoma renormalizado sob as travas de primordial. */
+    gClone.isPrimordial = true;
+    gClone.clado = sortClado();
+    const gNormalizado = normalizarGenoma(gClone, true);
+    const novo = commitPrimordialFromGenome(gNormalizado, node.auSurgimento, node.massaId);
     setNodes((prev) => [...prev, novo]);
-    showToast(`${node.clado} clonada como ${novo.clado} (nova espécie independente, mesmo genoma base).`);
+    setLogVersion((v) => v + 1);
+    showToast(`${node.clado} clonada como ${novo.clado} (nova espécie primordial independente, mesmo genoma base).`);
   };
   const derivarEspecie = (node, ciclos) => {
     const novos = [];
@@ -74,6 +104,7 @@ function App() {
     const r = buildIndividual(node.g, null);
     const individuo = { id: "ind" + Date.now() + "_" + Math.random().toString(36).slice(2, 6), especieId: node.id, nome: sortNomeIndividuo(), ind: r.ind, code: r.code, individualSeed: r.individualSeed, attrBase: r.attrBase, attrVaried: r.attrVaried };
     setIndividuals((prev) => [...prev, individuo]);
+    setLogVersion((v) => v + 1);
     showToast(`Indivíduo ${individuo.nome} criado (${node.clado}).`);
   };
 
@@ -112,7 +143,7 @@ function App() {
           <div className="w-9 h-9 shrink-0 rounded-full border border-emerald-700 flex items-center justify-center text-emerald-500"><GitBranch size={18} /></div>
           <div className="min-w-0">
             <h1 className="font-display text-lg sm:text-xl font-semibold tracking-tight text-stone-100 leading-none">Droerni · Ecossistema DRN2</h1>
-            <p className="font-data text-[10px] text-stone-500 tracking-wider truncate">v17 · fluxo linear · coerência bloqueadora</p>
+            <p className="font-data text-[10px] text-stone-500 tracking-wider truncate">v19 · fluxo linear · árvore genealógica navegável</p>
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
@@ -124,10 +155,15 @@ function App() {
       <main className="max-w-4xl mx-auto px-4 sm:px-6 py-6 space-y-5">
         <BarraFases faseAtual={faseAtual} geoOk={faseGeoConfirmada} erasOk={faseErasConfirmada} />
 
-        {faseAtual === 1 && <FaseGeografia onConfirmar={confirmarGeografia} jaConfirmada={false} eras={eras} />}
+        {/* Antes: renderizada só na fase 1 e sempre com jaConfirmada={false},
+            o que tornava o resumo da geografia código morto — depois de
+            confirmar, o usuário perdia a visão das massas de terra do mundo. */}
+        {(faseAtual === 1 || eras.length > 0) && (
+          <FaseGeografia onConfirmar={confirmarGeografia} jaConfirmada={faseGeoConfirmada} eras={eras} />
+        )}
 
         {faseGeoConfirmada && (
-          <FaseEras eras={eras} setEras={setEras} onConfirmar={confirmarEras} jaConfirmada={faseErasConfirmada} bloqueada={false} />
+          <FaseEras eras={eras} setEras={setEras} onConfirmar={confirmarEras} jaConfirmada={faseErasConfirmada} bloqueada={false} onNovaEra={aoCriarNovaEra} />
         )}
 
         {faseAtual === 3 && (
@@ -138,13 +174,15 @@ function App() {
               onAbrirViewer={setSelectedSpeciesId}
               onCriarPrimordial={() => setEditor({ modo: "criar" })}
               showToast={showToast}
+              onLog={() => setLogVersion((v) => v + 1)}
+              idx={idx}
             />
             {nodes.length > 0 && (
               <Section title="Exportar" accent="text-stone-500">
                 <div className="flex flex-wrap gap-2">
                   <button onClick={() => exportarHistoricoTxt(eventLog)} className="text-[11px] font-mono uppercase text-stone-400 hover:text-emerald-400 border border-stone-800 rounded px-3 py-1.5"><Download size={12} className="inline -mt-0.5 mr-1" />Histórico (.txt)</button>
-                  <button onClick={() => exportarHistoriaGlobalTxt(nodes, idx)} className="text-[11px] font-mono uppercase text-stone-400 hover:text-emerald-400 border border-stone-800 rounded px-3 py-1.5"><Download size={12} className="inline -mt-0.5 mr-1" />História Global (.txt)</button>
-                  <button onClick={() => exportarFichasObsidianZip(nodes, idx)} className="text-[11px] font-mono uppercase text-stone-400 hover:text-emerald-400 border border-stone-800 rounded px-3 py-1.5"><Download size={12} className="inline -mt-0.5 mr-1" />Fichas Obsidian (.zip)</button>
+                  <button onClick={() => exportarHistoriaGlobalTxt(nodes, idx, massaIdx)} className="text-[11px] font-mono uppercase text-stone-400 hover:text-emerald-400 border border-stone-800 rounded px-3 py-1.5"><Download size={12} className="inline -mt-0.5 mr-1" />História Global (.txt)</button>
+                  <button onClick={() => exportarFichasObsidianZip(nodes, idx, massaIdx)} className="text-[11px] font-mono uppercase text-stone-400 hover:text-emerald-400 border border-stone-800 rounded px-3 py-1.5"><Download size={12} className="inline -mt-0.5 mr-1" />Fichas Obsidian (.zip)</button>
                 </div>
               </Section>
             )}
@@ -168,9 +206,10 @@ function App() {
           onEditar={() => { setEditor({ modo: "editar", node: selectedNode }); setSelectedSpeciesId(null); }}
           onDeletar={() => deletarEspecie(selectedNode)}
           onClonar={() => clonarEspecie(selectedNode)}
-          onExportarMd={() => exportarFichaUnicaMd(selectedNode, idx)}
+          onExportarMd={() => exportarFichaUnicaMd(selectedNode, idx, massaIdx)}
           onDerivar={() => { setModalDerivarNode(selectedNode); setSelectedSpeciesId(null); }}
           onNovoIndividuo={() => novoIndividuo(selectedNode)}
+          onNavegar={(id) => setSelectedSpeciesId(id)}
           showToast={showToast}
         />
       )}
@@ -183,7 +222,7 @@ function App() {
 
       {patchnotesAberto && <PainelPatchnotes onFechar={() => setPatchnotesAberto(false)} />}
 
-      <footer className="max-w-4xl mx-auto px-4 sm:px-6 pb-10 pt-4 text-[10px] text-stone-700 font-data">DRN2 v17 · Droerni — fluxo linear, coerência bloqueadora, exports robustos</footer>
+      <footer className="max-w-4xl mx-auto px-4 sm:px-6 pb-10 pt-4 text-[10px] text-stone-700 font-data">DRN2 v19 · Droerni — fluxo linear, coerência bloqueadora, exports robustos</footer>
     </div>
   );
 }

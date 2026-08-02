@@ -104,17 +104,27 @@ const REGRAS_COERENCIA = [
     corrigir: (g) => { g.locPrimario = "N"; },
   },
   {
-    id: "peso-extremo-baixo",
+    /* A regra anterior comparava peso (kg) com altura×5 (m) — grandezas
+       diferentes. Consequência medida: para porte "mn" (0,10 m) o limiar
+       era 0,5 kg enquanto o peso máximo possível, já com densidade 9, é
+       0,35 kg — 100% das espécies minúsculas nasciam com um aviso que
+       era matematicamente impossível de resolver, e o botão "ajustar"
+       (densidade +2) não mudava nada. A checagem agora olha a densidade
+       efetiva em kg/m³, que é o que de fato caracteriza um corpo leve
+       demais, e vale igual em qualquer porte. */
+    id: "densidade-implausivel",
     severidade: "aviso",
     aplica: (g) => {
-      const { pesoKg, alturaM } = calcularPesoCalorias(g);
-      return pesoKg < alturaM * 5; // abaixo disso, mais leve que isopor pro tamanho
+      const dens = DENSIDADE_KGM3[g.densidade] ?? 1000;
+      const eterico = g.reino === "Sp" || g.tegTipo === "Et";
+      return dens < 200 && !eterico; // abaixo de 200 kg/m³ é mais leve que cortiça
     },
     mensagem: (g) => {
+      const dens = DENSIDADE_KGM3[g.densidade] ?? 1000;
       const { pesoKg } = calcularPesoCalorias(g);
-      return `Peso resultante (${pesoKg.toFixed(1)}kg) muito baixo pro porte "${g.porte}" — considere aumentar a densidade.`;
+      return `Densidade corporal de ${dens} kg/m³ (peso ${pesoKg.toFixed(2)} kg) é mais leve que cortiça — só se sustenta em corpo gasoso, oco ou etéreo. Confirme se é intencional.`;
     },
-    corrigir: (g) => { g.densidade = Math.min(9, g.densidade + 2); },
+    corrigir: (g) => { g.densidade = Math.max(g.densidade, 3); },
   },
   {
     id: "colossal-densidade-baixa",
@@ -138,3 +148,24 @@ function validarCoerencia(g) {
 }
 
 function temErroBloqueante(issues) { return issues.some((i) => i.severidade === "erro"); }
+
+/* Aplica, em lugar, as correções de todos os erros BLOQUEANTES de um
+   genoma e renormaliza. Usado pelo motor de deriva (aplicarCicloDeriva) —
+   até a v17 a validação só existia no editor manual e no sorteio de
+   primordiais, então espécies nascidas por deriva escapavam dela.
+   Renormaliza depois de corrigir porque a correção mexe em genes
+   condicionantes (ex.: zerar asaQtd deixa asaTipo órfão). Repete no
+   máximo 3 vezes: a normalização pode reintroduzir um erro, e sem teto
+   isso vira laço infinito. Devolve quantas rodadas foram necessárias. */
+function aplicarCorrecoesAutomaticas(g) {
+  let rodadas = 0;
+  for (let i = 0; i < 3; i++) {
+    const bloqueantes = validarCoerencia(g).filter((x) => x.severidade === "erro");
+    if (!bloqueantes.length) break;
+    for (const issue of bloqueantes) issue.corrigir(g);
+    const limpo = normalizarGenoma(g, g.isPrimordial);
+    Object.assign(g, limpo);
+    rodadas++;
+  }
+  return rodadas;
+}

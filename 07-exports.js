@@ -35,16 +35,26 @@ function exportarHistoricoTxt(eventLog) {
 /* ============================================================
    2) HISTÓRIA EVOLUTIVA GLOBAL (.txt) — árvore por primordial
    ============================================================ */
+/* Habitat de um nó respeitando a massa de terra em que ele vive. Os
+   exports usavam readHabitat (códice inteiro, sem geografia) enquanto a
+   interface usava readHabitatNaMassa — a mesma espécie aparecia com
+   habitats diferentes na tela e no arquivo exportado. Agora as duas
+   leituras vêm da mesma fonte. */
+function habitatDoNo(node, massaIdx) {
+  const massa = massaIdx ? massaIdx.get(node.massaId) : null;
+  return massa ? readHabitatNaMassa(node.g, massa) : readHabitat(node.g);
+}
+
 function arvoreTextoNode(node, idx, prefixo, ehUltimo) {
   const linhas = [];
   const ramo = ehUltimo ? "└─ " : "├─ ";
-  linhas.push(`${prefixo}${ramo}[${fmtNum(node.auSurgimento)} Bi] ${node.clado}`);
+  linhas.push(`${prefixo}${ramo}[${fmtAU(node.auSurgimento)}] ${node.clado}`);
   const filhos = node.filhos.map((id) => idx.get(id)).filter(Boolean);
   const novoPrefixo = prefixo + (ehUltimo ? "   " : "│  ");
   filhos.forEach((f, i) => linhas.push(...arvoreTextoNode(f, idx, novoPrefixo, i === filhos.length - 1)));
   return linhas;
 }
-function exportarHistoriaGlobalTxt(nodes, idx) {
+function exportarHistoriaGlobalTxt(nodes, idx, massaIdx) {
   const linha = "═".repeat(63);
   const trav = "─".repeat(11);
   const primordiais = nodes.filter((n) => n.isPrimordial);
@@ -56,7 +66,7 @@ function exportarHistoriaGlobalTxt(nodes, idx) {
       `🧬 ${prim.clado.toUpperCase()}`,
       `   DNA: ${prim.code}`,
       `   Reino: ${REINO_LABEL[prim.g.reino] || prim.g.reino} | Porte: ${prim.g.porte} | Peso: ${fmtKg(pc.pesoKg)}`,
-      `   Habitat: ${readHabitat(prim.g).primary.join(", ") || "—"}`,
+      `   Habitat: ${habitatDoNo(prim, massaIdx).primary.join(", ") || "—"}`,
       `   Surgimento: ${fmtAU(prim.auSurgimento)}`,
       `   Dieta: ${prim.g.dieBase} | Tol. térmica: ${prim.g.tolTermica}`,
       descendencia.length ? `\n   DESCENDÊNCIA:\n${descendencia.join("\n")}` : "",
@@ -76,17 +86,18 @@ function exportarHistoriaGlobalTxt(nodes, idx) {
 /* ============================================================
    3) FICHA OBSIDIAN — uma espécie -> .md com frontmatter
    ============================================================ */
-function fichaObsidianMd(node, idx) {
+function fichaObsidianMd(node, idx, massaIdx) {
   const pc = calcularPesoCalorias(node.g);
   const ancestral = node.pais[0] ? idx.get(node.pais[0]) : null;
   const descendentes = node.filhos.map((id) => idx.get(id)).filter(Boolean);
   const fm = [
     "---",
     `title: ${node.clado}`,
-    `seed: ${node.speciesSeed ?? ""}`,
+    `seed: ${node.speciesSeed ?? seedParaGenoma(node.g, node.g.isPrimordial).seed}`,
     `peso_kg: ${pc.pesoKg.toFixed(1)}`,
     `calorias_diarias: ${pc.caloriasDia.toFixed(0)}`,
-    `ano_surgimento_anos: ${Math.round(node.auSurgimento * 1e9)}`,
+    `ano_surgimento_au: ${node.auSurgimento}`,
+    `ano_surgimento_anos: ${Math.round(node.auSurgimento * AU_EM_ANOS)}`,
     `primordial: ${node.isPrimordial}`,
     "---",
   ].join("\n");
@@ -94,6 +105,9 @@ function fichaObsidianMd(node, idx) {
     "", `## DNA (DRN2)`, "", "```", node.code, "```", "",
     `## Descrição`, "", describeCreatureProse(node.g), "",
     `## Genoma Completo`, "", "```", describeIndividual(node.g), "```", "",
+    `## Habitat`, "",
+    `- Primário: ${habitatDoNo(node, massaIdx).primary.join(", ") || "—"}`,
+    `- Marginal: ${habitatDoNo(node, massaIdx).marginal.join(", ") || "—"}`, "",
     `## Genealogia`, "",
     `- Ancestral: ${ancestral ? `[[${ancestral.clado}]]` : "nenhum (primordial)"}`,
     `- Descendentes: ${descendentes.length ? descendentes.map((d) => `[[${d.clado}]]`).join(", ") : "nenhum"}`,
@@ -101,11 +115,11 @@ function fichaObsidianMd(node, idx) {
   return fm + corpo;
 }
 function nomeArquivoSeguro(nome) { return (nome || "especie").replace(/[\\/:*?"<>|]/g, "-"); }
-function exportarFichaUnicaMd(node, idx) {
-  downloadBlob(`${nomeArquivoSeguro(node.clado)}.md`, fichaObsidianMd(node, idx), "text/markdown;charset=utf-8");
+function exportarFichaUnicaMd(node, idx, massaIdx) {
+  downloadBlob(`${nomeArquivoSeguro(node.clado)}.md`, fichaObsidianMd(node, idx, massaIdx), "text/markdown;charset=utf-8");
 }
-function exportarFichasObsidianZip(nodes, idx) {
-  const files = nodes.map((n) => ({ name: `${nomeArquivoSeguro(n.clado)}-${n.id}.md`, content: fichaObsidianMd(n, idx) }));
+function exportarFichasObsidianZip(nodes, idx, massaIdx) {
+  const files = nodes.map((n) => ({ name: `${nomeArquivoSeguro(n.clado)}-${n.id}.md`, content: fichaObsidianMd(n, idx, massaIdx) }));
   downloadZip(`fichas-obsidian-droerni-${new Date().toISOString().slice(0, 10)}.zip`, files);
 }
 
