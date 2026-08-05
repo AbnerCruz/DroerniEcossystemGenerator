@@ -9,6 +9,17 @@ function downloadBlob(filename, content, mime) {
   document.body.appendChild(a); a.click(); document.body.removeChild(a);
   URL.revokeObjectURL(url);
 }
+/* v27 — os registros históricos passaram de .txt para .pdf. O gerador de PDF
+   é próprio (criarPdfTexto, em 03-zip.js), sem dependência de CDN. */
+function downloadPdf(filename, titulo, texto) {
+  const bytes = criarPdfTexto(titulo, texto);
+  const blob = new Blob([bytes], { type: "application/pdf" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
 function downloadZip(filename, files) {
   const bytes = criarZipStored(files);
   const blob = new Blob([bytes], { type: "application/zip" });
@@ -20,20 +31,23 @@ function downloadZip(filename, files) {
 }
 
 /* ============================================================
-   1) HISTÓRICO COMPLETO (.txt) — cronológico, um bloco por evento
+   1) HISTÓRICO COMPLETO (.pdf) — cronológico, um bloco por evento
    ============================================================ */
-function exportarHistoricoTxt(eventLog) {
-  const linha = "═".repeat(63);
-  const cab = [linha, "         HISTÓRICO DE AÇÕES — DROERNI ECOSSISTEMA", linha, ""];
+function exportarHistoricoPdf(eventLog) {
+  const cab = [`${eventLog.length} evento(s) registrado(s).`, ""];
   const corpo = eventLog.map((e) => {
     const hora = new Date(e.ts).toLocaleTimeString("pt-BR");
     return `[${hora}] #${e.seq} ${e.tipoLabel}\n  ${e.clado}${e.primordialClado && e.primordialClado !== e.clado ? ` (linhagem de ${e.primordialClado})` : ""}\n  ${e.texto}${e.code ? `\n  DNA: ${e.code}` : ""}`;
   });
-  downloadBlob(`historico-droerni-${new Date().toISOString().slice(0, 10)}.txt`, [...cab, ...corpo].join("\n\n"), "text/plain;charset=utf-8");
+  downloadPdf(
+    `historico-droerni-${new Date().toISOString().slice(0, 10)}.pdf`,
+    "HISTORICO DE ACOES - DROERNI ECOSSISTEMA",
+    [...cab, ...corpo].join("\n\n")
+  );
 }
 
 /* ============================================================
-   2) HISTÓRIA EVOLUTIVA GLOBAL (.txt) — árvore por primordial
+   2) HISTÓRIA EVOLUTIVA GLOBAL (.pdf) — árvore por primordial
    ============================================================ */
 /* Habitat de um nó respeitando a massa de terra em que ele vive. Os
    exports usavam readHabitat (códice inteiro, sem geografia) enquanto a
@@ -55,16 +69,15 @@ function arvoreTextoNode(node, idx, prefixo, ehUltimo) {
   filhos.forEach((f, i) => linhas.push(...arvoreTextoNode(f, idx, novoPrefixo, i === filhos.length - 1)));
   return linhas;
 }
-function exportarHistoriaGlobalTxt(nodes, idx, massaIdx) {
-  const linha = "═".repeat(63);
-  const trav = "─".repeat(11);
+function exportarHistoriaGlobalPdf(nodes, idx, massaIdx) {
+  const trav = "-".repeat(11);
   const primordiais = nodes.filter((n) => n.isPrimordial);
   const blocos = primordiais.map((prim) => {
     const pc = calcularPesoCalorias(prim.g);
     const filhos = prim.filhos.map((id) => idx.get(id)).filter(Boolean);
     const descendencia = filhos.flatMap((f, i) => arvoreTextoNode(f, idx, "   ", i === filhos.length - 1));
     return [
-      `🧬 ${prim.clado.toUpperCase()}`,
+      `>> ${prim.clado.toUpperCase()}`,
       `   DNA: ${prim.code}`,
       `   Reino: ${REINO_LABEL[prim.g.reino] || prim.g.reino} | Porte: ${prim.g.porte} | Peso: ${fmtKg(pc.pesoKg)}`,
       `   Habitat: ${habitatDoNo(prim, massaIdx).primary.join(", ") || "—"}`,
@@ -80,8 +93,12 @@ function exportarHistoriaGlobalTxt(nodes, idx, massaIdx) {
     `Primordiais: ${primordiais.length} | Derivadas: ${nodes.length - primordiais.length} | Total: ${nodes.length}`,
     `Reinos: ${Object.entries(contagemReino).map(([k, v]) => `${REINO_LABEL[k] || k} (${v})`).join(", ")}`,
   ].join("\n");
-  const texto = [linha, "         HISTÓRIA EVOLUTIVA — DROERNI", linha, "", "PRIMORDIAIS", trav, "", blocos.join("\n\n"), "", estat].join("\n");
-  downloadBlob(`historia-global-droerni-${new Date().toISOString().slice(0, 10)}.txt`, texto, "text/plain;charset=utf-8");
+  const texto = ["PRIMORDIAIS", trav, "", blocos.join("\n\n"), "", estat].join("\n");
+  downloadPdf(
+    `historia-global-droerni-${new Date().toISOString().slice(0, 10)}.pdf`,
+    "HISTORIA EVOLUTIVA - DROERNI",
+    texto
+  );
 }
 
 /* ============================================================

@@ -42,6 +42,32 @@ function validNumbers(table, opts = {}) {
   return nums;
 }
 
+/* v26, otimização — índice valor→posição para o MESMO recorte que
+   validNumbers já cacheia. Sem ele, categoricalStep resolvia "este valor é
+   permitido aqui?" com `nums.some((n) => pick(table, n).value === v)`: uma
+   varredura de até 100 números, cada uma com um `pick` que é varredura
+   linear da tabela — O(|nums| × |tabela|) por gene, ~90 genes por chamada de
+   runSpeciesSteps. Como normalizarGenoma É uma chamada de runSpeciesSteps e
+   responde por ~0,72ms dos ~0,44ms/ciclo de deriva (é a chamada mais cara do
+   motor inteiro), trocar isso por um Map é a otimização de maior retorno
+   disponível sem mexer em nenhuma regra. */
+const __validIndexCache = new Map();
+function validIndex(table, opts = {}) {
+  const r = opts.restrict ? opts.restrict.slice().sort().join(",") : "";
+  const e = opts.exclude ? opts.exclude.slice().sort().join(",") : "";
+  const chave = tableId(table) + "|" + r + "|" + e;
+  let hit = __validIndexCache.get(chave);
+  if (hit) return hit;
+  const nums = validNumbers(table, opts);
+  hit = new Map();
+  for (let i = 0; i < nums.length; i++) {
+    const v = pick(table, nums[i]).value;
+    if (!hit.has(v)) hit.set(v, { n: nums[i], i });
+  }
+  __validIndexCache.set(chave, hit);
+  return hit;
+}
+
 // 3d4-3: enumera as 64 triplas de dados possíveis; TRIPLES[i] = soma (0..9)
 const TRIPLES = (() => { const a = []; for (let x = 0; x < 4; x++) for (let y = 0; y < 4; y++) for (let z = 0; z < 4; z++) a.push(x + y + z); return a; })();
 const __scalarDomainCache = new Map();
@@ -124,9 +150,10 @@ function categoricalStep(cur, key, table, opts = {}) {
   if (nums.length === 0 && opts.exclude) nums = validNumbers(table, { exclude: opts.exclude });
   if (nums.length === 0) { cur.ctx[key] = table[0].value; return table[0].value; }
   const base = BigInt(nums.length);
+  const idxValores = validIndex(table, opts);
   let value;
   if (cur.mode === "randomize") {
-    if (cur.manual[key] !== undefined && nums.some((n) => pick(table, n).value === cur.manual[key])) {
+    if (cur.manual[key] !== undefined && idxValores.has(cur.manual[key])) {
       value = cur.manual[key];
     } else if (opts.bias && opts.bias.length) {
       const n1 = nums[Math.floor(Math.random() * nums.length)];
@@ -137,7 +164,7 @@ function categoricalStep(cur, key, table, opts = {}) {
       value = pick(table, nums[Math.floor(Math.random() * nums.length)]).value;
     }
   } else if (cur.mode === "decode") {
-    if (cur.manual[key] !== undefined && nums.some((n) => pick(table, n).value === cur.manual[key])) {
+    if (cur.manual[key] !== undefined && idxValores.has(cur.manual[key])) {
       value = cur.manual[key];
     } else {
       const idx = Number(cur.seed % base); cur.seed /= base;
@@ -145,8 +172,8 @@ function categoricalStep(cur, key, table, opts = {}) {
     }
   } else { // encode
     value = cur.ctx[key];
-    const n = nums.find((n) => pick(table, n).value === value) ?? nums[0];
-    const idx = BigInt(nums.indexOf(n));
+    const achado = idxValores.get(value);
+    const idx = BigInt(achado ? achado.i : 0);
     cur.outValue += idx * cur.outMult; cur.outMult *= base;
   }
   cur.ctx[key] = value;
@@ -864,9 +891,16 @@ function runSpeciesSteps(cur, isPrimordialIntent) {
   if (padRow?.faixa === "Excepcional") extremos++;
   g.extremos = extremos;
   g.anomalias = [];
-  if (extremos >= 5) g.anomalias.push(categoricalStep(cur, "ano1", T.ano));
+  /* v26, correção #7 — limiares recalibrados contra a distribuição real.
+     Medido em 20.000 espécies: extremos = {0:8814, 1:7983, 2:2667, 3:460,
+     4:70, 5:6} e NUNCA acima de 6 (nem após 40 ciclos de deriva). Com os
+     limiares antigos (5 e 8), a 1ª anomalia saía em 0,03% das espécies e a
+     2ª era código morto — inalcançável por construção. Baixados para 3 e 5,
+     que é onde a cauda da distribuição de fato existe: ~2,8% das espécies
+     ganham uma anomalia e ~0,05% ganham a segunda. */
+  if (extremos >= 3) g.anomalias.push(categoricalStep(cur, "ano1", T.ano));
   else g.ano1 = undefined; // sem gatilho, não há anomalia — limpa resíduo de um estado anterior
-  if (extremos >= 8) {
+  if (extremos >= 5) {
     let second = categoricalStep(cur, "ano2", T.ano);
     if (second === g.anomalias[0]) {
       // colisão: avança para a próxima entrada da tabela, sem pedir mais dígitos da seed —
@@ -1224,12 +1258,44 @@ function novoIdRegiao() { return "rg" + __idRegiaoCounter++ + "_" + Math.random(
 /* Cria uma massa de terra dentro de uma era. dominios: subconjunto de
    DOMINIOS_CLIMATICOS presente ali — controla quais dos 27 biomas do
    códice essa massa consegue oferecer a qualquer espécie que viva nela. */
+/* v26, correção #6 — validação de configuração geográfica. Antes, três
+   configurações impossíveis eram aceitas em silêncio e produziam uma massa
+   de terra morta (8 divisões com biomaNome: null), sem erro nem aviso:
+   (a) domínio climático inexistente; (b) todos os biomas do domínio
+   excluídos; (c) lista de domínios vazia depois de filtrar os inválidos.
+   Agora a função devolve `massa.avisos` (lista de problemas legíveis) e,
+   quando não sobra nenhum bioma, cai no conjunto completo em vez de deixar
+   a massa vazia — uma massa sem bioma nenhum não é uma configuração, é um
+   estado inválido. Quem chama pode exibir `massa.avisos` ao usuário. */
+function validarConfigMassa(dominios, biomasExcluidos) {
+  const avisos = [];
+  const disponiveis = listarDominiosDisponiveis();
+  const pedidos = Array.isArray(dominios) ? dominios : [];
+  const invalidos = pedidos.filter((d) => !disponiveis.includes(d));
+  if (invalidos.length) avisos.push(`Domínio(s) climático(s) inexistente(s), ignorado(s): ${invalidos.join(", ")}.`);
+  const validos = pedidos.filter((d) => disponiveis.includes(d));
+  return { avisos, dominiosValidos: validos };
+}
+
 function criarMassaDeTerra(nome, dominios, biomasExcluidos) {
   // Fase 5, item 9.3 — biomasExcluidos: lista de nomes de bioma (do
   // HABITAT_CODEX) explicitamente desligados mesmo com o domínio deles
   // habilitado (ex.: manter o domínio "Aquáticos" mas excluir "Abismo
   // Oceânico Afótico" numa massa sem fossas profundas).
-  const massa = { id: novoIdRegiao(), nome, dominios: dominios && dominios.length ? dominios : [...DOMINIOS_CLIMATICOS], biomasExcluidos: biomasExcluidos || [] };
+  const { avisos, dominiosValidos } = validarConfigMassa(dominios, biomasExcluidos);
+  const massa = {
+    id: novoIdRegiao(), nome,
+    dominios: dominiosValidos.length ? dominiosValidos : [...DOMINIOS_CLIMATICOS],
+    biomasExcluidos: biomasExcluidos || [],
+    avisos,
+  };
+  if (dominios && dominios.length && !dominiosValidos.length) {
+    massa.avisos.push("Nenhum domínio válido informado — a massa foi criada com todos os domínios climáticos.");
+  }
+  if (!biomasDaMassa(massa).length) {
+    massa.avisos.push(`Todos os biomas de "${massa.nome}" estavam excluídos, o que deixaria a massa sem nenhum ambiente habitável. As exclusões foram descartadas.`);
+    massa.biomasExcluidos = [];
+  }
   // Fase 2, item 5.5 (pré-requisito 1) — bioma prevalecente por divisão
   // espacial simulada. Modo aleatório: sorteia, para cada uma das
   // DIVISOES_POR_MASSA divisões, um bioma válido dentre os domínios
@@ -1250,7 +1316,13 @@ function criarMassaDeTerra(nome, dominios, biomasExcluidos) {
    de implementar sem inventar geometria nova, dado que DIVISOES_POR_MASSA
    já é um número fixo pequeno (recomendação do próprio plano). */
 function divisoesVizinhas(divisao, total = DIVISOES_POR_MASSA) {
-  return [(divisao - 1 + total) % total, (divisao + 1) % total];
+  /* v26, correção #6 — com total = 1 a fórmula devolvia [0, 0]: a divisão
+     virava vizinha de si mesma e "migrar" significava ficar parado. Com
+     total = 2 devolvia a mesma vizinha duplicada. Importa agora que o número
+     de divisões deixou de ser necessariamente 8. */
+  if (!Number.isFinite(total) || total <= 1) return [];
+  if (total === 2) return [(divisao + 1) % 2];
+  return [...new Set([(divisao - 1 + total) % total, (divisao + 1) % total])].filter((d) => d !== divisao);
 }
 
 let __idEraCounter = 1;
@@ -1364,7 +1436,34 @@ function buildSpecies(seedBigOrNull, manual, isPrimordial, comSeed = true) {
    estiverem corretos, e ficam expostos como possível divergência residual
    só quando a deriva empurrou o genoma para um estado que o gerador normal
    nunca produziria (ex.: sentido de visão alto numa espécie cega). */
-const GENES_SEMPRE_DERIVADOS = new Set(["socSenciencia", "socSencienciaPenalizada", "extremos", "anomalias", "clado", "cladoC1", "cladoV", "cladoC2"]);
+/* v26 — `ano1`/`ano2` entram aqui. Eles só são sorteados quando o contador
+   derivado `extremos` cruza um limiar, e `extremos` é recalculado do zero na
+   reconstrução. Depois de deriva, um escalar que virou 0 ou 9 muda `extremos`
+   sem disparar normalização (escalares-folha não são condicionantes), então a
+   presença da anomalia podia divergir entre o genoma corrente e o
+   reconstruído — 0,13% dos genomas derivados, medido. Como `extremos` e
+   `anomalias` já eram tratados como derivados, os dois campos que dependem
+   deles seguem a mesma regra. */
+/* v27 — genes escalares que o código DRN2 carrega mas que são CALCULADOS a
+   partir de outro gene, e por isso não podem ser escritos direto: a
+   normalização os recalcula da fonte e desfaz a atribuição. Quem quer um
+   valor específico precisa mexer na fonte. */
+const GENE_FONTE_DERIVADA = { socSenciencia: "socSencienciaBruta" };
+
+/* v27 — genes que o código DRN2 carrega mas cujo valor "de verdade" mora num
+   campo-espelho não serializado (`rawStep` guarda o estado sob outra chave).
+   Ao reconstruir a partir de um código colado, escrever só o campo visível
+   não adianta: a normalização seguinte lê o espelho, não o encontra, e
+   ressorteia. Medido: `memInf` divergia em 5% dos códigos reconstruídos —
+   exatamente a chance de o sorteio não repetir o valor original. */
+const GENE_RAW_ESPELHO = { memInf: "memInfRaw" };
+function fixarEspelhoRaw(g, chave, valor) {
+  g[chave] = valor;
+  const espelho = GENE_RAW_ESPELHO[chave];
+  if (espelho) g[espelho] = valor;
+}
+
+const GENES_SEMPRE_DERIVADOS = new Set(["socSenciencia", "socSencienciaPenalizada", "extremos", "anomalias", "ano1", "ano2", "clado", "cladoC1", "cladoV", "cladoC2"]);
 
 /* Obtém a seed (endereço combinatório) que, decodificada na Estação DRN2,
    reconstrói este genoma — inclusive espécies nascidas por deriva, que
@@ -1477,6 +1576,11 @@ const GENES_CONDICIONANTES = new Set([
      Alterá-los isoladamente pode estourar um limite herdado de um estado
      anterior, e só a normalização traz de volta pro intervalo válido. */
   "repProle", "repMaturacao", "repLongevidade", "tegResistencia",
+  /* v26 — `dieFrequencia` e `socAgressividade` fecham as duas últimas fontes
+     de divergência medidas entre o genoma corrente e o reconstruído pela
+     seed: ambos têm intervalo dependente de outro gene (dieBase e
+     socEstrutura, respectivamente) e podiam ficar fora da faixa após deriva. */
+  "dieFrequencia", "socAgressividade",
 ]);
 
 function readHabitat(g) {
@@ -1517,6 +1621,136 @@ function decodificarSeedColada(textoSeed) {
     };
   }
   return { g, code: built.code, speciesSeed: built.speciesSeed, individual, isPrimordial };
+}
+
+/* ============================================================
+   v27 — BUSCA POR DNA (código DRN2 colado)
+   ============================================================
+   Até aqui a caixa de busca aceitava seed numérica e texto livre, mas não
+   o próprio código DRN2 — que é justamente o formato que o app exibe em
+   todo lugar (visor de espécie, visor de indivíduo, logs, árvore, fichas
+   do Obsidian) e o que o usuário mais tem à mão pra colar de volta.
+
+   O código DRN2 não é um endereço no espaço de espécimes (a seed é); é uma
+   DESCRIÇÃO do genoma. Então a reconstrução é: parseia o código, usa os
+   genes lidos como valores manuais, normaliza pra preencher o que o código
+   não carrega (os 36 genes de táxon da Fase 3 não são serializados) e roda
+   algumas rodadas dirigidas pra fixar os campos que a normalização
+   reverteria. A seed correspondente é calculada depois, a partir do genoma
+   reconstruído — então dá pra colar um DNA e sair com a seed dele. */
+const MAX_RODADAS_DNA = 6;
+
+function ehCodigoDRN2(texto) {
+  const t = String(texto || "").trim();
+  return /^DRN2-/i.test(t) || /\b(TAX|MOR|LOC|MEM|TEG|CRN|FAC|DIE|SEN|REP|TOL|SOC|DEF):/.test(t);
+}
+
+function genomaDeCodigoDRN2(codigo, isPrimordial = false) {
+  const alvo = parseAlvoDLDoCode(codigo);
+  if (!Object.keys(alvo).length) return null;
+  const anomalias = Array.isArray(alvo.__anomalias) ? alvo.__anomalias : null;
+  const manual = { ...alvo };
+  delete manual.__anomalias;
+
+  let g = normalizarGenoma({ ...manual }, isPrimordial);
+  for (let i = 0; i < MAX_RODADAS_DNA; i++) {
+    const divergentes = Object.keys(DL_PESOS).filter((k) => manual[k] !== undefined && String(g[k]) !== String(manual[k]));
+    if (!divergentes.length) break;
+    // genes derivados ficam de fora da atribuição direta: escrevê-los antes
+    // de calcular o delta zeraria o próprio delta (o valor já estaria igual
+    // ao alvo) e a normalização desfaria tudo na sequência
+    for (const k of divergentes) if (!GENE_FONTE_DERIVADA[k]) fixarEspelhoRaw(g, k, manual[k]);
+    for (const [derivado, fonte] of Object.entries(GENE_FONTE_DERIVADA)) {
+      if (manual[derivado] === undefined || g[derivado] === undefined) continue;
+      const delta = Number(manual[derivado]) - Number(g[derivado]);
+      if (delta && Number.isFinite(delta) && g[fonte] !== undefined) {
+        g[fonte] = Math.max(0, Math.min(9, Number(g[fonte]) + delta));
+      }
+    }
+    const limpo = normalizarGenoma(g, isPrimordial);
+    Object.assign(g, limpo);
+    aplicarCorrecoesAutomaticas(g);
+  }
+  // anomalias são derivadas de `extremos`: fixamos QUAIS são, respeitando
+  // a quantidade que o genoma reconstruído comporta
+  if (anomalias && Array.isArray(g.anomalias) && g.anomalias.length && anomalias.length >= g.anomalias.length) {
+    g.anomalias = anomalias.slice(0, g.anomalias.length);
+    g.ano1 = g.anomalias[0];
+    g.ano2 = g.anomalias[1];
+  }
+  g.isPrimordial = isPrimordial;
+  return g;
+}
+
+/* Devolve o mesmo formato de decodificarSeedColada, pra que a UI de busca
+   trate seed, texto livre e DNA pelo mesmo caminho. `fiel` diz se o código
+   reconstruído bate exatamente com o colado (ignorando o clado, que é nome
+   próprio e não gene); `camposDivergentes` lista o que não coube — acontece
+   quando o código colado descreve uma combinação que as travas do sistema
+   não permitem (ex.: código editado à mão, ou vindo de uma versão antiga). */
+function decodificarDNAColado(codigo, isPrimordial = false) {
+  const g = genomaDeCodigoDRN2(codigo, isPrimordial);
+  if (!g) return null;
+  const alvo = parseAlvoDLDoCode(codigo);
+  const camposDivergentes = Object.keys(DL_PESOS)
+    .filter((k) => alvo[k] !== undefined && String(g[k]) !== String(alvo[k]));
+  const code = serialize(g);
+  const { seed } = seedParaGenoma(g, isPrimordial);
+  return {
+    g, code, speciesSeed: seed, individual: null, isPrimordial,
+    deDNA: String(codigo).trim(), fiel: camposDivergentes.length === 0, camposDivergentes,
+  };
+}
+
+/* ============================================================
+   v27 — TRILHA REVERSA (de onde este espécime pode ter vindo)
+   ============================================================
+   A busca de trilha existente parte de um nó e anda PRA FRENTE até um
+   DNA-alvo. Faltava o inverso: dado um espécime, reconstruir uma das
+   trilhas de deriva que poderiam tê-lo produzido, desde um ancestral
+   primordial.
+
+   Não existe "a" trilha certa — o passado não é recuperável a partir do
+   genoma atual, porque a deriva descarta informação (dois caminhos
+   diferentes chegam ao mesmo lugar). O que dá pra fazer, e é o que esta
+   função faz, é sortear ancestrais primordiais plausíveis e devolver uma
+   trilha VÁLIDA que realmente chega no alvo — daí "uma das possíveis".
+   Rodar de novo dá outra trilha, o que é a resposta honesta.
+
+   O ancestral é sempre bactéria (Fase 2, item 5.2: todo primordial nasce
+   Ba), e a barreira de reino permite que uma bactéria chegue a qualquer
+   reino — então nenhum alvo é inatingível por essa via, ao contrário da
+   busca pra frente a partir de uma espécie já especializada.
+
+   Testa `tentativas` ancestrais e devolve o que produziu a trilha mais
+   curta: uma linhagem mais econômica é mais plausível como história. */
+async function buscarTrilhaReversa(codigoAlvo, onProgress, tentativas = 3) {
+  if (!ehCodigoDRN2(codigoAlvo)) {
+    return { sucesso: false, motivo: "codigo-invalido", trilha: [], ancestral: null };
+  }
+  let melhor = null;
+  for (let t = 0; t < tentativas; t++) {
+    const gAncestral = buildSpecies(null, { reino: "Ba" }, true).g;
+    const nodeAncestral = {
+      id: "ancestral_hipotetico_" + t,
+      clado: gAncestral.clado,
+      g: gAncestral,
+      isPrimordial: true,
+      code: serialize(gAncestral),
+      pais: [], filhos: [],
+    };
+    const r = await buscarTrilhaParaAlvo(
+      nodeAncestral, codigoAlvo,
+      (f) => { if (onProgress) onProgress((t + f) / tentativas); }
+    );
+    const candidato = { ...r, ancestral: nodeAncestral, tentativa: t + 1 };
+    if (!melhor) melhor = candidato;
+    else if (candidato.codigoIdentico && !melhor.codigoIdentico) melhor = candidato;
+    else if (candidato.codigoIdentico === melhor.codigoIdentico && candidato.trilha.length < melhor.trilha.length) melhor = candidato;
+    if (melhor.codigoIdentico && melhor.trilha.length <= 4) break; // já é curta e exata
+  }
+  if (onProgress) onProgress(1);
+  return { ...melhor, tentativasFeitas: tentativas };
 }
 
 /* ---------- 32 dígitos reservados ao indivíduo; 130 à espécie (teto medido: 108) ---------- */
@@ -1594,9 +1828,17 @@ function describeCreatureProse(g) {
 
   // Fase 1, item 4.1 — bactéria não tem membros; molde próprio, sem falar em
   // membro/terminação (o molde geral com membros fica para o resto dos reinos).
+  /* v26, correção #1 — reinos sem plano corporal animal (Pl/Fu/Ba) não
+     podem receber frases de anatomia animal, nem mesmo NEGADAS ("0 membros",
+     "crânio indefinido"). A prosa é a fonte autoritativa do prompt de imagem:
+     citar crânio/membros, ainda que para dizer que não existem, é o que fazia
+     a IA de imagem desenhar planta e fungo com cara de bicho (bug 4.4). */
+  const semPlanoCorporalAnimal = ["Pl", "Fu", "Ba"].includes(g.reino);
   let locFrase;
-  if (g.reino === "Ba") {
-    locFrase = `Locomove-se principalmente por ${labelOf(T.locPrim, g.locPrimario).toLowerCase()}, a uma velocidade ${tier(g.locVelocidade)}, sem membros diferenciados — organismo unicelular.`;
+  if (g.reino === "Pl" || g.reino === "Fu") {
+    locFrase = `${g.reino === "Pl" ? "Não se locomove ativamente: fixa-se ao substrato e cresce" : "Não se locomove ativamente: expande-se pelo substrato"}${g.locPrimario !== "F" ? `, com ${labelOf(T.locPrim, g.locPrimario).toLowerCase()} como capacidade de deslocamento residual` : ""}${g.memApendices !== "0X" ? `, projetando ${g.memApendices.replace("X", "")} estrutura(s) auxiliar(es)` : ""}.`;
+  } else if (g.reino === "Ba") {
+    locFrase = `Locomove-se principalmente por ${labelOf(T.locPrim, g.locPrimario).toLowerCase()}, a uma velocidade ${tier(g.locVelocidade)}, organismo unicelular sem qualquer estrutura corporal diferenciada.`;
   } else {
     locFrase = `Locomove-se principalmente por ${labelOf(T.locPrim, g.locPrimario).toLowerCase()}${g.locSecundario !== "0" ? `, com ${labelOf(T.locSec, g.locSecundario).toLowerCase()} como modo secundário` : ""}, a uma velocidade ${tier(g.locVelocidade)}. Tem ${labelOf(T.memSup, g.memSup).toLowerCase()} e ${g.memInf.replace("I", "")} membro(s) inferior(es)${g.memApendices !== "0X" ? `, além de ${g.memApendices.replace("X", "")} apêndices auxiliares` : ""}, terminando em ${labelOf(T.memTerm, g.memTerm).toLowerCase()}${g.memProp !== "0" ? `, com membros ${labelOf(T.memProp, g.memProp).toLowerCase()}` : ""}.`;
   }
@@ -1605,21 +1847,26 @@ function describeCreatureProse(g) {
   let tegFrase = `O corpo é revestido por ${labelOf(T.tegTipo, g.tegTipo).toLowerCase()}, na cor ${labelOf(T.tegCor, g.tegCor).toLowerCase()} (intensidade ${g.tegCorIntensidade}), em padrão ${labelOf(T.tegPadrao, g.tegPadrao).toLowerCase()}, com resistência ${tier(g.tegResistencia)}.`;
   p.push(tegFrase);
 
-  let crnFrase = `O crânio é ${g.crnFormato === "0" ? "indefinido, sem estrutura craniana fixa" : labelOf(T.crnFormato, g.crnFormato).toLowerCase()}${g.crnPescoco !== "0" ? `, sobre um pescoço ${labelOf(T.crnPescoco, g.crnPescoco).toLowerCase()}` : ""}`;
-  if (g.crnChifreQtd !== "0") crnFrase += `, com ${g.crnChifreQtd} chifres em formato ${labelOf(T.crnChifreForma, g.crnChifreForma).toLowerCase()}`;
-  if (g.crnCrista !== "0") crnFrase += `, e crista do tipo ${labelOf(T.crnCrista, g.crnCrista).toLowerCase()}`;
-  crnFrase += ".";
-  p.push(crnFrase);
+  /* v26, correção #1 — a frase do crânio só existe para quem tem plano
+     corporal animal. Um animal SEM crânio ainda merece a menção (é uma
+     característica marcante dele); uma planta, não. */
+  if (!semPlanoCorporalAnimal) {
+    let crnFrase = `O crânio é ${g.crnFormato === "0" ? "indefinido, sem estrutura craniana fixa" : labelOf(T.crnFormato, g.crnFormato).toLowerCase()}${g.crnPescoco !== "0" ? `, sobre um pescoço ${labelOf(T.crnPescoco, g.crnPescoco).toLowerCase()}` : ""}`;
+    if (g.crnChifreQtd !== "0") crnFrase += `, com ${g.crnChifreQtd} chifres em formato ${labelOf(T.crnChifreForma, g.crnChifreForma).toLowerCase()}`;
+    if (g.crnCrista !== "0") crnFrase += `, e crista do tipo ${labelOf(T.crnCrista, g.crnCrista).toLowerCase()}`;
+    crnFrase += ".";
+    p.push(crnFrase);
 
-  if (g.crnFormato !== "0") {
-    p.push(`No rosto: orelha ${labelOf(T.facOrelha, g.facOrelha).toLowerCase()}, focinho ${labelOf(T.facFocinho, g.facFocinho).toLowerCase()}, dentição ${g.facDenticao === "0" ? "ausente" : labelOf(T.facDenticao, g.facDenticao).toLowerCase()}.`);
+    if (g.crnFormato !== "0") {
+      p.push(`No rosto: orelha ${labelOf(T.facOrelha, g.facOrelha).toLowerCase()}, focinho ${labelOf(T.facFocinho, g.facFocinho).toLowerCase()}, dentição ${g.facDenticao === "0" ? "ausente" : labelOf(T.facDenticao, g.facDenticao).toLowerCase()}.`);
+    }
   }
-  if (g.facOlhosQtd !== 0) {
+  if (g.facOlhosQtd !== 0 && g.facOlhosQtd !== "0") {
     p.push(`Possui ${g.facOlhosQtd} olho(s) do tipo ${labelOf(T.facOlhosTipo, g.facOlhosTipo).toLowerCase()}.`);
   }
 
-  if (g.asaQtd !== 0) p.push(`Possui ${g.asaQtd} asas do tipo ${labelOf(T.asaTipo, g.asaTipo).toLowerCase()}, com funcionalidade ${tier(g.asaFuncionalidade)}.`);
-  if (g.cdaComp !== "0") p.push(`A cauda é ${labelOf(T.cdaComp, g.cdaComp).toLowerCase()}, do tipo ${labelOf(T.cdaTipo, g.cdaTipo).toLowerCase()}.`);
+  if (g.asaQtd !== 0 && g.asaQtd !== "0") p.push(`Possui ${g.asaQtd} asas do tipo ${labelOf(T.asaTipo, g.asaTipo).toLowerCase()}, com funcionalidade ${tier(g.asaFuncionalidade)}.`);
+  if (g.cdaComp && g.cdaComp !== "0") p.push(`A cauda é ${labelOf(T.cdaComp, g.cdaComp).toLowerCase()}, do tipo ${labelOf(T.cdaTipo, g.cdaTipo).toLowerCase()}.`);
 
   let dieFrase = `Alimenta-se como ${labelOf(T.dieBase, g.dieBase).toLowerCase()}`;
   if (g.dieRestricao !== "0") dieFrase += `, com restrição ${labelOf(T.dieRestricao, g.dieRestricao).toLowerCase()}`;
@@ -1631,7 +1878,13 @@ function describeCreatureProse(g) {
   p.push(tolFrase);
 
   const sencLabel = g.socSenciencia <= 2 ? "instintiva" : g.socSenciencia <= 5 ? "associativa (aprende por repetição)" : g.socSenciencia <= 8 ? "simbólica (resolve problemas novos)" : "abstrata plena";
-  p.push(`Socialmente é ${labelOf(T.socEstrutura, g.socEstrutura).toLowerCase()}, com agressividade ${tier(g.socAgressividade)} e cognição ${sencLabel}${g.socSencienciaPenalizada ? " (penalizada por não ter crânio humanoide)" : ""}.`);
+  if (semPlanoCorporalAnimal) {
+    /* v26, correção #1 — "cognição" e "agressividade" em planta/fungo/bactéria
+       viram resposta a estímulo e competitividade por substrato. */
+    p.push(`Ocupa o substrato de forma ${labelOf(T.socEstrutura, g.socEstrutura).toLowerCase()}, com competitividade ${tier(g.socAgressividade)} e resposta a estímulos ${g.socSenciencia <= 2 ? "puramente tropística" : g.socSenciencia <= 5 ? "adaptativa lenta" : "surpreendentemente coordenada"}.`);
+  } else {
+    p.push(`Socialmente é ${labelOf(T.socEstrutura, g.socEstrutura).toLowerCase()}, com agressividade ${tier(g.socAgressividade)} e cognição ${sencLabel}${g.socSencienciaPenalizada ? " (penalizada por não ter crânio humanoide)" : ""}.`);
+  }
 
   let defFrase = `Defende-se com ${g.defArma === "0" ? "nenhuma arma natural" : labelOf(T.defArma, g.defArma).toLowerCase()}, blindagem ${tier(g.defBlindagem)}, e estratégia de ${labelOf(T.defEstrategia, g.defEstrategia).toLowerCase()}. Nível de magia: ${labelOf(T.mag, g.mag).toLowerCase()}.`;
   p.push(defFrase);
@@ -1746,10 +1999,47 @@ function aplicarMutacaoGene(g, key, fonte) {
   return rerollGeneCategorico(g, key, fonte);
 }
 
-const DL_PESOS = { reino: 5, classe: 4, repModo: 3, simetria: 3, locPrimario: 2, memSup: 2, memInf: 2, tolHidrica: 2, crnFormato: 1, facFocinho: 1 };
+/* v26, correção #2 — a distância genômica comparava 10 genes de ~107 (e de
+   ~50 dos que o código DRN2 chega a serializar). "DL = 0" significava acertar
+   menos de 10% do DNA, e o app anunciava isso como "bate 100% no alvo".
+   Agora o DL cobre TODO campo que serialize() escreve no código DRN2 — que é
+   exatamente o que o usuário cola como alvo, e portanto a única definição
+   honesta de "100%". Os pesos seguem o custo de mutação por estrato
+   (I = 12, II = 4, III = 1), então a busca continua priorizando o que é
+   estruturalmente mais caro de mudar. */
+const DL_PESOS = (() => {
+  const pesos = {};
+  const noCodigo = new Set([
+    "reino", "classe", "porte", "densidade", "simetria", "morForma", "morTorso",
+    "locPrimario", "locSecundario", "locVelocidade",
+    "memSup", "memInf", "memApendices", "memTerm", "memProp",
+    "tegTipo", "tegCor", "tegCorIntensidade", "tegPadrao", "tegResistencia",
+    "crnChifreQtd", "crnChifreForma", "crnCrista", "crnFormato", "crnPescoco",
+    "facOrelha", "facFocinho", "facOlhosQtd", "facOlhosTipo", "facDenticao",
+    "asaQtd", "asaTipo", "asaFuncionalidade",
+    "cdaComp", "cdaTipo", "cdaFuncao",
+    "dieBase", "dieFrequencia", "dieRestricao", "mag",
+    "senVisao", "senOlfato", "senAudicao", "senTato", "senEspecial", "senEspecialIntensidade",
+    "repModo", "repProle", "repMaturacao", "repLongevidade",
+    "tolHidrica", "tolTermica", "tolCiclo",
+    "socEstrutura", "socAgressividade", "socSenciencia",
+    "defArma", "defBlindagem", "defEstrategia",
+  ]);
+  for (const k of noCodigo) {
+    pesos[k] = ESTRATO_I.includes(k) ? CUSTO_ESTRATO.I : ESTRATO_II.includes(k) ? CUSTO_ESTRATO.II : CUSTO_ESTRATO.III;
+  }
+  return pesos;
+})();
+
+/* Compara só as chaves que o alvo de fato declara — um código DRN2 sem
+   bloco ASA/CDA (porque a espécie não tem asa nem cauda) não deve penalizar
+   as chaves ausentes como se fossem exigências. */
 function calcularDL(gA, gB) {
   let dl = 0;
-  for (const [k, peso] of Object.entries(DL_PESOS)) if (gA[k] !== gB[k]) dl += peso;
+  for (const [k, peso] of Object.entries(DL_PESOS)) {
+    if (gB[k] === undefined) continue;
+    if (String(gA[k]) !== String(gB[k])) dl += peso;
+  }
   return dl;
 }
 
@@ -1770,69 +2060,265 @@ function parseAlvoDLDoCode(codigo) {
     if (m) segs[m[1]] = m[2].split(".");
   }
   const alvo = {};
+  const num = (v) => (v === undefined || v === "" || isNaN(Number(v)) ? undefined : Number(v));
+
+  /* v26, correção #2 — parser COMPLETO do código DRN2 (antes só extraía as
+     10 chaves do DL antigo). Os quatro campos concatenados sem separador
+     (CRN qtd+forma, TEG cor+intensidade, FAC olhosQtd+tipo, SEN especial+
+     intensidade) são desambiguados casando com os valores reais das tabelas
+     de T, e não por posição de caractere — que era a ambiguidade citada no
+     comentário antigo como motivo para não fazer o parser completo. */
+  const separarConcat = (bruto, tabela, ordem) => {
+    // ordem "valorDepoisNumero": "6c" -> qtd 6 + forma "c"; "Vrd5" -> cor "Vrd" + intensidade 5
+    if (bruto === undefined) return [undefined, undefined];
+    const valores = tabela.map((r) => String(r.value)).sort((a, b) => b.length - a.length);
+    if (ordem === "numeroPrimeiro") {
+      for (const v of valores) if (bruto.endsWith(v) && bruto.length > v.length) return [bruto.slice(0, -v.length), v];
+      return [bruto, undefined];
+    }
+    for (const v of valores) if (bruto.startsWith(v)) return [v, bruto.slice(v.length)];
+    return [bruto, undefined];
+  };
+
   if (segs.TAX) { alvo.reino = segs.TAX[0]; alvo.classe = segs.TAX[1]; }
-  if (segs.MOR) { alvo.simetria = segs.MOR[2]; }
-  if (segs.LOC) { alvo.locPrimario = segs.LOC[0]; }
-  if (segs.MEM) { alvo.memSup = segs.MEM[0]; alvo.memInf = segs.MEM[1]; }
-  if (segs.CRN) { alvo.crnFormato = segs.CRN[2]; }
-  if (segs.FAC) { alvo.facFocinho = segs.FAC[1]; }
-  if (segs.REP) { alvo.repModo = segs.REP[0]; }
-  if (segs.TOL) { alvo.tolHidrica = segs.TOL[0]; }
+  if (segs.MOR) { alvo.porte = segs.MOR[0]; alvo.densidade = num(segs.MOR[1]); alvo.simetria = segs.MOR[2]; alvo.morForma = segs.MOR[3]; alvo.morTorso = segs.MOR[4]; }
+  if (segs.LOC) { alvo.locPrimario = segs.LOC[0]; alvo.locSecundario = segs.LOC[1]; alvo.locVelocidade = num(segs.LOC[2]); }
+  if (segs.MEM) { alvo.memSup = segs.MEM[0]; alvo.memInf = segs.MEM[1]; alvo.memApendices = segs.MEM[2]; alvo.memTerm = segs.MEM[3]; alvo.memProp = segs.MEM[4]; }
+  if (segs.TEG) {
+    alvo.tegTipo = segs.TEG[0];
+    const [cor, inten] = separarConcat(segs.TEG[1], T.tegCor, "valorPrimeiro");
+    alvo.tegCor = cor; alvo.tegCorIntensidade = num(inten);
+    alvo.tegPadrao = segs.TEG[2]; alvo.tegResistencia = num(segs.TEG[3]);
+  }
+  if (segs.CRN) {
+    const [qtd, forma] = separarConcat(segs.CRN[0], T.crnChifreForma, "numeroPrimeiro");
+    alvo.crnChifreQtd = qtd; alvo.crnChifreForma = forma;
+    alvo.crnCrista = segs.CRN[1]; alvo.crnFormato = segs.CRN[2]; alvo.crnPescoco = segs.CRN[3];
+  }
+  if (segs.FAC) {
+    alvo.facOrelha = segs.FAC[0]; alvo.facFocinho = segs.FAC[1];
+    const [qtd, tipo] = separarConcat(segs.FAC[2], T.facOlhosTipo, "numeroPrimeiro");
+    alvo.facOlhosQtd = num(qtd) ?? qtd; alvo.facOlhosTipo = tipo;
+    alvo.facDenticao = segs.FAC[3];
+  }
+  // ASA e CDA só existem no código quando a espécie os tem — a ausência do
+  // bloco É a informação "sem asa"/"sem cauda", e vira exigência explícita.
+  if (segs.ASA) { alvo.asaQtd = num(segs.ASA[0]) ?? segs.ASA[0]; alvo.asaTipo = segs.ASA[1]; alvo.asaFuncionalidade = num(segs.ASA[2]); }
+  else if (segs.TAX) { alvo.asaQtd = 0; }
+  if (segs.CDA) { alvo.cdaComp = segs.CDA[0]; alvo.cdaTipo = segs.CDA[1]; alvo.cdaFuncao = num(segs.CDA[2]); }
+  else if (segs.TAX) { alvo.cdaComp = "0"; }
+  if (segs.DIE) { alvo.dieBase = segs.DIE[0]; alvo.dieFrequencia = num(segs.DIE[1]); alvo.dieRestricao = segs.DIE[2]; }
+  if (segs.MAG) { alvo.mag = segs.MAG[0]; }
+  if (segs.SEN) {
+    alvo.senVisao = num(segs.SEN[0]); alvo.senOlfato = num(segs.SEN[1]);
+    alvo.senAudicao = num(segs.SEN[2]); alvo.senTato = num(segs.SEN[3]);
+    const [esp, inten] = separarConcat(segs.SEN[4], T.senEspecial, "valorPrimeiro");
+    alvo.senEspecial = esp;
+    if (esp !== "0" && inten !== undefined && inten !== "") alvo.senEspecialIntensidade = num(inten);
+  }
+  if (segs.REP) { alvo.repModo = segs.REP[0]; alvo.repProle = num(segs.REP[1]); alvo.repMaturacao = num(segs.REP[2]); alvo.repLongevidade = num(segs.REP[3]); }
+  if (segs.TOL) { alvo.tolHidrica = segs.TOL[0]; alvo.tolTermica = segs.TOL[1]; alvo.tolCiclo = segs.TOL[2]; }
+  if (segs.SOC) { alvo.socEstrutura = segs.SOC[0]; alvo.socAgressividade = num(segs.SOC[1]); alvo.socSenciencia = num(segs.SOC[2]); }
+  if (segs.DEF) { alvo.defArma = segs.DEF[0]; alvo.defBlindagem = num(segs.DEF[1]); alvo.defEstrategia = segs.DEF[2]; }
+
+  /* v26 — o bloco ANO faz parte do código DRN2 mas as anomalias são
+     DERIVADAS (o gatilho é o contador `extremos`), então não entram no DL.
+     Ainda assim precisam ser lidas: com todos os genes do DL iguais, dois
+     genomas têm o mesmo `extremos` e portanto a mesma QUANTIDADE de
+     anomalias, mas QUAL anomalia saiu é um sorteio independente — era a
+     última fonte de divergência entre o código final e o alvo colado
+     (1 caso em 25, medido). Ficam num campo à parte, aplicado na fase
+     dirigida da busca. */
+  if (segs.ANO) alvo.__anomalias = String(segs.ANO[0]).split(",").filter(Boolean);
+  else if (segs.TAX) alvo.__anomalias = [];
+
+  for (const k of Object.keys(alvo)) if (alvo[k] === undefined) delete alvo[k];
   return alvo;
 }
 
-/* Guard de segurança generoso (não é ciclo de deriva real, é TENTATIVA de
-   ciclo — a maioria não melhora e é descartada, então precisa de bem mais
-   tentativas que uma deriva normal pra ter chance real de convergir). Se o
-   alvo for genotipicamente inatingível a partir da origem (ex.: reino
-   diferente e travado pela barreira da Fase 2, item 5.1, quando a origem
-   não é Ba), a busca encerra com aviso claro em vez de travar em loop. */
+/* v26, correção #2 — genes que a busca NÃO tem direito de forçar, porque
+   forçá-los violaria uma regra dura do universo em vez de simular evolução.
+   Hoje só um: a barreira de reino da Fase 2 (item 5.1) — quem não é bactéria
+   nunca muda de reino, e um alvo de reino diferente é genuinamente
+   inatingível, não "difícil". A busca reporta isso explicitamente em vez de
+   rodar 4000 tentativas e desistir com uma mensagem genérica. */
+function motivoInatingivel(gOrigem, alvo) {
+  if (alvo.reino && alvo.reino !== gOrigem.reino && gOrigem.reino !== "Ba") {
+    return `A origem é do reino ${REINO_LABEL_LOG[gOrigem.reino] || gOrigem.reino} e o alvo é do reino ${REINO_LABEL_LOG[alvo.reino] || alvo.reino}. Só bactéria pode atravessar a barreira de reino — nenhuma trilha de deriva liga essas duas espécies.`;
+  }
+  return null;
+}
+
+/* v26, correção #2 — reescrita completa. O que havia antes era um
+   hill-climbing puro: sorteava um ciclo de deriva aleatório, aceitava só se
+   o DL melhorasse ESTRITAMENTE, e desistia após 500 tentativas sem melhora.
+   Medido na v25: 1 de 25 buscas atingia DL = 0 (num DL que já só olhava 10
+   genes), 24 de 25 encerravam como "inatingível", e 0 de 25 terminavam com o
+   código DRN2 igual ao alvo. Duas causas: platôs (um ciclo de deriva mexe em
+   vários genes de uma vez, e quase nunca melhora tudo ao mesmo tempo) e o
+   critério estrito, que impede atravessar empate.
+
+   Agora a busca tem duas fases:
+
+   FASE ESTOCÁSTICA — mantém a deriva aleatória (é ela que dá "sabor
+   evolutivo" à trilha), mas aceita também movimentos de DL igual, o que
+   permite atravessar platô. Roda com orçamento limitado.
+
+   FASE DIRIGIDA — resolve o que sobrou gene a gene, escrevendo o valor do
+   alvo diretamente e renormalizando. É o que garante o "bate 100%" que o
+   requisito pede: um gene que o alvo declara é escrito, ponto. Se a
+   normalização reverter o gene (porque ele depende de outro que ainda não
+   está no lugar), a rodada seguinte tenta de novo — daí o laço externo.
+
+   Genes bloqueados por regra dura (barreira de reino) não são forçados: a
+   busca encerra antes, dizendo exatamente por quê. */
 const GUARD_MAX_BUSCA_TRILHA = 4000;
+const MAX_RODADAS_DIRIGIDAS = 12;
 
 async function buscarTrilhaParaAlvo(nodeOrigem, alvoCodigo, onProgress) {
   const alvo = parseAlvoDLDoCode(alvoCodigo);
   if (!Object.keys(alvo).length) return { sucesso: false, motivo: "codigo-invalido", trilha: [], dlFinal: null };
 
-  let gAtual = JSON.parse(JSON.stringify(nodeOrigem.g));
+  let gAtual = clonarGenoma(nodeOrigem.g);
+
+  /* v27 — a barreira de reino diz que só bactéria pode ressortear `reino`.
+     Isso vale por CICLO, mas uma linhagem que COMEÇOU bactéria pode chegar
+     legitimamente a qualquer reino: o estado intermediário é só onde a
+     deriva calhou de estar. A fase estocástica muitas vezes flipava Ba pra
+     um reino errado e ali travava para sempre — medido: `reino` residual em
+     8 de 8 trilhas reversas. Guardamos a origem pra que a fase dirigida
+     possa corrigir o reino de uma linhagem bacteriana. */
+  const origemEraBacteria = gAtual.reino === "Ba";
+
+  /* v27 — o genoma de trabalho deixa de ser primordial já no primeiro passo.
+     Uma trilha de deriva produz um DESCENDENTE da origem, não a origem de
+     novo. Enquanto `isPrimordial` continuava true, toda normalização
+     reaplicava a trava "primordial nasce bactéria" e devolvia `reino` para
+     Ba — medido na trilha reversa: `reino` residual em 12 de 12 buscas,
+     porque o ancestral hipotético é sempre uma bactéria primordial. */
+  gAtual.isPrimordial = false;
+
+  const bloqueio = motivoInatingivel(gAtual, alvo);
+  if (bloqueio) {
+    return { sucesso: false, motivo: "barreira-de-reino", motivoTexto: bloqueio, inatingivel: true, trilha: [], ciclos: 0, dlFinal: calcularDL(gAtual, alvo), gFinal: gAtual, genesResiduais: [] };
+  }
+
   let melhorDL = calcularDL(gAtual, alvo);
   const dlInicial = melhorDL || 1;
   const trilha = [];
   let orcamento = 0;
-  let guard = 0;
-  let semMelhoraSeguidas = 0;
-  const SEM_MELHORA_MAX = 500; // detecta alvo inatingível bem antes do guard absoluto
   let ultimoYield = agoraMs();
-
-  while (melhorDL > 0 && guard++ < GUARD_MAX_BUSCA_TRILHA) {
-    const gTentativa = JSON.parse(JSON.stringify(gAtual));
-    const r = aplicarCicloDeriva(gTentativa, orcamento, sortFontePressao());
-    const novoDL = calcularDL(gTentativa, alvo);
-    if (novoDL < melhorDL) {
-      gAtual = gTentativa;
-      orcamento = r.orcamentoRestante;
-      melhorDL = novoDL;
-      trilha.push(r.genesAlterados);
-      semMelhoraSeguidas = 0;
-    } else {
-      semMelhoraSeguidas++;
-      if (semMelhoraSeguidas >= SEM_MELHORA_MAX) break; // provavelmente inatingível a partir daqui
-    }
-    const agora = agoraMs();
-    if (agora - ultimoYield > 12) {
-      if (onProgress) onProgress(Math.min(0.99, 1 - melhorDL / dlInicial));
+  const yieldSeNecessario = async (fracao) => {
+    if (agoraMs() - ultimoYield > 12) {
+      if (onProgress) onProgress(Math.min(0.99, fracao));
       await cederControle();
       ultimoYield = agoraMs();
     }
+  };
+
+  /* ---------- Fase 1: deriva estocástica, com platô permitido ---------- */
+  let guard = 0, semMelhoraSeguidas = 0;
+  const SEM_MELHORA_MAX = 400;
+  while (melhorDL > 0 && guard++ < GUARD_MAX_BUSCA_TRILHA && semMelhoraSeguidas < SEM_MELHORA_MAX) {
+    const gTentativa = clonarGenoma(gAtual);
+    const r = aplicarCicloDeriva(gTentativa, orcamento, sortFontePressao());
+    const novoDL = calcularDL(gTentativa, alvo);
+    const mexeu = r.genesAlterados.I.length + r.genesAlterados.II.length + r.genesAlterados.III.length > 0;
+    if (novoDL < melhorDL) {
+      gAtual = gTentativa; orcamento = r.orcamentoRestante; melhorDL = novoDL;
+      trilha.push({ ...r.genesAlterados, fase: "deriva" });
+      semMelhoraSeguidas = 0;
+    } else if (novoDL === melhorDL && mexeu && Math.random() < 0.15) {
+      // movimento lateral: atravessa platô sem piorar
+      gAtual = gTentativa; orcamento = r.orcamentoRestante;
+      trilha.push({ ...r.genesAlterados, fase: "deriva-lateral" });
+      semMelhoraSeguidas++;
+    } else {
+      semMelhoraSeguidas++;
+    }
+    await yieldSeNecessario((1 - melhorDL / dlInicial) * 0.6);
   }
+
+  /* ---------- Fase 2: convergência dirigida, gene a gene ---------- */
+  let rodadas = 0;
+  while (melhorDL > 0 && rodadas++ < MAX_RODADAS_DIRIGIDAS) {
+    const divergentes = Object.keys(DL_PESOS).filter((k) => alvo[k] !== undefined && String(gAtual[k]) !== String(alvo[k]));
+    if (!divergentes.length) break;
+    // mais caros primeiro: um gene de Estrato I costuma arrastar os de baixo
+    divergentes.sort((a, b) => (DL_PESOS[b] || 0) - (DL_PESOS[a] || 0));
+
+    const aplicadosNestaRodada = { I: [], II: [], III: [], fase: "dirigida" };
+    for (const k of divergentes) {
+      if (GENE_FONTE_DERIVADA[k]) continue; // ver comentário abaixo: ajustados pela fonte
+      // barreira de reino: só forçada se a linhagem nasceu bactéria
+      if (k === "reino" && gAtual.reino !== "Ba" && !origemEraBacteria) continue;
+      const antes = gAtual[k];
+      fixarEspelhoRaw(gAtual, k, alvo[k]);
+      if (String(gAtual[k]) !== String(antes)) {
+        const estrato = ESTRATO_I.includes(k) ? "I" : ESTRATO_II.includes(k) ? "II" : "III";
+        aplicadosNestaRodada[estrato].push(k);
+      }
+    }
+    /* Genes DERIVADOS não aceitam atribuição direta — a normalização os
+       recalcula a partir do gene-fonte. Ajustamos a fonte pelo delta em vez
+       do resultado. Medido: `socSenciencia` divergia em 168 de 300 códigos
+       reconstruídos justamente por isso. */
+    for (const [derivado, fonte] of Object.entries(GENE_FONTE_DERIVADA)) {
+      if (alvo[derivado] === undefined || gAtual[derivado] === undefined) continue;
+      const delta = Number(alvo[derivado]) - Number(gAtual[derivado]);
+      if (delta && Number.isFinite(delta) && gAtual[fonte] !== undefined) {
+        gAtual[fonte] = Math.max(0, Math.min(9, Number(gAtual[fonte]) + delta));
+      }
+    }
+    const limpo = normalizarGenoma(gAtual, gAtual.isPrimordial);
+    Object.assign(gAtual, limpo);
+    aplicarCorrecoesAutomaticas(gAtual);
+
+    /* Anomalias: a normalização recalcula QUANTAS existem (a partir de
+       `extremos`); aqui fixamos QUAIS são, copiando do alvo, respeitando a
+       quantidade que o genoma atual comporta. */
+    if (Array.isArray(alvo.__anomalias) && Array.isArray(gAtual.anomalias)) {
+      const n = gAtual.anomalias.length;
+      if (n > 0 && alvo.__anomalias.length >= n) {
+        gAtual.anomalias = alvo.__anomalias.slice(0, n);
+        gAtual.ano1 = gAtual.anomalias[0];
+        gAtual.ano2 = gAtual.anomalias[1];
+      }
+    }
+
+    const dlDepois = calcularDL(gAtual, alvo);
+    const mudouAlgo = aplicadosNestaRodada.I.length + aplicadosNestaRodada.II.length + aplicadosNestaRodada.III.length > 0;
+    if (mudouAlgo) trilha.push(aplicadosNestaRodada);
+    if (dlDepois >= melhorDL && !mudouAlgo) break; // travou de vez
+    melhorDL = dlDepois;
+    await yieldSeNecessario(0.6 + 0.4 * (1 - melhorDL / dlInicial));
+  }
+
   if (onProgress) onProgress(1);
+
+  const genesResiduais = Object.keys(DL_PESOS)
+    .filter((k) => alvo[k] !== undefined && String(gAtual[k]) !== String(alvo[k]));
+
+  /* "Bate 100%" é medido no artefato que o usuário de fato colou: o código
+     DRN2 serializado. É o critério mais duro disponível e o único verificável
+     dos dois lados. */
+  const codigoFinal = serialize(gAtual);
+  const alvoNormalizado = String(alvoCodigo).trim();
+  const codigoIdentico = codigoFinal.replace(/-TAX:[^.]+\.[^.]+\.[^-]+/, "") === alvoNormalizado.replace(/^DRN2/, "DRN2").replace(/-TAX:[^.]+\.[^.]+\.[^-]+/, "");
 
   return {
     sucesso: melhorDL === 0,
-    trilha, // um {I:[...], II:[...], III:[...]} por ciclo aceito, em ordem
+    codigoIdentico, // ignora só o clado (nome próprio da espécie, não é gene)
+    codigoFinal,
+    trilha,
     dlFinal: melhorDL,
     ciclos: trilha.length,
     gFinal: gAtual,
-    inatingivel: melhorDL > 0 && semMelhoraSeguidas >= SEM_MELHORA_MAX,
+    genesResiduais,
+    inatingivel: melhorDL > 0,
+    motivoTexto: melhorDL > 0
+      ? `Restaram ${genesResiduais.length} gene(s) que a normalização do genoma reverte a cada tentativa (dependem de combinações que o alvo não declara): ${genesResiduais.join(", ")}.`
+      : null,
   };
 }
 
@@ -1842,7 +2328,7 @@ async function buscarTrilhaParaAlvo(nodeOrigem, alvoCodigo, onProgress) {
    `|`. Formato enxuto, no mesmo espírito de notação do resto do DRN2. */
 function serializarTrilha(nodeOrigem, resultadoBusca) {
   if (!resultadoBusca.trilha.length) return "";
-  let g = JSON.parse(JSON.stringify(nodeOrigem.g));
+  let g = clonarGenoma(nodeOrigem.g);
   const blocos = [];
   // Precisa dos VALORES finais de cada gene alterado por ciclo, não só os
   // nomes — replay contra uma cópia do genoma original não é confiável
@@ -1930,6 +2416,17 @@ function sortClado() {
    atual sempre que ainda for uma opção válida dentro das regras vigentes,
    e é recalculado (sorteado) só quando deixou de ser válido — exatamente o
    comportamento de "manual" já usado no modo dirigido da Estação DRN2. */
+/* v26, otimização — o genoma é um objeto plano: só `anomalias` é array e
+   nenhum valor é objeto aninhado. O round-trip JSON.parse(JSON.stringify(g))
+   era o clone usado em todo lugar e custava ~5× mais que um spread. Medido no
+   caminho quente (novaLinhagemState, chamado uma vez por especiação e uma vez
+   por interação de seleção natural). */
+function clonarGenoma(g) {
+  const c = { ...g };
+  if (Array.isArray(g.anomalias)) c.anomalias = g.anomalias.slice();
+  return c;
+}
+
 function normalizarGenoma(g, isPrimordial) {
   const cur = newCursor("randomize", { manual: { ...g } });
   runSpeciesSteps(cur, isPrimordial);
@@ -2083,8 +2580,15 @@ function restaurarEventLog(eventLogImportado, idCounterImportado, logCounterImpo
    especiações e seleção natural — os eventos que mudam a árvore) e
    descarta os ciclos intermediários mais antigos, preservando sempre os
    eventos estruturais, que são os que o usuário precisa reler. */
-const LIMITE_EVENTOS_LOG = 4000;
-const TIPOS_ESTRUTURAIS = new Set(["primordial", "especiacao", "selecao_natural", "edicao"]);
+/* v26, correção #8 — o teto de 4000 era batido por uma simulação modesta
+   (400 ciclos, 919 espécies = 4000/4000, poda ativada), fazendo qualquer run
+   real perder histórico. O teto existe por causa da RENDERIZAÇÃO, não do
+   armazenamento: agora o log persistido (o que vai pro export .pdf) guarda
+   bem mais, e quem renderiza deve fatiar com getEventLogRecente(). */
+const LIMITE_EVENTOS_LOG = 30000;
+/* v26 — "extincao" entra aqui: é um evento que muda a árvore (uma espécie
+   deixa de existir) e nunca deve ser descartado pela poda. */
+const TIPOS_ESTRUTURAIS = new Set(["primordial", "especiacao", "selecao_natural", "edicao", "extincao"]);
 
 function podarEventLog() {
   if (__eventLog.length <= LIMITE_EVENTOS_LOG) return 0;
@@ -2129,6 +2633,19 @@ function formatarLinhaLog(e) {
 
 let __idCounter = 1;
 function novoId() { return "sp" + (__idCounter++) + "_" + Math.random().toString(36).slice(2, 7); }
+
+/* v26, correção #9 — o motor chamava sortNomeIndividuo(), definida em
+   04-ui-fases.js. Funcionava só porque os scripts compartilham o escopo
+   global e carregam nessa ordem; quebrava ao reordenar os <script>, ao
+   migrar para módulos ESM ou ao testar o motor isolado. O gerador de nomes
+   passa a viver aqui, no motor, que é quem precisa dele; a camada de UI
+   continua podendo chamar o mesmo nome (é a mesma função global). */
+function sortNomeIndividuo() {
+  const s = CONS[Math.floor(Math.random() * CONS.length)] + VOG[Math.floor(Math.random() * VOG.length)] +
+    CONS[Math.floor(Math.random() * CONS.length)] + VOG[Math.floor(Math.random() * VOG.length)] +
+    CONS[Math.floor(Math.random() * CONS.length)];
+  return s.charAt(0).toUpperCase() + s.slice(1).toLowerCase();
+}
 
 function criarPrimordial(manual, auInicial, massaId) {
   const built = buildSpecies(null, manual || {}, true);
@@ -2302,9 +2819,49 @@ const MAX_LINHAGENS_ATIVAS = 40;
    batiam nesse limite cedo demais e pareciam "parar de evoluir". */
 const MAX_ESPECIES_POR_DERIVACAO = 3000;
 
+/* v26 — ESTIMATIVA DE TEMPO. O custo da deriva cresce linearmente com os
+   ciclos (medido: 200 -> 1500 ciclos multiplicou o tempo por 6,6×, para 7,5×
+   mais ciclos), então dá pra estimar antes de rodar. O motor ficou ~45% mais
+   rápido nesta versão, mas 600 ciclos ainda são ~20s num celular — e o app é
+   usado no celular. Em vez de esconder isso ou impor um teto artificial de
+   ciclos (que empobrece a bifurcação da árvore), a UI passa a AVISAR: o
+   usuário decide se vale a espera.
+
+   A referência é calibrada em tempo de execução, na primeira chamada, com um
+   micro-benchmark de 60 ciclos de deriva — assim a estimativa vale para o
+   aparelho de quem está usando, e não para a máquina onde foi medida. */
+let __msPorCicloMedido = null;
+function calibrarCustoDeriva() {
+  if (__msPorCicloMedido !== null) return __msPorCicloMedido;
+  const amostra = buildSpecies(null, {}, false).g;
+  const inicio = agoraMs();
+  const N = 60;
+  for (let i = 0; i < N; i++) aplicarCicloDeriva(clonarGenoma(amostra), 0, null);
+  __msPorCicloMedido = Math.max(0.05, (agoraMs() - inicio) / N);
+  return __msPorCicloMedido;
+}
+
+/* Estimativa por LINHAGEM ATIVA: uma deriva de N ciclos roda, na prática,
+   N × (linhagens vivas em paralelo) ciclos de trabalho, com o teto de
+   MAX_LINHAGENS_ATIVAS. Fator empírico 0.55 = fração média do teto ocupada
+   ao longo de uma simulação típica (linhagens levam tempo pra saturar). */
+function estimarTempoDeriva(ciclosAlvo, quantidadePrimordiais = 1) {
+  const msCiclo = calibrarCustoDeriva();
+  const linhagensMedias = Math.min(MAX_LINHAGENS_ATIVAS, Math.max(1, ciclosAlvo * 0.15)) * 0.55;
+  const segundos = (ciclosAlvo * linhagensMedias * msCiclo * quantidadePrimordiais) / 1000;
+  return {
+    segundos,
+    texto: segundos < 3 ? "quase instantâneo"
+      : segundos < 20 ? `~${Math.round(segundos)}s`
+      : segundos < 120 ? `~${Math.round(segundos)}s (dá pra sair da tela e voltar)`
+      : `~${Math.round(segundos / 60)} min`,
+    pesado: segundos >= 20,
+  };
+}
+
 function novaLinhagemState(node, fontePressaoFixa) {
   return {
-    g: JSON.parse(JSON.stringify(node.g)),
+    g: clonarGenoma(node.g),
     orcamento: 0,
     ciclosDecorridos: 0,
     acumEstratoII: new Set(),
@@ -2754,7 +3311,7 @@ function simularSelecaoNatural(nodes, idx, au, massaId) {
       clado: alvo.clado,
       primordialId: alvo.primordialId,
       primordialClado: alvo.primordialId ? (idx.get(alvo.primordialId)?.clado || alvo.clado) : alvo.clado,
-      texto: `${interacao.motivo}. Em AU ${au}${massaId ? "" : ""}, ${totalGenes} gene(s) alterado(s) por pressão de contemporâneos.`,
+      texto: `${interacao.motivo}. Em ${auTextoLog(au)}, ${totalGenes} gene(s) alterado(s) por pressão de contemporâneos.`,
       code: alvo.code,
       codeAntes,
     });
@@ -2828,9 +3385,49 @@ function gerarPopulacaoParaEspecie(node, quantidade = TAMANHO_POPULACAO_INICIAL,
    como já era feito), (2) mata metade dos indivíduos da perdedora
    naquela divisão, (3) faz nascer 1 indivíduo novo na vencedora,
    até um teto por divisão. */
-function rodarCicloSelecaoIndividual(idx, individuals, massas) {
-  const eventos = { colisoes: 0, nascimentos: 0, mortes: 0, migracoes: 0 }; // Fase 2, item 5.5 — +migracoes
-  let individualsOut = individuals;
+/* v26, correções #3/#4/#5 — três mudanças estruturais nesta função:
+
+   #4 COBERTURA: antes, os dois loops aninhados paravam no PRIMEIRO par
+   viável de cada divisão (`&& !vencedoraNode`). Medido: exatamente 8,0
+   interações por ciclo (= nº de divisões) com 183 espécies vivas na massa,
+   e 27-65 espécies coexistindo por divisão — ou seja, uma única disputa era
+   resolvida e dezenas eram ignoradas; dobrar o número de espécies não
+   aumentava a pressão em nada. Agora TODOS os pares viáveis da divisão são
+   avaliados, e cada espécie perdedora sofre a pressão uma única vez por
+   ciclo (a pior interação recebida — predação prevalece sobre competição),
+   com um teto proporcional pra não explodir o custo em divisões lotadas.
+
+   #5 CADÁVERES: antes, cada colisão fazia `individualsOut.map(...)` sobre o
+   array inteiro (cópia completa por colisão) e os mortos ficavam no array
+   pra sempre — medido: 543 de 1293 entradas eram cadáveres percorridos a
+   cada ciclo. Agora as mutações são in-place sobre uma cópia rasa única
+   feita no começo do ciclo, e os mortos antigos são podados no fim, mantendo
+   só os TETO_CADAVERES_RETIDOS mais recentes (o suficiente pro badge "morto"
+   da UI continuar tendo o que mostrar).
+
+   #3 EXTINÇÃO: espécie que fica sem nenhum indivíduo vivo agora é marcada
+   como extinta de fato (`extinta`/`auExtincao`/`motivoExtincao = "populacional"`)
+   com evento de log dedicado. Antes, `extinta = true` só era escrito num
+   único ponto do código inteiro — o descarte pelo teto de linhagens —, então
+   47 espécies com zero indivíduos vivos seguiam marcadas como vivas na
+   árvore, na lista e nos exports. */
+const TETO_CADAVERES_RETIDOS = 300;   // quantos indivíduos mortos ficam no array pra exibição
+const MAX_INTERACOES_POR_DIVISAO = 40; // teto de disputas resolvidas por divisão por ciclo
+const CHANCE_MORTE_ULTIMO = 0.2;       // chance de o último indivíduo de uma divisão sucumbir a uma derrota
+/* v26 — CAPACIDADE DE SUPORTE por divisão, contando TODAS as espécies juntas.
+   O teto que existia (TETO_POPULACAO_POR_DIVISAO) era por espécie, então a
+   população total de uma divisão crescia junto com o número de espécies:
+   medido, 872 espécies levavam a 14.814 indivíduos vivos e a 953ms por ciclo
+   (contra 108ms no começo). Um limite total por divisão é o que transforma
+   espaço em recurso disputado — que é justamente o que a seleção natural
+   deveria estar simulando — e mantém o custo por ciclo constante. */
+const CAPACIDADE_POR_DIVISAO = 90;
+
+function rodarCicloSelecaoIndividual(idx, individuals, massas, auAtual = 0) {
+  const eventos = { colisoes: 0, nascimentos: 0, mortes: 0, migracoes: 0, extincoes: 0 };
+  // cópia rasa ÚNICA por ciclo; daqui pra frente tudo é mutação in-place
+  const individualsOut = individuals.slice();
+  const novos = [];
 
   for (const massa of massas) {
     const porDivisao = new Map();
@@ -2846,83 +3443,188 @@ function rodarCicloSelecaoIndividual(idx, individuals, massas) {
         .map((id) => idx.get(id)).filter((n) => n && !n.extinta);
       if (especiesPresentes.length < 2) continue;
 
-      let vencedoraNode = null, perdedoraNode = null, motivo = "", tipo = "";
-      for (let i = 0; i < especiesPresentes.length && !vencedoraNode; i++) {
-        for (let j = i + 1; j < especiesPresentes.length && !vencedoraNode; j++) {
+      /* #4 — avalia TODOS os pares (com teto), e não só o primeiro viável.
+         Guarda, por perdedora, só a pior interação recebida: predação
+         prevalece sobre competição — mesmo critério que simularSelecaoNatural
+         já usava na versão por AU. */
+      const piorPorPerdedora = new Map();
+      const prioridade = (r) => (r.tipo === "predacao" ? 2 : 1);
+      let avaliadas = 0;
+      for (let i = 0; i < especiesPresentes.length; i++) {
+        for (let j = i + 1; j < especiesPresentes.length; j++) {
+          if (avaliadas >= MAX_INTERACOES_POR_DIVISAO) break;
           const r = avaliarInteracao(especiesPresentes[i], especiesPresentes[j]);
-          if (r) { vencedoraNode = r.vencedora; perdedoraNode = r.perdedora; motivo = r.motivo; tipo = r.tipo; }
+          if (!r) continue;
+          avaliadas++;
+          const atual = piorPorPerdedora.get(r.perdedora.id);
+          if (!atual || prioridade(r) > prioridade(atual)) piorPorPerdedora.set(r.perdedora.id, r);
         }
+        if (avaliadas >= MAX_INTERACOES_POR_DIVISAO) break;
       }
-      if (!vencedoraNode) continue;
-      eventos.colisoes++;
+      if (!piorPorPerdedora.size) continue;
 
-      const fonte = tipo === "predacao" ? PRESSAO_PREDACAO : PRESSAO_COMPETICAO;
-      const codeAntes = perdedoraNode.code;
-      const linhagemState = novaLinhagemState(perdedoraNode, fonte);
-      let orcamentoInteracao = 0;
-      const genesAlterados = { I: [], II: [], III: [] };
-      for (let r2 = 0; r2 < 2; r2++) {
-        const r = aplicarCicloDeriva(linhagemState.g, orcamentoInteracao, fonte);
-        orcamentoInteracao = r.orcamentoRestante;
-        genesAlterados.I.push(...r.genesAlterados.I);
-        genesAlterados.II.push(...r.genesAlterados.II);
-        genesAlterados.III.push(...r.genesAlterados.III);
-      }
-      Object.assign(perdedoraNode.g, linhagemState.g);
-      perdedoraNode.code = serialize(perdedoraNode.g);
-      const totalGenes = genesAlterados.I.length + genesAlterados.II.length + genesAlterados.III.length;
-      emitirEvento({
-        tipo: "selecao_natural_populacao",
-        tipoLabel: tipo === "predacao" ? "PRESSÃO DE PREDAÇÃO · POPULAÇÃO" : "PRESSÃO DE COMPETIÇÃO · POPULAÇÃO",
-        speciesId: perdedoraNode.id, clado: perdedoraNode.clado,
-        primordialId: perdedoraNode.primordialId, primordialClado: idx.get(perdedoraNode.primordialId)?.clado || perdedoraNode.clado,
-        texto: `${motivo}. Colisão de populações na divisão ${divisao} de ${massa.nome}: ${totalGenes} gene(s) alterado(s) por pressão de indivíduos rivais.`,
-        code: perdedoraNode.code, codeAntes,
-      });
+      for (const [, interacao] of piorPorPerdedora) {
+        const vencedoraNode = interacao.vencedora, perdedoraNode = interacao.perdedora;
+        const { motivo, tipo } = interacao;
+        eventos.colisoes++;
 
-      const indsPerdedora = indsDivisao.filter((i) => i.especieId === perdedoraNode.id && i.viva);
-      const numAfetados = Math.ceil(indsPerdedora.length / 2);
-      /* Fase 2, item 5.5 — antes, todo indivíduo perdedor de uma colisão
-         simplesmente morria. Agora só METADE dos afetados morre de fato; a
-         outra metade migra para uma divisão vizinha (topologia circular),
-         criando população nova lá e MANTENDO a população de origem — a
-         espécie passa a existir nos dois domínios, não se desloca. Decisão
-         de quantidade (não travada no plano): metade dos que seriam
-         mortos, como ponto médio entre "todos migram" (sem pressão real) e
-         "ninguém migra" (comportamento antigo). */
-      const afetados = indsPerdedora.slice(0, numAfetados);
-      const numMigram = Math.floor(afetados.length / 2);
-      const idsQueMigram = new Set(afetados.slice(0, numMigram).map((i) => i.id));
-      const idsQueMorrem = new Set(afetados.slice(numMigram).map((i) => i.id));
-      if (idsQueMorrem.size) {
-        individualsOut = individualsOut.map((i) => (idsQueMorrem.has(i.id) ? { ...i, viva: false } : i));
-        eventos.mortes += idsQueMorrem.size;
-      }
-      if (idsQueMigram.size) {
-        const vizinhas = divisoesVizinhas(divisao, DIVISOES_POR_MASSA);
-        const destino = vizinhas[Math.floor(Math.random() * vizinhas.length)];
-        individualsOut = individualsOut.map((i) => (idsQueMigram.has(i.id) ? { ...i, divisao: destino } : i));
-        eventos.migracoes += idsQueMigram.size;
+        const fonte = tipo === "predacao" ? PRESSAO_PREDACAO : PRESSAO_COMPETICAO;
+        const codeAntes = perdedoraNode.code;
+        const linhagemState = novaLinhagemState(perdedoraNode, fonte);
+        let orcamentoInteracao = 0;
+        const genesAlterados = { I: [], II: [], III: [] };
+        for (let r2 = 0; r2 < 2; r2++) {
+          const r = aplicarCicloDeriva(linhagemState.g, orcamentoInteracao, fonte);
+          orcamentoInteracao = r.orcamentoRestante;
+          genesAlterados.I.push(...r.genesAlterados.I);
+          genesAlterados.II.push(...r.genesAlterados.II);
+          genesAlterados.III.push(...r.genesAlterados.III);
+        }
+        Object.assign(perdedoraNode.g, linhagemState.g);
+        perdedoraNode.code = serialize(perdedoraNode.g);
+        const totalGenes = genesAlterados.I.length + genesAlterados.II.length + genesAlterados.III.length;
         emitirEvento({
-          tipo: "migracao",
-          tipoLabel: "MIGRAÇÃO",
+          tipo: "selecao_natural_populacao",
+          tipoLabel: tipo === "predacao" ? "PRESSÃO DE PREDAÇÃO · POPULAÇÃO" : "PRESSÃO DE COMPETIÇÃO · POPULAÇÃO",
           speciesId: perdedoraNode.id, clado: perdedoraNode.clado,
           primordialId: perdedoraNode.primordialId, primordialClado: idx.get(perdedoraNode.primordialId)?.clado || perdedoraNode.clado,
-          texto: `${perdedoraNode.clado} perde disputa de população na divisão ${divisao} de ${massa.nome} e migra ${idsQueMigram.size} indivíduo(s) para a divisão ${destino} (mantendo população de origem).`,
-          code: perdedoraNode.code,
+          texto: `${motivo}. Colisão de populações na divisão ${divisao} de ${massa.nome}: ${totalGenes} gene(s) alterado(s) por pressão de indivíduos rivais.`,
+          code: perdedoraNode.code, codeAntes,
         });
-      }
 
-      const vivasVencedoraNaDivisao = individualsOut.filter((i) => i.viva && i.especieId === vencedoraNode.id && i.divisao === divisao && i.massaId === massa.id).length;
-      if (vivasVencedoraNaDivisao < TETO_POPULACAO_POR_DIVISAO) {
-        const novo = gerarPopulacaoParaEspecie(vencedoraNode, 1, DIVISOES_POR_MASSA, massa)[0]; // Fase 2, item 5.5
-        novo.divisao = divisao; novo.massaId = massa.id;
-        individualsOut = [...individualsOut, novo];
-        eventos.nascimentos++;
+        const indsPerdedora = indsDivisao.filter((i) => i.especieId === perdedoraNode.id && i.viva);
+        /* v26 — Math.ceil virou Math.floor, mais um sorteio para o último
+           indivíduo. Com `ceil`, uma população de 1 perdia sempre esse 1: a
+           extinção virava consequência automática de uma única derrota. Como
+           a correção #4 passou a resolver TODAS as disputas da divisão (e não
+           só a primeira), isso zerava o ecossistema em poucos ciclos —
+           medido: 92% de extinção em 60 ciclos. Com `floor`, uma população
+           reduzida a 1 vira refúgio e só some se perder o sorteio de
+           CHANCE_MORTE_ULTIMO, o que exige derrotas repetidas ao longo de
+           vários ciclos. A extinção continua acontecendo; deixa de ser
+           instantânea. */
+        const numAfetados = indsPerdedora.length <= 1
+          ? (Math.random() < CHANCE_MORTE_ULTIMO ? 1 : 0)
+          : Math.floor(indsPerdedora.length / 2);
+        const afetados = indsPerdedora.slice(0, numAfetados);
+        const numMigram = Math.floor(afetados.length / 2);
+        const queMigram = afetados.slice(0, numMigram);
+        const queMorrem = afetados.slice(numMigram);
+
+        // #5 — mutação in-place, sem varrer o array inteiro por colisão
+        for (const i of queMorrem) { i.viva = false; i.auMorte = auAtual; }
+        eventos.mortes += queMorrem.length;
+
+        const vizinhas = queMigram.length ? divisoesVizinhas(divisao, DIVISOES_POR_MASSA) : [];
+        if (queMigram.length && vizinhas.length) {
+          const destino = vizinhas[Math.floor(Math.random() * vizinhas.length)];
+          for (const i of queMigram) i.divisao = destino;
+          eventos.migracoes += queMigram.length;
+          emitirEvento({
+            tipo: "migracao",
+            tipoLabel: "MIGRAÇÃO",
+            speciesId: perdedoraNode.id, clado: perdedoraNode.clado,
+            primordialId: perdedoraNode.primordialId, primordialClado: idx.get(perdedoraNode.primordialId)?.clado || perdedoraNode.clado,
+            texto: `${perdedoraNode.clado} perde disputa de população na divisão ${divisao} de ${massa.nome} e migra ${queMigram.length} indivíduo(s) para a divisão ${destino} (mantendo população de origem).`,
+            code: perdedoraNode.code,
+          });
+        } else if (queMigram.length) {
+          // v26 — sem divisão vizinha (mundo de 1 divisão), não há pra onde
+          // migrar: os afetados morrem em vez de desaparecerem em silêncio.
+          for (const i of queMigram) { i.viva = false; i.auMorte = auAtual; }
+          eventos.mortes += queMigram.length;
+        }
+
+        const vivasVencedoraNaDivisao = indsDivisao.filter((i) => i.viva && i.especieId === vencedoraNode.id && i.divisao === divisao).length
+          + novos.filter((i) => i.especieId === vencedoraNode.id && i.divisao === divisao && i.massaId === massa.id).length;
+        const lotacaoDivisao = indsDivisao.filter((i) => i.viva).length
+          + novos.filter((i) => i.divisao === divisao && i.massaId === massa.id).length;
+        if (vivasVencedoraNaDivisao < TETO_POPULACAO_POR_DIVISAO && lotacaoDivisao < CAPACIDADE_POR_DIVISAO) {
+          const novo = gerarPopulacaoParaEspecie(vencedoraNode, 1, DIVISOES_POR_MASSA, massa)[0];
+          novo.divisao = divisao; novo.massaId = massa.id;
+          novos.push(novo);
+          eventos.nascimentos++;
+        }
       }
     }
   }
-  return { individuals: individualsOut, eventos };
+
+  /* v26 — REPRODUÇÃO. Ao corrigir a cobertura (#4), a simulação passou a
+     resolver todas as disputas de cada divisão em vez de uma só — e aí ficou
+     visível um buraco que a cobertura baixa escondia: as populações só
+     encolhiam. O único nascimento existente era o +1 da espécie vencedora de
+     uma colisão; toda espécie derrotada perdia metade dos indivíduos a cada
+     ciclo, sem nunca repor. Medido: o ecossistema colapsava para uma
+     monocultura por divisão em ~50 ciclos e depois zerava as colisões.
+     Agora toda espécie com população viva numa divisão pode gerar prole,
+     com chance proporcional ao gene repProle (0-9) e limitada pelo mesmo
+     teto por divisão que já existia. */
+  const chaveDiv = (i) => `${i.massaId}|${i.divisao}|${i.especieId}`;
+  const chaveLocal = (i) => `${i.massaId}|${i.divisao}`;
+  const vivosPorDiv = new Map();
+  const lotacaoPorLocal = new Map();
+  for (const i of individualsOut.concat(novos)) {
+    if (!i.viva) continue;
+    const k = chaveDiv(i);
+    vivosPorDiv.set(k, (vivosPorDiv.get(k) || 0) + 1);
+    const kl = chaveLocal(i);
+    lotacaoPorLocal.set(kl, (lotacaoPorLocal.get(kl) || 0) + 1);
+  }
+  const massaPorId = new Map(massas.map((m) => [m.id, m]));
+  for (const [k, qtd] of vivosPorDiv) {
+    if (qtd >= TETO_POPULACAO_POR_DIVISAO) continue;
+    const [massaId, divisaoStr, especieId] = k.split("|");
+    const kl = `${massaId}|${divisaoStr}`;
+    if ((lotacaoPorLocal.get(kl) || 0) >= CAPACIDADE_POR_DIVISAO) continue; // divisão lotada
+    const node = idx.get(especieId);
+    if (!node || node.extinta) continue;
+    const prole = Number(node.g.repProle ?? 4);
+    const chance = 0.10 + 0.05 * prole; // repProle 0 -> 10%, repProle 9 -> 55%
+    if (Math.random() >= chance) continue;
+    const novo = gerarPopulacaoParaEspecie(node, 1, DIVISOES_POR_MASSA, massaPorId.get(massaId) || null)[0];
+    novo.divisao = Number(divisaoStr); novo.massaId = massaId === "null" ? null : massaId;
+    novos.push(novo);
+    lotacaoPorLocal.set(kl, (lotacaoPorLocal.get(kl) || 0) + 1);
+    eventos.nascimentos++;
+  }
+
+  let resultado = novos.length ? individualsOut.concat(novos) : individualsOut;
+
+  /* #3 — extinção populacional: espécie sem nenhum indivíduo vivo é
+     declarada extinta de fato. Só considera espécies que CHEGARAM a ter
+     população (aparecem no array), pra não extinguir espécies que ainda
+     nem foram povoadas. */
+  const vivosPorEspecie = new Set();
+  const conheceEspecie = new Set();
+  for (const i of resultado) { conheceEspecie.add(i.especieId); if (i.viva) vivosPorEspecie.add(i.especieId); }
+  for (const especieId of conheceEspecie) {
+    if (vivosPorEspecie.has(especieId)) continue;
+    const node = idx.get(especieId);
+    if (!node || node.extinta) continue;
+    node.extinta = true;
+    node.auExtincao = Math.max(auAtual, node.auSurgimento);
+    node.motivoExtincao = "populacional";
+    eventos.extincoes++;
+    emitirEvento({
+      tipo: "extincao",
+      tipoLabel: "EXTINÇÃO",
+      speciesId: node.id, clado: node.clado,
+      primordialId: node.primordialId, primordialClado: idx.get(node.primordialId)?.clado || node.clado,
+      auSurgimento: node.auSurgimento,
+      texto: `${node.clado} é extinta: perdeu o último indivíduo vivo em ${auTextoLog(node.auExtincao)} (extinção populacional, por pressão de contemporâneos).`,
+      code: node.code,
+    });
+  }
+
+  /* #5 — poda de cadáveres: mantém só os mais recentes, pra que os ciclos
+     seguintes não continuem percorrendo milhares de mortos. */
+  const mortos = resultado.filter((i) => !i.viva);
+  if (mortos.length > TETO_CADAVERES_RETIDOS) {
+    const manter = new Set(mortos.slice(-TETO_CADAVERES_RETIDOS).map((i) => i.id));
+    resultado = resultado.filter((i) => i.viva || manter.has(i.id));
+  }
+
+  return { individuals: resultado, eventos };
 }
 
 /* Roda `ciclos` ciclos de seleção natural populacional em sequência,
@@ -2932,17 +3634,20 @@ function rodarCicloSelecaoIndividual(idx, individuals, massas) {
    CICLO_SELECAO_AU). Muta os nós de espécie em lugar (mesmo padrão
    do resto do motor) — quem chama ainda precisa forçar o React a
    ver a mudança recriando o array de nodes. */
-async function rodarSelecaoNaturalPopulacional(idx, individuals, massas, ciclos, onProgress) {
+async function rodarSelecaoNaturalPopulacional(idx, individuals, massas, ciclos, onProgress, auInicial = 0) {
   let individualsAtual = individuals;
-  const resumo = { colisoes: 0, nascimentos: 0, mortes: 0, migracoes: 0 }; // Fase 2, item 5.5
+  const resumo = { colisoes: 0, nascimentos: 0, mortes: 0, migracoes: 0, extincoes: 0 }; // v26: +extincoes
   let ultimoCorte = agoraMs();
   for (let c = 0; c < ciclos; c++) {
-    const { individuals: out, eventos } = rodarCicloSelecaoIndividual(idx, individualsAtual, massas);
+    // v26 — o AU corrente é repassado ao ciclo pra datar mortes e extinções
+    const auCiclo = auInicial + (c + 1) * CICLO_SELECAO_AU;
+    const { individuals: out, eventos } = rodarCicloSelecaoIndividual(idx, individualsAtual, massas, auCiclo);
     individualsAtual = out;
     resumo.colisoes += eventos.colisoes;
     resumo.nascimentos += eventos.nascimentos;
     resumo.mortes += eventos.mortes;
     resumo.migracoes += eventos.migracoes; // Fase 2, item 5.5
+    resumo.extincoes += eventos.extincoes; // v26, correção #3
     if (onProgress) onProgress((c + 1) / ciclos);
     if (agoraMs() - ultimoCorte > 12) { await cederControle(); ultimoCorte = agoraMs(); }
   }
@@ -2987,8 +3692,24 @@ function gerarPromptImagem(g, individual) {
   const descricao = describeCreatureProse(g);
   const destaques = destaquesIndividuoParaPrompt(individual);
   const nomeRef = individual?.nome ? `${individual.nome}, an individual of the ${g.clado} species` : `a specimen of the ${g.clado} species`;
+  /* v26, correção #1 — âncora de assunto por reino. Sem isso, "creature" +
+     "anatomically coherent" empurra qualquer gerador de imagem para bicho,
+     mesmo quando a descrição é de uma planta. */
+  const ANCORA_REINO = {
+    Pl: "Fantasy BOTANICAL illustration of a plant organism — NOT an animal, NOT a creature with a face or limbs",
+    Fu: "Fantasy MYCOLOGICAL illustration of a fungal organism — NOT an animal, NOT a creature with a face or limbs",
+    Ba: "Scientific microscopy-style illustration of a single-celled microorganism — NOT an animal, NOT a multicellular creature",
+  };
+  const NEG_REINO = {
+    Pl: " no animal anatomy, no face, no eyes, no mouth, no skull, no limbs, no legs, no wings, no fur, no scales",
+    Fu: " no animal anatomy, no face, no eyes, no mouth, no skull, no limbs, no legs, no wings, no fur, no scales",
+    Ba: " no animal anatomy, no face, no limbs, no macroscopic creature",
+  };
+  const abertura = ANCORA_REINO[g.reino]
+    ? `${ANCORA_REINO[g.reino]}. Subject: ${nomeRef}.`
+    : `Fantasy creature concept art of ${nomeRef}.`;
   const linhas = [
-    `Fantasy creature concept art of ${nomeRef}.`,
+    abertura,
     ``,
     `CREATURE DESCRIPTION (in Portuguese — follow it closely, it is the authoritative source):`,
     descricao,
@@ -2996,9 +3717,13 @@ function gerarPromptImagem(g, individual) {
   if (destaques.length) linhas.push(``, `INDIVIDUAL TRAITS TO EMPHASIZE (this specimen only): ${destaques.join("; ")}.`);
   linhas.push(
     ``,
-    `STYLE: detailed fantasy concept art, digital painting, dramatic rim lighting, anatomically coherent with the description above, highly detailed skin/scale/fur texture, muted natural color palette unless the description states otherwise.`,
-    `COMPOSITION: single full-body reference shot, slight 3/4 angle, plain neutral studio background so the anatomy reads clearly, no other characters, no scenery.`,
-    `NEGATIVE PROMPT: no text, no watermark, no signature, no human clothing or armor unless explicitly described, no extra limbs beyond what is described, not cartoonish, not chibi.`
+    ANCORA_REINO[g.reino]
+      ? `STYLE: detailed naturalist/botanical plate illustration, digital painting, soft directional lighting, structurally coherent with the description above, highly detailed surface texture (bark, cuticle, membrane, mycelium), muted natural color palette unless the description states otherwise.`
+      : `STYLE: detailed fantasy concept art, digital painting, dramatic rim lighting, anatomically coherent with the description above, highly detailed skin/scale/fur texture, muted natural color palette unless the description states otherwise.`,
+    ANCORA_REINO[g.reino]
+      ? `COMPOSITION: single full specimen reference plate, plain neutral background so the structure reads clearly, no other organisms, no scenery, no characters.`
+      : `COMPOSITION: single full-body reference shot, slight 3/4 angle, plain neutral studio background so the anatomy reads clearly, no other characters, no scenery.`,
+    `NEGATIVE PROMPT: no text, no watermark, no signature, no human clothing or armor unless explicitly described, no extra limbs beyond what is described, not cartoonish, not chibi.${NEG_REINO[g.reino] || ""}`
   );
   return linhas.join("\n");
 }

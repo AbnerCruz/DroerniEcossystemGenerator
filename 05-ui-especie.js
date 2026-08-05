@@ -265,18 +265,35 @@ function SpeciesViewer({ node, idx, eras, massaIdx, onFechar, onEditar, onDeleta
   const [buscandoTrilha, setBuscandoTrilha] = useState(false);
   const [progressoTrilha, setProgressoTrilha] = useState(0);
   const [resultadoTrilha, setResultadoTrilha] = useState(null);
+  /* v27 — a busca de trilha ganhou sentido inverso. "Adiante" é a de sempre:
+     parte DESTA espécie e anda pra frente até um DNA-alvo colado. "Para trás"
+     responde a outra pergunta — de onde este espécime pode ter vindo —
+     sorteando ancestrais primordiais e devolvendo uma trilha que realmente
+     chega nele. São várias as trilhas possíveis (a deriva descarta
+     informação, então o passado não é recuperável do genoma atual), e é por
+     isso que rodar de novo devolve outra: o botão diz "Sortear outra". */
+  const [sentidoTrilha, setSentidoTrilha] = useState("adiante"); // "adiante" | "atras"
   const buscarTrilha = async () => {
-    if (!alvoCodigo.trim()) return;
+    if (sentidoTrilha === "adiante" && !alvoCodigo.trim()) return;
     setBuscandoTrilha(true); setProgressoTrilha(0); setResultadoTrilha(null);
-    const r = await buscarTrilhaParaAlvo(node, alvoCodigo.trim(), (f) => setProgressoTrilha(f));
+    const r = sentidoTrilha === "atras"
+      ? await buscarTrilhaReversa(node.code, (f) => setProgressoTrilha(f))
+      : await buscarTrilhaParaAlvo(node, alvoCodigo.trim(), (f) => setProgressoTrilha(f));
     setResultadoTrilha(r);
     setBuscandoTrilha(false);
   };
   const copiarTrilha = () => {
     if (!resultadoTrilha?.sucesso) return;
-    const texto = serializarTrilha(node, resultadoTrilha);
+    // na trilha reversa a origem é o ancestral hipotético sorteado, não este nó
+    const origem = resultadoTrilha.ancestral || node;
+    const texto = serializarTrilha(origem, resultadoTrilha);
     navigator.clipboard?.writeText(texto);
     showToast("Trilha copiada — cole no campo de importação ao criar um primordial novo.");
+  };
+  const copiarAncestral = () => {
+    if (!resultadoTrilha?.ancestral) return;
+    navigator.clipboard?.writeText(resultadoTrilha.ancestral.code);
+    showToast("DNA do ancestral hipotético copiado.");
   };
   // Linhagem completa (caminhoAtePrimordial) e parentesco lateral de
   // primeiro grau (irmaos) — ambos existiam prontos no motor e nunca
@@ -369,17 +386,35 @@ function SpeciesViewer({ node, idx, eras, massaIdx, onFechar, onEditar, onDeleta
           {/* Fase 4, item 7.3 — árvore reversa: buscar trilha de deriva até um DNA-alvo colado */}
           {trilhaAberta && (
             <div className="rounded border border-stone-800 p-2.5 space-y-2">
-              <div className="text-stone-500 text-[10px] uppercase tracking-widest font-mono">Buscar trilha de deriva até um DNA-alvo</div>
-              <textarea
-                value={alvoCodigo}
-                onChange={(e) => setAlvoCodigo(e.target.value)}
-                placeholder="Cole aqui o código DRN2 do DNA-alvo (ex.: DRN2-TAX:An.MAM.Xyz-...)"
-                className="w-full text-[11px] font-mono bg-stone-900 border border-stone-800 rounded px-2 py-1.5 text-stone-300 placeholder-stone-600 focus:border-emerald-700 focus:outline-none"
-                rows={2}
-              />
-              <div className="flex items-center gap-2">
-                <button disabled={buscandoTrilha || !alvoCodigo.trim()} onClick={buscarTrilha} className="text-[11px] font-mono uppercase text-stone-400 hover:text-emerald-400 border border-stone-800 rounded px-3 py-1.5 disabled:opacity-40">
-                  {buscandoTrilha ? `Buscando… ${Math.round(progressoTrilha * 100)}%` : "Buscar"}
+              <div className="text-stone-500 text-[10px] uppercase tracking-widest font-mono">Trilha de deriva</div>
+              <div className="flex gap-1">
+                {[["adiante", "Adiante (até um DNA-alvo)"], ["atras", "Para trás (de onde veio)"]].map(([v, rotulo]) => (
+                  <button key={v} onClick={() => { setSentidoTrilha(v); setResultadoTrilha(null); }}
+                    className={`flex-1 text-[10px] font-mono uppercase rounded px-2 py-1.5 border ${sentidoTrilha === v ? "border-emerald-700 text-emerald-400 bg-emerald-950/30" : "border-stone-800 text-stone-500 hover:text-stone-300"}`}>
+                    {rotulo}
+                  </button>
+                ))}
+              </div>
+              {sentidoTrilha === "adiante" ? (
+                <textarea
+                  value={alvoCodigo}
+                  onChange={(e) => setAlvoCodigo(e.target.value)}
+                  placeholder="Cole aqui o código DRN2 do DNA-alvo (ex.: DRN2-TAX:An.MAM.Xyz-...)"
+                  className="w-full text-[11px] font-mono bg-stone-900 border border-stone-800 rounded px-2 py-1.5 text-stone-300 placeholder-stone-600 focus:border-emerald-700 focus:outline-none"
+                  rows={2}
+                />
+              ) : (
+                <p className="text-[10px] text-stone-500 leading-relaxed">
+                  Reconstrói uma linhagem que chega em <span className="font-mono text-stone-300">{node.clado}</span> a
+                  partir de um ancestral primordial (bactéria) sorteado. Não existe "a" trilha certa: a deriva
+                  descarta informação, então vários caminhos diferentes chegam ao mesmo genoma. Esta é <span className="text-stone-300">uma</span> das
+                  possíveis — sortear de novo devolve outra, igualmente válida.
+                </p>
+              )}
+              <div className="flex items-center gap-2 flex-wrap">
+                <button disabled={buscandoTrilha || (sentidoTrilha === "adiante" && !alvoCodigo.trim())} onClick={buscarTrilha} className="text-[11px] font-mono uppercase text-stone-400 hover:text-emerald-400 border border-stone-800 rounded px-3 py-1.5 disabled:opacity-40">
+                  {buscandoTrilha ? `Buscando… ${Math.round(progressoTrilha * 100)}%`
+                    : sentidoTrilha === "atras" ? (resultadoTrilha ? "Sortear outra" : "Reconstruir linhagem") : "Buscar"}
                 </button>
                 {resultadoTrilha?.sucesso && (
                   <button onClick={copiarTrilha} className="text-[11px] font-mono uppercase text-emerald-500 hover:text-emerald-300 border border-emerald-900 rounded px-3 py-1.5">
@@ -388,11 +423,27 @@ function SpeciesViewer({ node, idx, eras, massaIdx, onFechar, onEditar, onDeleta
                 )}
               </div>
               {resultadoTrilha && !buscandoTrilha && (
-                <div className="text-[11px] text-stone-500">
-                  {resultadoTrilha.motivo === "codigo-invalido" ? "Código DRN2 inválido — confira o formato colado."
-                    : resultadoTrilha.sucesso ? `Bateu 100% no alvo em ${resultadoTrilha.ciclos} ciclo(s) de deriva aceitos.`
-                    : resultadoTrilha.inatingivel ? `Alvo parece inatingível a partir desta espécie (distância residual: ${resultadoTrilha.dlFinal}) — provavelmente reino travado ou combinação de genes incompatível.`
-                    : `Não bateu 100% dentro do limite de tentativas (distância residual: ${resultadoTrilha.dlFinal}).`}
+                <div className="space-y-2">
+                  <div className="text-[11px] text-stone-500">
+                    {resultadoTrilha.motivo === "codigo-invalido" ? "Código DRN2 inválido — confira o formato colado."
+                      : resultadoTrilha.motivo === "barreira-de-reino" ? resultadoTrilha.motivoTexto
+                      : resultadoTrilha.sucesso
+                        ? (sentidoTrilha === "atras"
+                          ? `Linhagem reconstruída: ${resultadoTrilha.ciclos} ciclo(s) de deriva do ancestral até ${node.clado}.`
+                          : `Bateu 100% no alvo em ${resultadoTrilha.ciclos} ciclo(s) de deriva aceitos.`)
+                      : resultadoTrilha.motivoTexto
+                        || `Não bateu 100% dentro do limite de tentativas (distância residual: ${resultadoTrilha.dlFinal}).`}
+                  </div>
+                  {sentidoTrilha === "atras" && resultadoTrilha.ancestral && (
+                    <div className="rounded border border-stone-800 bg-stone-900/40 p-2 space-y-1">
+                      <div className="text-[10px] uppercase tracking-widest text-stone-500 font-mono">Ancestral primordial hipotético</div>
+                      <div className="text-[11px] text-stone-300 font-mono">{resultadoTrilha.ancestral.clado}</div>
+                      <div className="text-[10px] font-mono text-stone-500 break-all">{resultadoTrilha.ancestral.code}</div>
+                      <button onClick={copiarAncestral} className="text-[10px] font-mono uppercase text-stone-400 hover:text-emerald-400 border border-stone-800 rounded px-2 py-1">
+                        <Copy size={11} className="inline -mt-0.5 mr-1" />Copiar DNA do ancestral
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -405,7 +456,7 @@ function SpeciesViewer({ node, idx, eras, massaIdx, onFechar, onEditar, onDeleta
           <button onClick={onExportarMd} className="text-[11px] font-mono uppercase text-stone-400 hover:text-emerald-400 border border-stone-800 rounded px-3 py-1.5"><Download size={12} className="inline -mt-0.5 mr-1" />Exportar .md</button>
           <button onClick={onDerivar} className="text-[11px] font-mono uppercase text-stone-400 hover:text-emerald-400 border border-stone-800 rounded px-3 py-1.5"><GitBranch size={12} className="inline -mt-0.5 mr-1" />Derivar</button>
           <button onClick={onNovoIndividuo} className="text-[11px] font-mono uppercase text-stone-400 hover:text-emerald-400 border border-stone-800 rounded px-3 py-1.5"><User size={12} className="inline -mt-0.5 mr-1" />Novo Indivíduo</button>
-          <button onClick={() => setTrilhaAberta((v) => !v)} className="text-[11px] font-mono uppercase text-stone-400 hover:text-emerald-400 border border-stone-800 rounded px-3 py-1.5">{trilhaAberta ? "Fechar Busca de Trilha" : "Buscar Trilha até DNA-alvo"}</button>
+          <button onClick={() => setTrilhaAberta((v) => !v)} className="text-[11px] font-mono uppercase text-stone-400 hover:text-emerald-400 border border-stone-800 rounded px-3 py-1.5">{trilhaAberta ? "Fechar Trilha de Deriva" : "Trilha de Deriva"}</button>
           <button onClick={onClonar} className="text-[11px] font-mono uppercase text-stone-400 hover:text-emerald-400 border border-stone-800 rounded px-3 py-1.5">Clonar</button>
           <button onClick={onEditar} className="text-[11px] font-mono uppercase text-stone-400 hover:text-emerald-400 border border-stone-800 rounded px-3 py-1.5">Editar</button>
           <button onClick={onDeletar} className="text-[11px] font-mono uppercase text-red-500 hover:text-red-300 border border-red-900 rounded px-3 py-1.5 ml-auto"><Trash size={12} className="inline -mt-0.5 mr-1" />Deletar</button>

@@ -27,12 +27,12 @@ function FileText(props) { return <Icon {...props}><path d="M14 2H6a2 2 0 0 0-2 
    HELPERS DE UI (portado verbatim do v16)
    ============================================================ */
 const REINO_LABEL = { An: "Animal", Pl: "Planta", Fu: "Fungo", Ba: "Bactéria", Ar: "Construto", Sp: "Espiritual" }; // Fase 1, item 4.1
-function sortNomeIndividuo() {
-  const s = CONS[Math.floor(Math.random() * CONS.length)] + VOG[Math.floor(Math.random() * VOG.length)] +
-    CONS[Math.floor(Math.random() * CONS.length)] + VOG[Math.floor(Math.random() * VOG.length)] +
-    CONS[Math.floor(Math.random() * CONS.length)];
-  return s.charAt(0).toUpperCase() + s.slice(1).toLowerCase();
-}
+/* v26, correção #9 — sortNomeIndividuo() morava aqui, na camada de UI, mas
+   quem a chamava era o MOTOR (01-core-motor.js, em decodificarSeedColada e
+   gerarPopulacaoParaEspecie). Funcionava só porque os scripts compartilham o
+   escopo global e este carrega antes de qualquer interação; quebrava ao
+   reordenar os <script>, ao migrar pra módulos ESM ou ao testar o motor
+   isolado. Mudou pro motor, verbatim — segue global, então nada aqui muda. */
 function Section({ title, children, accent, right }) {
   return (
     <div className="rounded-lg border border-stone-800 bg-stone-900/60 p-4 sm:p-5">

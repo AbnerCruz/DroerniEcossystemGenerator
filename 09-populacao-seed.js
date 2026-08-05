@@ -48,7 +48,7 @@ function ImageIcon(props) { return <Icon {...props}><rect x="3" y="3" width="18"
    prompt de imagem. Aberto tanto ao gerar um indivíduo novo quanto
    ao clicar num já existente na lista da espécie.
    ============================================================ */
-function IndividualViewer({ individual, especieNode, onFechar, onNavegarEspecie, showToast }) {
+function IndividualViewer({ individual, especieNode, onFechar, onNavegarEspecie, onBuscar, showToast }) {
   const g = individual.ind || especieNode?.g;
   // Os nós de espécie não guardam a seed pronta — ela é recomputada sob
   // demanda a partir do genoma atual (mesma lógica usada pelo export de
@@ -70,7 +70,17 @@ function IndividualViewer({ individual, especieNode, onFechar, onNavegarEspecie,
             <User size={16} />{individual.nome}
             {individual.viva === false && <Badge className="border-red-900 text-red-500">morto</Badge>}
           </h2>
-          <button onClick={onFechar} className="text-stone-500 hover:text-stone-200"><X size={18} /></button>
+          <div className="flex items-center gap-1">
+            {/* v27 — a lupa de busca também mora aqui. Estando com um espécime
+                aberto na tela é justamente quando dá vontade de colar a seed
+                ou o DNA de outro pra comparar; antes era preciso fechar o
+                painel e voltar ao topo do app. O botão do topo continua onde
+                estava — este é adicional, não uma mudança de lugar. */}
+            {onBuscar && (
+              <button onClick={onBuscar} title="Buscar por seed, DNA ou texto" className="p-1.5 rounded border border-stone-800 text-stone-400 hover:text-emerald-400 hover:border-stone-600"><Search size={14} /></button>
+            )}
+            <button onClick={onFechar} className="text-stone-500 hover:text-stone-200"><X size={18} /></button>
+          </div>
         </div>
 
         <div className="p-4 space-y-3">
@@ -113,6 +123,7 @@ function IndividualViewer({ individual, especieNode, onFechar, onNavegarEspecie,
         <div className="sticky bottom-0 bg-stone-950 border-t border-stone-800 px-4 py-3 flex flex-wrap gap-2">
           <button onClick={copiarDNA} className="text-[11px] font-mono uppercase text-stone-400 hover:text-emerald-400 border border-stone-800 rounded px-3 py-1.5"><Copy size={12} className="inline -mt-0.5 mr-1" />Copiar DNA</button>
           {gluedSeed && <button onClick={copiarSeed} className="text-[11px] font-mono uppercase text-stone-400 hover:text-emerald-400 border border-stone-800 rounded px-3 py-1.5"><Copy size={12} className="inline -mt-0.5 mr-1" />Copiar Seed (espécie+indivíduo)</button>}
+          {onBuscar && <button onClick={() => onBuscar(individual.code)} className="text-[11px] font-mono uppercase text-stone-400 hover:text-emerald-400 border border-stone-800 rounded px-3 py-1.5"><Search size={12} className="inline -mt-0.5 mr-1" />Abrir na busca</button>}
         </div>
       </div>
     </div>
@@ -125,15 +136,15 @@ function IndividualViewer({ individual, especieNode, onFechar, onNavegarEspecie,
    que ele já exista na árvore atual (o espaço de espécimes
    possíveis é muito maior que qualquer mundo gerado).
    ============================================================ */
-function SeedSearchModal({ onFechar, onAdicionarComoPrimordial, eraAtual, showToast }) {
-  const [texto, setTexto] = useState("");
+function SeedSearchModal({ onFechar, onAdicionarComoPrimordial, eraAtual, showToast, textoInicial }) {
+  const [texto, setTexto] = useState(textoInicial || "");
   const [resultado, setResultado] = useState(null);
   const [erro, setErro] = useState("");
 
   const buscar = () => {
     setErro(""); setResultado(null);
     const bruto = (texto || "").trim();
-    if (!bruto) { setErro("Cole uma seed (números), ou digite um texto/nome livre para gerar um endereço a partir dele."); return; }
+    if (!bruto) { setErro("Cole uma seed (números), um código DNA (DRN2-…), ou digite um texto/nome livre."); return; }
     // heurística: se sobrar algum dígito depois de tirar tudo que não é número,
     // e o texto não tiver nenhuma letra, trata como seed numérica de verdade
     // (o formato colado da Estação DRN2). Qualquer letra no meio já indica
@@ -144,7 +155,21 @@ function SeedSearchModal({ onFechar, onAdicionarComoPrimordial, eraAtual, showTo
     // tudo e caía no erro de "seed vazia".
     const temLetra = /[A-Za-zÀ-ÿ]/.test(bruto);
     try {
-      if (!temLetra) {
+      /* v27 — terceiro formato aceito: o próprio código DNA (DRN2-...). É o
+         que o app mostra em todo lugar (visor de espécie, de indivíduo, log,
+         árvore, ficha do Obsidian), então é o que o usuário mais tem à mão
+         pra colar de volta — e até aqui era o único que a caixa não entendia
+         (caía em "texto livre" e virava uma criatura aleatória sem relação
+         nenhuma com o DNA colado). Vem antes da checagem de letra porque um
+         código DRN2 obviamente tem letras. */
+      if (ehCodigoDRN2(bruto)) {
+        /* o código DRN2 não carrega o marcador de primordial (isso vive na
+           seed, no 1º dígito), então o espécime reconstruído é tratado como
+           derivado — que é o caso comum de um DNA copiado da árvore. */
+        const r = decodificarDNAColado(bruto, false);
+        if (!r) { setErro("Não consegui ler esse código DNA — confira se ele está completo (começa em DRN2- e vai até o bloco DEF:)."); return; }
+        setResultado(r);
+      } else if (!temLetra) {
         const digitos = bruto.replace(/[^0-9]/g, "");
         if (!digitos) { setErro("Cole uma seed (só números — pontuação e espaços são ignorados)."); return; }
         const r = decodificarSeedColada(digitos);
@@ -173,22 +198,21 @@ function SeedSearchModal({ onFechar, onAdicionarComoPrimordial, eraAtual, showTo
     <div className="fixed inset-0 z-50 bg-black/70 flex items-end sm:items-center justify-center p-0 sm:p-4">
       <div className="bg-stone-950 border border-stone-800 rounded-t-lg sm:rounded-lg w-full sm:max-w-xl max-h-[92vh] overflow-y-auto">
         <div className="sticky top-0 bg-stone-950 border-b border-stone-800 px-4 py-3 flex items-center justify-between">
-          <h2 className="font-mono text-sm text-emerald-400 uppercase tracking-widest flex items-center gap-2"><Search size={16} />Buscar por Seed</h2>
+          <h2 className="font-mono text-sm text-emerald-400 uppercase tracking-widest flex items-center gap-2"><Search size={16} />Buscar por Seed, DNA ou Texto</h2>
           <button onClick={onFechar} className="text-stone-500 hover:text-stone-200"><X size={18} /></button>
         </div>
 
         <div className="p-4 space-y-3">
           <p className="text-[11px] text-stone-500">
-            Cole a seed de uma espécie, ou a seed colada (espécie + indivíduo, gerada ao copiar "Seed"
-            no visor de espécie ou de indivíduo). O primeiro dígito já indica se é primordial ou
-            derivada — não precisa informar isso à parte. O espaço de espécimes possíveis é enorme
-            (~10^50) — a seed é o endereço dele, existindo ou não ainda no mundo atual.
-            Também aceita texto livre (nome, apelido, frase): vira um endereço fixo por hash —
-            o mesmo texto sempre decodifica a mesma criatura, mas ela não é "escolhida por você" gene a
-            gene, é só o que aquele endereço específico contém.
+            Três formatos, reconhecidos automaticamente:
           </p>
+          <ul className="text-[11px] text-stone-500 space-y-1 list-disc pl-4">
+            <li><span className="text-stone-300">Seed</span> — de espécie, ou colada (espécie + indivíduo). O primeiro dígito já diz se é primordial ou derivada. A seed é o endereço do espécime dentro do espaço de possibilidades (~10^50), exista ele ou não no mundo atual.</li>
+            <li><span className="text-stone-300">DNA</span> — o código DRN2 completo, do jeito que aparece no visor, no log ou na ficha. Reconstrói o genoma e ainda calcula a seed correspondente, que você pode copiar.</li>
+            <li><span className="text-stone-300">Texto livre</span> — nome, apelido, frase. Vira um endereço fixo por hash: o mesmo texto sempre dá a mesma criatura, mas ela não é escolhida gene a gene, é só o que aquele endereço contém.</li>
+          </ul>
           <textarea
-            value={texto} onChange={(e) => setTexto(e.target.value)} rows={4} placeholder="Cole a seed aqui, ou digite um nome/texto…"
+            value={texto} onChange={(e) => setTexto(e.target.value)} rows={4} placeholder="Cole a seed, o código DNA (DRN2-…), ou digite um nome/texto…"
             className="w-full bg-stone-950 border border-stone-800 rounded p-2 text-[11px] font-data text-stone-300 resize-y"
           />
           <BotaoPrimario onClick={buscar}><Search size={12} className="inline -mt-0.5 mr-1" />Decodificar</BotaoPrimario>
@@ -196,6 +220,28 @@ function SeedSearchModal({ onFechar, onAdicionarComoPrimordial, eraAtual, showTo
 
           {resultado && (
             <div className="space-y-3 border-t border-stone-800 pt-3">
+              {resultado.deDNA && !resultado.fiel && (
+                <p className="text-[10px] text-amber-500/80">
+                  O DNA colado descreve uma combinação que as travas do sistema não sustentam por
+                  inteiro. O espécime abaixo é o mais próximo possível; divergiu em:{" "}
+                  <span className="font-mono">{resultado.camposDivergentes.join(", ")}</span>.
+                </p>
+              )}
+              {resultado.deDNA && resultado.fiel && (
+                <p className="text-[10px] text-emerald-500/70">
+                  Reconstruído a partir do DNA colado, sem nenhuma divergência. A seed abaixo endereça
+                  exatamente este espécime.
+                </p>
+              )}
+              {resultado.deDNA && (
+                <div className="space-y-1">
+                  <div className="text-stone-500 text-[10px] uppercase tracking-widest">Seed correspondente a este DNA</div>
+                  <div className="flex items-start gap-2">
+                    <div className="flex-1 text-[10px] font-mono text-emerald-300 break-all bg-stone-900/60 border border-stone-800 rounded p-2">{seedColada}</div>
+                    <button onClick={copiarSeed} className="shrink-0 text-[11px] font-mono uppercase text-stone-400 hover:text-emerald-400 border border-stone-800 rounded px-2 py-1.5"><Copy size={12} /></button>
+                  </div>
+                </div>
+              )}
               {resultado.deTexto && (
                 <div className="space-y-1">
                   <p className="text-[10px] text-amber-500/80">

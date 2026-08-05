@@ -18,6 +18,13 @@ function App() {
   const [patchnotesAberto, setPatchnotesAberto] = useState(false);
   const [individualViewer, setIndividualViewer] = useState(null); // { individual, especieNode|null } | null
   const [seedSearchAberto, setSeedSearchAberto] = useState(false);
+  // v27 — a busca pode ser aberta já preenchida (ex.: pelo botão "Abrir na
+  // busca" dentro do painel do indivíduo, que joga o DNA dele no campo)
+  const [seedSearchTexto, setSeedSearchTexto] = useState("");
+  const abrirBusca = (textoInicial) => {
+    setSeedSearchTexto(typeof textoInicial === "string" ? textoInicial : "");
+    setSeedSearchAberto(true);
+  };
   // Fase 5, item 9.5 — domínios climáticos customizados vivem em estado
   // mutável do motor (DOMINIOS_CUSTOM); dominiosVersion força re-render
   // aqui quando eles mudam, mesmo padrão já usado pro eventLog (logVersion).
@@ -228,7 +235,7 @@ function App() {
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          <button onClick={() => setSeedSearchAberto(true)} title="Buscar por Seed" className="p-2 rounded border border-stone-800 text-stone-400 hover:text-stone-200 hover:border-stone-600"><Search size={14} /></button>
+          <button onClick={() => abrirBusca()} title="Buscar por seed, DNA ou texto" className="p-2 rounded border border-stone-800 text-stone-400 hover:text-stone-200 hover:border-stone-600"><Search size={14} /></button>
           <button onClick={() => setPatchnotesAberto(true)} title="Patchnotes" className="p-2 rounded border border-stone-800 text-stone-400 hover:text-stone-200 hover:border-stone-600"><FileText size={14} /></button>
           <PersistenceBar eras={eras} nodes={nodes} individuals={individuals} anoAtual={anoAtual} faseGeoConfirmada={faseGeoConfirmada} faseErasConfirmada={faseErasConfirmada} onImportar={onImportarProjeto} showToast={showToast} />
         </div>
@@ -263,8 +270,8 @@ function App() {
             {nodes.length > 0 && (
               <Section title="Exportar" accent="text-stone-500">
                 <div className="flex flex-wrap gap-2">
-                  <button onClick={() => exportarHistoricoTxt(eventLog)} className="text-[11px] font-mono uppercase text-stone-400 hover:text-emerald-400 border border-stone-800 rounded px-3 py-1.5"><Download size={12} className="inline -mt-0.5 mr-1" />Histórico (.txt)</button>
-                  <button onClick={() => exportarHistoriaGlobalTxt(nodes, idx, massaIdx)} className="text-[11px] font-mono uppercase text-stone-400 hover:text-emerald-400 border border-stone-800 rounded px-3 py-1.5"><Download size={12} className="inline -mt-0.5 mr-1" />História Global (.txt)</button>
+                  <button onClick={() => exportarHistoricoPdf(eventLog)} className="text-[11px] font-mono uppercase text-stone-400 hover:text-emerald-400 border border-stone-800 rounded px-3 py-1.5"><Download size={12} className="inline -mt-0.5 mr-1" />Histórico (.pdf)</button>
+                  <button onClick={() => exportarHistoriaGlobalPdf(nodes, idx, massaIdx)} className="text-[11px] font-mono uppercase text-stone-400 hover:text-emerald-400 border border-stone-800 rounded px-3 py-1.5"><Download size={12} className="inline -mt-0.5 mr-1" />História Global (.pdf)</button>
                   <button onClick={() => exportarFichasObsidianZip(nodes, idx, massaIdx)} className="text-[11px] font-mono uppercase text-stone-400 hover:text-emerald-400 border border-stone-800 rounded px-3 py-1.5"><Download size={12} className="inline -mt-0.5 mr-1" />Fichas Obsidian (.zip)</button>
                 </div>
               </Section>
@@ -308,12 +315,14 @@ function App() {
           especieNode={individualViewer.especieNode}
           onFechar={() => setIndividualViewer(null)}
           onNavegarEspecie={(id) => { setIndividualViewer(null); setSelectedSpeciesId(id); }}
+          onBuscar={abrirBusca}
           showToast={showToast}
         />
       )}
 
       {seedSearchAberto && (
         <SeedSearchModal
+          textoInicial={seedSearchTexto}
           onFechar={() => setSeedSearchAberto(false)}
           onAdicionarComoPrimordial={adicionarSeedComoPrimordial}
           eraAtual={eraAtual}

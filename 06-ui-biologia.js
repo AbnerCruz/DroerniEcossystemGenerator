@@ -69,6 +69,21 @@ function ModalGerarEcossistema({ eraAtual, onGerar, onFechar, gerando, progresso
               <div><label className="text-[10px] uppercase text-stone-500 font-mono">Ciclos de deriva (máx)</label><CampoNumero value={ciclosMax} onChange={setCiclosMax} /></div>
             </div>
             <p className="text-[10px] text-stone-600">Cada primordial nasce em uma massa aleatória da era atual e deriva um nº aleatório de ciclos dentro da faixa acima. Contradições de coerência são corrigidas automaticamente, tanto na criação quanto a cada ciclo de deriva. Sem teto de ciclos — a geração roda em segundo plano com barra de progresso.</p>
+            {/* v26 — estimativa de tempo antes de rodar. A deriva longa é
+                pesada no celular (600 ciclos ≈ 20s mesmo depois da otimização
+                desta versão); em vez de impor um teto artificial de ciclos,
+                que empobreceria a bifurcação da árvore, o app avisa e deixa a
+                decisão com o usuário. */}
+            {(() => {
+              const cMax = Math.max(1, Number(ciclosMax) || 1);
+              const est = estimarTempoDeriva(cMax, n);
+              return (
+                <p className={`text-[10px] ${est.pesado ? "text-amber-500" : "text-stone-600"}`}>
+                  Tempo estimado neste aparelho: <span className="font-mono">{est.texto}</span>
+                  {est.pesado ? " — roda em segundo plano, mas prepare-se pra esperar." : ""}
+                </p>
+              );
+            })()}
             <BotaoPrimario onClick={gerar}>Gerar</BotaoPrimario>
           </>
         )}
@@ -432,14 +447,14 @@ function PainelLog({ eventLog }) {
   /* "ver todos" renderizava o log inteiro de uma vez — 7.902 nós de DOM
      no pior caso medido, o que congela a página no celular. O expandido
      agora mostra os 300 eventos mais recentes; o histórico completo
-     continua acessível pelo export .txt, que é o formato pedido para
+     continua acessível pelo export .pdf, que é o formato pedido para
      leitura longa mesmo. */
   const TETO_RENDER = 300;
   const itens = expandido ? eventLog.slice(-TETO_RENDER) : eventLog.slice(-8);
   const ocultos = expandido ? Math.max(0, eventLog.length - TETO_RENDER) : 0;
   return (
     <Section title="Histórico de Eventos" accent="text-stone-500" right={eventLog.length > 8 && <button onClick={() => setExpandido((v) => !v)} className="text-[10px] font-mono text-stone-500 hover:text-emerald-400">{expandido ? "recolher" : `ver todos (${eventLog.length})`}</button>}>
-      {ocultos > 0 && <div className="text-[10px] text-stone-600 mb-2">Mostrando os {TETO_RENDER} eventos mais recentes de {eventLog.length}. Use o export .txt para o histórico completo.</div>}
+      {ocultos > 0 && <div className="text-[10px] text-stone-600 mb-2">Mostrando os {TETO_RENDER} eventos mais recentes de {eventLog.length}. Use o export .pdf para o histórico completo.</div>}
       {eventLog.length === 0 ? <div className="text-xs text-stone-600">Nenhum evento ainda.</div> : (
         <div className="space-y-1.5 max-h-96 overflow-y-auto">
           {itens.slice().reverse().map((e) => (
