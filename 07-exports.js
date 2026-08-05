@@ -48,7 +48,8 @@ function habitatDoNo(node, massaIdx) {
 function arvoreTextoNode(node, idx, prefixo, ehUltimo) {
   const linhas = [];
   const ramo = ehUltimo ? "└─ " : "├─ ";
-  linhas.push(`${prefixo}${ramo}[${fmtAU(node.auSurgimento)}] ${node.clado}`);
+  const marcaExtincao = node.extinta ? ` [EXTINTA em ${fmtAU(node.auExtincao)}]` : ""; // Fase 1, item 4.2
+  linhas.push(`${prefixo}${ramo}[${fmtAU(node.auSurgimento)}] ${node.clado}${marcaExtincao}`);
   const filhos = node.filhos.map((id) => idx.get(id)).filter(Boolean);
   const novoPrefixo = prefixo + (ehUltimo ? "   " : "│  ");
   filhos.forEach((f, i) => linhas.push(...arvoreTextoNode(f, idx, novoPrefixo, i === filhos.length - 1)));
@@ -147,15 +148,31 @@ function serializeProjetoV17(state) {
     faseGeoConfirmada: state.faseGeoConfirmada,
     faseErasConfirmada: state.faseErasConfirmada,
     contadores: { idCounter: __idCounter, logCounter: __logCounter, idRegiaoCounter: __idRegiaoCounter, idEraCounter: __idEraCounter },
+    dominiosCustom: DOMINIOS_CUSTOM, // Fase 5, item 9.5
   });
 }
 function deserializarProjetoV17(text) {
   const parsed = JSON.parse(text);
-  const nodes = (parsed.nodes || []).map((n) => ({
-    ...n,
-    acumEstratoII: new Set(n.acumEstratoII || []),
-    speciesSeed: n.speciesSeed !== undefined ? BigInt(n.speciesSeed) : undefined,
-  }));
+  // Fase 2, item 5.3 (pré-requisito 8) — reinos Ar/Sp não existem mais no
+  // schema atual; ecossistemas salvos antes desta fase podem trazê-los.
+  // Decisão adotada (não havia decisão travada no plano): converte
+  // automaticamente para "An" (fallback neutro), preserva o reino original
+  // em `g.reinoOriginalMigrado` para rastreabilidade, e avisa a contagem
+  // ao usuário — não bloqueia o import nem tenta advinhar uma classe
+  // taxonômica specific, já que o genoma de Ar/Sp não mapeia de forma
+  // confiável pra nenhuma classeAn existente.
+  let migrados = 0;
+  const nodes = (parsed.nodes || []).map((n) => {
+    if (n.g && (n.g.reino === "Ar" || n.g.reino === "Sp")) {
+      migrados++;
+      n = { ...n, g: { ...n.g, reino: "An", reinoOriginalMigrado: n.g.reino } };
+    }
+    return {
+      ...n,
+      acumEstratoII: new Set(n.acumEstratoII || []),
+      speciesSeed: n.speciesSeed !== undefined ? BigInt(n.speciesSeed) : undefined,
+    };
+  });
   const individuals = (parsed.individuals || []).map((i) => ({ ...i, individualSeed: i.individualSeed !== undefined ? BigInt(i.individualSeed) : undefined }));
   return {
     eras: parsed.eras || [],
@@ -166,6 +183,8 @@ function deserializarProjetoV17(text) {
     faseGeoConfirmada: !!parsed.faseGeoConfirmada,
     faseErasConfirmada: !!parsed.faseErasConfirmada,
     contadores: parsed.contadores || {},
+    especiesMigradasDeReinoRemovido: migrados, // Fase 2, item 5.3
+    dominiosCustom: parsed.dominiosCustom || [], // Fase 5, item 9.5
   };
 }
 
@@ -188,10 +207,14 @@ function PersistenceBar({ eras, nodes, individuals, anoAtual, faseGeoConfirmada,
         const dados = deserializarProjetoV17(reader.result);
         resetEventLog();
         restaurarEventLog(dados.eventLog, dados.contadores.idCounter, dados.contadores.logCounter);
+        restaurarDominiosCustom(dados.dominiosCustom); // Fase 5, item 9.5
         if (typeof dados.contadores.idRegiaoCounter === "number") __idRegiaoCounter = Math.max(__idRegiaoCounter, dados.contadores.idRegiaoCounter);
         if (typeof dados.contadores.idEraCounter === "number") __idEraCounter = Math.max(__idEraCounter, dados.contadores.idEraCounter);
         onImportar(dados);
-        showToast(`Projeto importado: ${dados.nodes.length} espécie(s), ${dados.eras.length} era(s).`);
+        const avisoMigracao = dados.especiesMigradasDeReinoRemovido > 0
+          ? ` (${dados.especiesMigradasDeReinoRemovido} espécie(s) de reino removido Ar/Sp migradas para An — revise manualmente)`
+          : ""; // Fase 2, item 5.3
+        showToast(`Projeto importado: ${dados.nodes.length} espécie(s), ${dados.eras.length} era(s).${avisoMigracao}`);
       } catch (err) {
         showToast("Erro ao importar: arquivo inválido.");
       }

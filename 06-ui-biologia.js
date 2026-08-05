@@ -137,12 +137,16 @@ function ModalSelecaoNatural({ onRodar, onFechar, rodando, progresso }) {
 function CardEspecie({ node, onClick, individuosCount }) {
   const pesoCal = useMemo(() => calcularPesoCalorias(node.g), [node]);
   return (
-    <button onClick={onClick} className="w-full text-left rounded border border-stone-800 hover:border-emerald-800 bg-stone-950/50 p-2.5 transition-colors">
+    <button onClick={onClick} className={`w-full text-left rounded border border-stone-800 hover:border-emerald-800 bg-stone-950/50 p-2.5 transition-colors ${node.extinta ? "opacity-50" : ""}`}>
       <div className="flex items-center justify-between">
         <span className="font-mono text-xs text-stone-200">{node.clado}</span>
-        {node.isPrimordial && <Badge className="border-amber-800 text-amber-500">primordial</Badge>}
+        <div className="flex gap-1">
+          {node.isPrimordial && <Badge className="border-amber-800 text-amber-500">primordial</Badge>}
+          {node.extinta && <Badge className="border-red-800 text-red-500">✝ extinta</Badge>}
+        </div>
       </div>
       <div className="text-[10px] text-stone-500 mt-1">{REINO_LABEL[node.g.reino] || node.g.reino} · {fmtKg(pesoCal.pesoKg)} · {fmtAU(node.auSurgimento)}</div>
+      <div className="text-[9px] font-mono text-stone-700 mt-0.5 truncate">{node.code}</div>{/* Fase 4, item 7.1 */}
       <div className="flex gap-2 mt-1 text-[10px] text-stone-600">
         {node.filhos.length > 0 && <span>{node.filhos.length} descendente(s)</span>}
         {individuosCount > 0 && <span>{individuosCount} indivíduo(s)</span>}
@@ -178,11 +182,13 @@ function NodeArvore({ node, idx, profundidade, onAbrir, individuosPorEspecie }) 
             {aberto ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
           </button>
         ) : <span className="w-[11px] shrink-0" />}
-        <button onClick={() => onAbrir(node.id)} className="flex items-center gap-1.5 text-left hover:text-emerald-400 group min-w-0">
+        <button onClick={() => onAbrir(node.id)} title={node.code} className={`flex items-center gap-1.5 text-left hover:text-emerald-400 group min-w-0 ${node.extinta ? "opacity-50" : ""}`}>
           <Dna size={10} className="text-stone-700 group-hover:text-emerald-500 shrink-0" />
           <span className="font-mono text-xs text-stone-200 group-hover:text-emerald-400 truncate">{node.clado}</span>
           {node.isPrimordial && <Badge className="border-amber-800 text-amber-500 shrink-0">primordial</Badge>}
+          {node.extinta && <Badge className="border-red-800 text-red-500 shrink-0">✝ extinta</Badge>}
           <span className="text-[10px] text-stone-600 shrink-0 hidden sm:inline">{REINO_LABEL[node.g.reino] || node.g.reino} · {fmtKg(pesoCal.pesoKg)} · {fmtAU(node.auSurgimento)}</span>
+          <span className="text-[9px] font-mono text-stone-700 shrink-0 hidden md:inline truncate max-w-[140px]">{node.code}</span>{/* Fase 4, item 7.1 */}
           {filhos.length > 0 && <span className="text-[10px] text-stone-700 shrink-0">{filhos.length} filho(s)</span>}
           {indCount > 0 && <span className="text-[10px] text-stone-700 shrink-0">· {indCount} indivíduo(s)</span>}
         </button>
@@ -224,6 +230,7 @@ function PainelBiologia({ eras, nodes, setNodes, individuals, setIndividuals, an
   const [modalEcossistema, setModalEcossistema] = useState(false);
   const [modalSelecaoNatural, setModalSelecaoNatural] = useState(false);
   const [visao, setVisao] = useState("arvore"); // "arvore" | "lista" — árvore é o padrão pedido
+  const [buscaDna, setBuscaDna] = useState(""); // Fase 4, item 7.2
   const eraAtual = eras[eras.length - 1];
   const primordiais = nodes.filter((n) => n.isPrimordial);
 
@@ -278,7 +285,8 @@ function PainelBiologia({ eras, nodes, setNodes, individuals, setIndividuals, an
     // população automática pra cada espécie nova
     setProgressoLabel("Espalhando populações de indivíduos…");
     let novosIndividuos = [];
-    for (const node of novos) novosIndividuos = novosIndividuos.concat(gerarPopulacaoParaEspecie(node));
+    const massaIdxLocal = new Map(eraAtual.massas.map((m) => [m.id, m])); // Fase 2, item 5.5
+    for (const node of novos) novosIndividuos = novosIndividuos.concat(gerarPopulacaoParaEspecie(node, TAMANHO_POPULACAO_INICIAL, DIVISOES_POR_MASSA, massaIdxLocal.get(node.massaId)));
 
     // seleção natural populacional automática sobre o ecossistema recém-criado
     setProgressoLabel("Rodando seleção natural sobre as populações…");
@@ -302,7 +310,7 @@ function PainelBiologia({ eras, nodes, setNodes, individuals, setIndividuals, an
       `Ecossistema gerado: ${n} primordial(is), ${novos.length} espécie(s) no total, ${novosIndividuos.length} indivíduo(s) espalhados pelo mundo.` +
       (tetoAtingido ? " Teto de espécies por linhagem atingido — a deriva parou antes do fim." : "") +
       (extintasPorSaturacao > 0 ? ` ${extintasPorSaturacao} linhagem(ns) perdida(s) por concorrência (teto de ${MAX_LINHAGENS_ATIVAS} ramificações simultâneas).` : "") +
-      ` Seleção natural: ${resumo.colisoes} colisão(ões) de população, ${resumo.mortes} morte(s), ${resumo.nascimentos} nascimento(s).`
+      ` Seleção natural: ${resumo.colisoes} colisão(ões) de população, ${resumo.mortes} morte(s), ${resumo.nascimentos} nascimento(s), ${resumo.migracoes} migração(ões).`
     );
   };
 
@@ -329,7 +337,7 @@ function PainelBiologia({ eras, nodes, setNodes, individuals, setIndividuals, an
     showToast(
       resumo.colisoes === 0
         ? `${ciclos} ciclo(s) rodado(s) — nenhuma colisão de população (indivíduos de espécies diferentes não se cruzaram nas mesmas divisões).`
-        : `${ciclos} ciclo(s) rodado(s): ${resumo.colisoes} colisão(ões) de população, ${resumo.mortes} morte(s), ${resumo.nascimentos} nascimento(s). Ano atual avançou ${fmtAU(auAvancado)}.`
+        : `${ciclos} ciclo(s) rodado(s): ${resumo.colisoes} colisão(ões) de população, ${resumo.mortes} morte(s), ${resumo.nascimentos} nascimento(s), ${resumo.migracoes} migração(ões). Ano atual avançou ${fmtAU(auAvancado)}.`
     );
   };
 
@@ -347,6 +355,36 @@ function PainelBiologia({ eras, nodes, setNodes, individuals, setIndividuals, an
 
       {primordiais.length > 0 && (
         <>
+          {/* Fase 4, item 7.2 — busca por substring do código DNA (case-insensitive),
+              filtro simples sobre node.code, sem decodificar nada (diferente da busca
+              por seed). Com termo digitado, mostra uma lista plana dos resultados em
+              vez da árvore/lista agrupada por primordial. */}
+          <div className="mb-3">
+            <input
+              type="text"
+              value={buscaDna}
+              onChange={(e) => setBuscaDna(e.target.value)}
+              placeholder="Buscar por trecho do DNA (ex.: TAX:An.MAM...)"
+              className="w-full text-[11px] font-mono bg-stone-900 border border-stone-800 rounded px-2.5 py-1.5 text-stone-300 placeholder-stone-600 focus:border-emerald-700 focus:outline-none"
+            />
+          </div>
+
+          {buscaDna.trim() ? (
+            (() => {
+              const termo = buscaDna.trim().toLowerCase();
+              const resultados = nodes.filter((n) => n.code.toLowerCase().includes(termo));
+              return resultados.length === 0 ? (
+                <div className="text-xs text-stone-600 py-6 text-center">Nenhuma espécie com esse trecho de DNA.</div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {resultados.map((n) => (
+                    <CardEspecie key={n.id} node={n} onClick={() => onAbrirViewer(n.id)} individuosCount={individuals.filter((i) => i.especieId === n.id).length} />
+                  ))}
+                </div>
+              );
+            })()
+          ) : (
+          <>
           <div className="flex items-center gap-1.5 mb-3">
             <button onClick={() => setVisao("arvore")} className={`text-[10px] font-mono uppercase px-2.5 py-1 rounded border ${visao === "arvore" ? "border-emerald-700 bg-emerald-950/50 text-emerald-400" : "border-stone-800 text-stone-500 hover:text-stone-300"}`}>
               <GitBranch size={11} className="inline -mt-0.5 mr-1" />Árvore Genealógica
@@ -374,6 +412,8 @@ function PainelBiologia({ eras, nodes, setNodes, individuals, setIndividuals, an
                 );
               })}
             </div>
+          )}
+          </>
           )}
         </>
       )}
@@ -406,6 +446,7 @@ function PainelLog({ eventLog }) {
             <div key={e.seq} className="text-[11px] font-data border-l-2 border-stone-800 pl-2 py-0.5">
               <span className="text-stone-600">[#{e.seq}]</span> <span className="text-emerald-600">{e.tipoLabel}</span> <span className="text-stone-400">{e.clado}</span>
               <div className="text-stone-600">{e.texto}</div>
+              {e.code && <div className="text-stone-700 font-mono break-all">{e.code}</div>}
             </div>
           ))}
         </div>

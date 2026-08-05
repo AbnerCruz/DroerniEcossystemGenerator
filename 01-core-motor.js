@@ -209,7 +209,9 @@ const T = {
   tolHidrica: [{ max: 34, value: "ms", label: "Mesófilo" }, { max: 52, value: "um", label: "Umidófilo" }, { max: 66, value: "xe", label: "Xerófilo" }, { max: 79, value: "sa", label: "Semiaquático" }, { max: 92, value: "aq", label: "Aquático obrigatório" }, { max: 100, value: "eu", label: "Eurihídrico" }],
   tolTermica: [{ max: 45, value: "tp", label: "Temperado" }, { max: 68, value: "qt", label: "Quente" }, { max: 86, value: "fr", label: "Frio" }, { max: 100, value: "eu", label: "Euritérmico" }],
   tolCiclo: [{ max: 40, value: "di", label: "Diurno" }, { max: 68, value: "no", label: "Noturno" }, { max: 84, value: "cr", label: "Crepuscular" }, { max: 94, value: "ct", label: "Catemeral" }, { max: 100, value: "sz", label: "Sazonal" }],
-  reino: [{ max: 74, value: "An", label: "Animal" }, { max: 89, value: "Pl", label: "Planta" }, { max: 96, value: "Fu", label: "Fungo" }, { max: 98, value: "Ar", label: "Artificial / construto" }, { max: 100, value: "Sp", label: "Espiritual / etéreo" }],
+  // Fase 2, item 5.3 — reinos Ar (construto) e Sp (espiritual) removidos
+  // por completo; pesos redistribuídos entre os quatro restantes.
+  reino: [{ max: 70, value: "An", label: "Animal" }, { max: 86, value: "Pl", label: "Planta" }, { max: 94, value: "Fu", label: "Fungo" }, { max: 100, value: "Ba", label: "Bactéria" }],
   classeAn: [{ max: 25, value: "MAM", label: "Mamífero" }, { max: 42, value: "AVE", label: "Ave" }, { max: 58, value: "REP", label: "Réptil" }, { max: 68, value: "AMP", label: "Anfíbio" }, { max: 82, value: "PSC", label: "Peixe" }, { max: 94, value: "INS", label: "Inseto / artrópode" }, { max: 100, value: "MOL", label: "Molusco" }],
   mag: [{ max: 30, value: "A0", label: "Nulo" }, { max: 48, value: "A1", label: "Latente" }, { max: 60, value: "A2", label: "Residual" }, { max: 75, value: "A3", label: "Instintivo" }, { max: 85, value: "A4", label: "Funcional" }, { max: 93, value: "A5", label: "Disciplinado" }, { max: 97, value: "A6", label: "Versátil" }, { max: 98, value: "A7", label: "Dominante" }, { max: 99, value: "A8", label: "Excepcional" }, { max: 100, value: "A9", label: "Ápice" }],
   simetria: [{ max: 78, value: "bi", label: "Bilateral" }, { max: 88, value: "rd", label: "Radial" }, { max: 94, value: "es", label: "Espiral" }, { max: 98, value: "as", label: "Assimétrica" }, { max: 100, value: "am", label: "Amorfa" }],
@@ -217,6 +219,8 @@ const T = {
   // MOR gene 4 — só relevante para reino Pl/Fu (silhueta geral, que LOC+MEM+CRN já dão de graça pra An/Ar/Sp)
   morFormaPl: [{ max: 28, value: "ar", label: "Arbustiva" }, { max: 48, value: "av", label: "Arbórea" }, { max: 63, value: "ta", label: "Tapete / rasteira" }, { max: 76, value: "tr", label: "Trepadeira" }, { max: 86, value: "ro", label: "Rosácea" }, { max: 95, value: "co", label: "Colunar" }, { max: 100, value: "am", label: "Amorfa" }],
   morFormaFu: [{ max: 30, value: "ch", label: "Chapéu-e-pé" }, { max: 48, value: "mi", label: "Miceliar / tapete" }, { max: 63, value: "pr", label: "Prateleira" }, { max: 76, value: "es", label: "Esférica" }, { max: 90, value: "cr", label: "Coral" }, { max: 100, value: "am", label: "Amorfa" }],
+  // Fase 1, item 4.1 — silhueta própria de bactéria (equivalente a morForma para Ba)
+  morFormaBa: [{ max: 35, value: "cc", label: "Cocoide" }, { max: 65, value: "bc", label: "Bacilo" }, { max: 85, value: "es", label: "Espiral" }, { max: 100, value: "fl", label: "Filamentosa" }],
   // proporções — só fazem sentido pra quem tem tronco/membro/pescoço de verdade (An/Ar/Sp; Pl/Fu já resolvem silhueta via morForma)
   morTorso: [{ max: 30, value: "co", label: "Compacto" }, { max: 75, value: "pr", label: "Proporcional" }, { max: 95, value: "al", label: "Alongado" }, { max: 100, value: "se", label: "Serpentino" }],
   memProp: [{ max: 25, value: "cu", label: "Curtos" }, { max: 70, value: "pr", label: "Proporcionais" }, { max: 92, value: "lo", label: "Longos" }, { max: 100, value: "ex", label: "Extremamente longos" }],
@@ -238,11 +242,13 @@ const T = {
   facOlhosQtd: [{ max: 70, value: 2, label: "2" }, { max: 76, value: 0, label: "0" }, { max: 86, value: 4, label: "4" }, { max: 93, value: 6, label: "6" }, { max: 98, value: 8, label: "8" }, { max: 100, value: 1, label: "1" }],
   facOlhosTipo: [{ max: 45, value: "rd", label: "Redondo" }, { max: 70, value: "fd", label: "Fendido" }, { max: 85, value: "cp", label: "Composto" }, { max: 95, value: "lm", label: "Luminoso" }, { max: 100, value: "cg", label: "Cego" }],
   facDenticao: [{ max: 28, value: "mx", label: "Mista" }, { max: 48, value: "cn", label: "Canina" }, { max: 66, value: "in", label: "Incisiva" }, { max: 78, value: "pl", label: "Placa moedora" }, { max: 86, value: "fl", label: "Filtradora" }, { max: 95, value: "pr", label: "Presas venenosas" }, { max: 100, value: "0", label: "Ausente" }],
-  tegTipo: [{ max: 15, value: "Pe", label: "Pelo" }, { max: 30, value: "Es", label: "Escama" }, { max: 45, value: "Cr", label: "Couro nu" }, { max: 60, value: "Ql", label: "Quitina" }, { max: 69, value: "Pn", label: "Pena" }, { max: 77, value: "Mu", label: "Mucosa" }, { max: 85, value: "Cs", label: "Casca" }, { max: 91, value: "Cn", label: "Cristalino" }, { max: 97, value: "Me", label: "Metálico" }, { max: 99, value: "Pd", label: "Pedra" }, { max: 100, value: "Et", label: "Etéreo" }],
+  // Fase 2, item 5.3 — "Et" (Etéreo) removido: sem reino Sp, não há mais gatilho coerente pra ele
+  tegTipo: [{ max: 15, value: "Pe", label: "Pelo" }, { max: 30, value: "Es", label: "Escama" }, { max: 45, value: "Cr", label: "Couro nu" }, { max: 60, value: "Ql", label: "Quitina" }, { max: 69, value: "Pn", label: "Pena" }, { max: 77, value: "Mu", label: "Mucosa" }, { max: 85, value: "Cs", label: "Casca" }, { max: 91, value: "Cn", label: "Cristalino" }, { max: 96, value: "Me", label: "Metálico" }, { max: 100, value: "Pd", label: "Pedra" }],
   tegCor: [{ max: 14, value: "Mrr", label: "Marrom", faixa: "Comum" }, { max: 26, value: "Cnz", label: "Cinza", faixa: "Comum" }, { max: 38, value: "Pre", label: "Preto", faixa: "Comum" }, { max: 50, value: "Vrd", label: "Verde", faixa: "Comum" }, { max: 60, value: "Bra", label: "Branco", faixa: "Comum" }, { max: 68, value: "Amr", label: "Amarelo", faixa: "Incomum" }, { max: 76, value: "Vrm", label: "Vermelho", faixa: "Incomum" }, { max: 83, value: "Azl", label: "Azul", faixa: "Incomum" }, { max: 88, value: "Lrj", label: "Laranja", faixa: "Incomum" }, { max: 92, value: "Rox", label: "Roxo", faixa: "Raro" }, { max: 95, value: "Dou", label: "Dourado", faixa: "Raro" }, { max: 97, value: "Prt", label: "Prateado", faixa: "Raro" }, { max: 99, value: "Trn", label: "Translúcido", faixa: "Excepcional" }, { max: 100, value: "Irr", label: "Irreal", faixa: "Excepcional" }],
   tegPadrao: [{ max: 35, value: "ls", label: "Liso", faixa: "Comum" }, { max: 55, value: "mc", label: "Manchado", faixa: "Comum" }, { max: 70, value: "lt", label: "Listrado", faixa: "Comum" }, { max: 80, value: "gd", label: "Gradiente", faixa: "Incomum" }, { max: 88, value: "rt", label: "Reticulado", faixa: "Incomum" }, { max: 93, value: "oc", label: "Ocelado", faixa: "Raro" }, { max: 97, value: "if", label: "Iridescente", faixa: "Raro" }, { max: 99, value: "lm", label: "Luminescente", faixa: "Excepcional" }, { max: 100, value: "gv", label: "Gravado", faixa: "Excepcional" }],
   asaQtd: [{ max: 72, value: 0, label: "0" }, { max: 90, value: 2, label: "2" }, { max: 96, value: 4, label: "4" }, { max: 99, value: 6, label: "6" }, { max: 100, value: 8, label: "8" }],
-  asaTipo: [{ max: 32, value: "mb", label: "Membranosa" }, { max: 58, value: "pn", label: "Penada" }, { max: 76, value: "qt", label: "Quitinosa" }, { max: 88, value: "el", label: "Élitro" }, { max: 95, value: "vg", label: "Vegetal" }, { max: 100, value: "et", label: "Etérea" }],
+  // Fase 2, item 5.3 — "et" (Etérea) removida: sem reino Sp, não há mais gatilho coerente pra ela
+  asaTipo: [{ max: 36, value: "mb", label: "Membranosa" }, { max: 65, value: "pn", label: "Penada" }, { max: 84, value: "qt", label: "Quitinosa" }, { max: 96, value: "el", label: "Élitro" }, { max: 100, value: "vg", label: "Vegetal" }],
   cdaComp: [{ max: 30, value: "0", label: "0" }, { max: 52, value: "md", label: "Média" }, { max: 74, value: "lg", label: "Longa" }, { max: 90, value: "ct", label: "Curta" }, { max: 100, value: "xl", label: "Extra longa" }],
   cdaTipo: [{ max: 22, value: "pl", label: "Peluda" }, { max: 40, value: "es", label: "Escamosa" }, { max: 54, value: "nu", label: "Nua" }, { max: 68, value: "pr", label: "Preênsil" }, { max: 78, value: "pq", label: "Emplumada" }, { max: 86, value: "bq", label: "Barbatana caudal" }, { max: 92, value: "lm", label: "Lâmina" }, { max: 97, value: "fr", label: "Ferrão venenoso" }, { max: 100, value: "lq", label: "Líquida" }],
   senEspecial: [{ max: 55, value: "0", label: "Nenhum" }, { max: 66, value: "vb", label: "Vibrossensor" }, { max: 75, value: "tr", label: "Termorrecepção" }, { max: 83, value: "ec", label: "Ecolocalização" }, { max: 89, value: "mg", label: "Magnetorrecepção" }, { max: 94, value: "el", label: "Eletrorrecepção" }, { max: 98, value: "au", label: "Percepção áurica" }, { max: 100, value: "pr", label: "Precognição rasa" }],
@@ -250,6 +256,48 @@ const T = {
   defArma: [{ max: 25, value: "0", label: "Nenhuma" }, { max: 42, value: "gr", label: "Garras" }, { max: 58, value: "pr", label: "Presas" }, { max: 68, value: "es", label: "Espinhos" }, { max: 77, value: "ch", label: "Chifres" }, { max: 85, value: "ve", label: "Veneno" }, { max: 90, value: "cn", label: "Constrição" }, { max: 94, value: "cu", label: "Cuspe/jato" }, { max: 97, value: "el", label: "Descarga elétrica" }, { max: 99, value: "so", label: "Ataque sônico" }, { max: 100, value: "au", label: "Ataque áurico" }],
   defEstrategia: [{ max: 28, value: "fu", label: "Fuga" }, { max: 46, value: "ca", label: "Camuflagem" }, { max: 62, value: "lu", label: "Luta" }, { max: 74, value: "gp", label: "Defesa em grupo" }, { max: 83, value: "mm", label: "Mimetismo" }, { max: 90, value: "to", label: "Toxicidade aposemática" }, { max: 96, value: "ri", label: "Rigidez" }, { max: 100, value: "re", label: "Regeneração" }],
   ano: [{ max: 18, value: "*alb", label: "Albinismo" }, { max: 34, value: "*mel", label: "Melanismo" }, { max: 48, value: "*het", label: "Heterocromia" }, { max: 60, value: "*gig", label: "Gigantismo" }, { max: 71, value: "*nan", label: "Nanismo" }, { max: 81, value: "*pol", label: "Polimelia" }, { max: 89, value: "*reg", label: "Regeneração anômala" }, { max: 95, value: "*bic", label: "Bicefalia" }, { max: 98, value: "*aur", label: "Poder fora de escala" }, { max: 100, value: "*fas", label: "Fasmatismo" }],
+
+  // ===== Fase 3 — Genes novos por táxon (proposta aprovada sem alterações) =====
+  // MAM
+  glandulaMamaria: [{ max: 20, value: "au", label: "Ausente" }, { max: 45, value: "ve", label: "Vestigial" }, { max: 80, value: "fb", label: "Funcional — baixa produção" }, { max: 100, value: "fa", label: "Funcional — alta produção" }],
+  dentesTipo: [{ max: 34, value: "ho", label: "Homodonte" }, { max: 67, value: "he", label: "Heterodonte simples" }, { max: 100, value: "hc", label: "Heterodonte complexo (molares especializados)" }],
+  termorregulacao: [{ max: 20, value: "er", label: "Ectotermia residual" }, { max: 55, value: "ep", label: "Endotermia parcial" }, { max: 100, value: "el", label: "Endotermia plena" }],
+  gestacao: [{ max: 30, value: "ma", label: "Marsupial" }, { max: 65, value: "pc", label: "Placentária curta" }, { max: 100, value: "pl", label: "Placentária longa" }],
+  // AVE
+  bicoFormato: [{ max: 25, value: "gr", label: "Granívoro/curto-grosso" }, { max: 48, value: "in", label: "Insetívoro/fino" }, { max: 70, value: "ca", label: "Carnívoro/gancho" }, { max: 85, value: "fl", label: "Filtrador" }, { max: 100, value: "nc", label: "Nectarívoro/longo-fino" }],
+  penaFuncao: [{ max: 40, value: "vo", label: "Só voo" }, { max: 78, value: "vi", label: "Voo + isolamento" }, { max: 100, value: "or", label: "Ornamental proeminente" }],
+  migratorio: [{ max: 62, value: "se", label: "Sedentária" }, { max: 100, value: "mi", label: "Migratória sazonal" }],
+  // REP
+  escamaTipo: [{ max: 40, value: "li", label: "Lisa" }, { max: 75, value: "qu", label: "Quilhada" }, { max: 100, value: "os", label: "Osteoderme/blindada" }],
+  venenoAparato: [{ max: 55, value: "au", label: "Ausente" }, { max: 82, value: "pi", label: "Presas inoculadoras" }, { max: 100, value: "gd", label: "Glândula difusa não-inoculadora" }],
+  regeneracaoCauda: [{ max: 45, value: "au", label: "Ausente" }, { max: 78, value: "pa", label: "Parcial" }, { max: 100, value: "co", label: "Completa" }],
+  // AMP
+  metamorfose: [{ max: 30, value: "di", label: "Direta/sem estágio larval" }, { max: 78, value: "la", label: "Larval aquática clássica" }, { max: 100, value: "ne", label: "Neotenia possível" }],
+  peleToxinas: [{ max: 50, value: "au", label: "Ausente" }, { max: 80, value: "le", label: "Leve irritante" }, { max: 100, value: "to", label: "Tóxica" }],
+  // PSC
+  nadadeiraConfiguracao: [{ max: 60, value: "pa", label: "Padrão" }, { max: 85, value: "mr", label: "Modificada em membro rudimentar" }, { max: 100, value: "vo", label: "Voadora" }],
+  respiracaoBranquial: [{ max: 75, value: "sb", label: "Só brânquia" }, { max: 100, value: "ac", label: "Brânquia + órgão acessório de ar atmosférico" }],
+  bexigaNatatoria: [{ max: 40, value: "au", label: "Ausente" }, { max: 100, value: "pr", label: "Presente" }],
+  // INS
+  metamorfoseTipo: [{ max: 30, value: "am", label: "Ametábola" }, { max: 65, value: "he", label: "Hemimetábola" }, { max: 100, value: "ho", label: "Holometábola" }],
+  patasQtdEspecializada: [{ max: 55, value: "pd", label: "6 patas padrão" }, { max: 80, value: "rp", label: "Patas raptoriais" }, { max: 100, value: "na", label: "Patas natatórias/adaptadas" }],
+  venenoOuFerroao: [{ max: 55, value: "au", label: "Ausente" }, { max: 80, value: "fd", label: "Ferrão defensivo" }, { max: 100, value: "mi", label: "Mandíbula inoculadora" }],
+  coloniaTipo: [{ max: 65, value: "so", label: "Solitário" }, { max: 100, value: "eu", label: "Eussocial com castas" }],
+  // MOL
+  concha: [{ max: 30, value: "au", label: "Ausente/nu" }, { max: 55, value: "in", label: "Interna" }, { max: 80, value: "es", label: "Externa espiralada" }, { max: 100, value: "bv", label: "Externa bivalve" }],
+  tentaculosQtd: [{ max: 25, value: 0, label: "0" }, { max: 50, value: 2, label: "2" }, { max: 75, value: 8, label: "8" }, { max: 92, value: 10, label: "10" }, { max: 100, value: 99, label: "Muitos" }],
+  tintaDefensiva: [{ max: 60, value: "au", label: "Ausente" }, { max: 100, value: "pr", label: "Presente" }],
+  // Pl
+  raizTipo: [{ max: 45, value: "fa", label: "Fasciculada" }, { max: 85, value: "pi", label: "Pivotante" }, { max: 100, value: "ae", label: "Aérea/epífita" }],
+  folhaTipo: [{ max: 15, value: "au", label: "Ausente" }, { max: 45, value: "ag", label: "Agulha" }, { max: 80, value: "la", label: "Larga" }, { max: 100, value: "su", label: "Suculenta" }],
+  reproducaoEstrutura: [{ max: 55, value: "fl", label: "Flor" }, { max: 80, value: "co", label: "Cone" }, { max: 100, value: "es", label: "Esporo" }],
+  // Fu
+  corpoFrutiferoTipo: [{ max: 20, value: "nv", label: "Nenhum visível" }, { max: 60, value: "cp", label: "Cogumelo clássico (píleo-estipe)" }, { max: 82, value: "cr", label: "Crosta" }, { max: 100, value: "pr", label: "Prateleira" }],
+  esporoDispersao: [{ max: 55, value: "ve", label: "Vento" }, { max: 82, value: "an", label: "Animal" }, { max: 100, value: "ag", label: "Água" }],
+  // Ba
+  paredeCelularTipo: [{ max: 55, value: "gp", label: "Gram-positiva-análoga" }, { max: 100, value: "gn", label: "Gram-negativa-análoga" }],
+  metabolismoTipo: [{ max: 40, value: "qm", label: "Quimiossíntese" }, { max: 70, value: "ft", label: "Fotossíntese" }, { max: 100, value: "de", label: "Decomposição/heterotrofia" }],
+  formaColonia: [{ max: 40, value: "is", label: "Isolada" }, { max: 75, value: "ca", label: "Cadeia" }, { max: 100, value: "bf", label: "Biofilme" }],
 };
 const CONS = "BCDFGHJKLMNPQRSTVXZ", VOG = "aeiouy";
 
@@ -272,6 +320,7 @@ const CLASSE_TRAVAS = {
     memTerm: { restrict: ["pa", "gr", "ca", "mo", "ba"] },
     repModo: { restrict: ["vv", "oz"] },
     tegTipo: { restrict: ["Pe", "Cr"] },
+    asaTipo: { restrict: ["mb"] }, // Fase 1, item 4.3 — membranosa, única coerente com pelo/couro (tipo morcego)
     crnFormato: { exclude: ["0"] },
     facFocinho: { exclude: ["bi", "mn", "tu"] },
     facOrelha: { exclude: ["an", "mb"] },
@@ -401,11 +450,10 @@ function runSpeciesSteps(cur, isPrimordialIntent) {
   categoricalStep(cur, "tolCiclo", T.tolCiclo, { bias: cicloBias });
 
   // Passo 2 — TAX
-  categoricalStep(cur, "reino", T.reino, g.isPrimordial ? { exclude: ["Ar"] } : {});
+  categoricalStep(cur, "reino", T.reino, g.isPrimordial ? { fixed: "Ba" } : {}); // Fase 2, item 5.2 — todo primordial nasce bactéria
   if (g.reino === "Pl") g.classe = "VEG";
   else if (g.reino === "Fu") g.classe = "FUN";
-  else if (g.reino === "Ar") g.classe = "CON";
-  else if (g.reino === "Sp") g.classe = "ETH";
+  else if (g.reino === "Ba") g.classe = "MIC"; // Fase 1, item 4.1
   else {
     // a tolerância hídrica já está definida (Passo 1) e limita quais classes fazem sentido
     let classeOptsHid = {};
@@ -418,30 +466,32 @@ function runSpeciesSteps(cur, isPrimordialIntent) {
   if (!g.classe) g.classe = cur.ctx.classe;
 
   // Passo 3 — MAG
-  categoricalStep(cur, "mag", T.mag, g.reino === "Sp" ? { restrict: ["A5", "A6", "A7", "A8", "A9"] } : g.isPrimordial ? { restrict: ["A0", "A1", "A2", "A3"] } : {});
+  categoricalStep(cur, "mag", T.mag, g.isPrimordial ? { restrict: ["A0", "A1", "A2", "A3"] } : {}); // Fase 2, item 5.3 — removida cláusula de reino Sp
 
   // Passo 4 — MOR
   categoricalStep(cur, "simetria", T.simetria);
   const porteBias = g.tolTermica === "fr" ? ["gr", "cl", "tt"] : g.tolTermica === "qt" ? ["mn", "pq"] : undefined;
   categoricalStep(cur, "porte", T.porte, { bias: porteBias });
   const porteRow = T.porte.find((r) => r.value === g.porte);
-  scalarStep(cur, "densidade", g.reino === "Sp" ? { max: 1 } : {});
+  scalarStep(cur, "densidade"); // Fase 2, item 5.3 — removido teto de densidade de reino Sp (não existe mais)
   if (g.reino === "Pl") categoricalStep(cur, "morForma", T.morFormaPl);
   else if (g.reino === "Fu") categoricalStep(cur, "morForma", T.morFormaFu);
+  else if (g.reino === "Ba") categoricalStep(cur, "morForma", T.morFormaBa); // Fase 1, item 4.1
   else g.morForma = "0";
-  if (g.reino === "An" || g.reino === "Ar") categoricalStep(cur, "morTorso", T.morTorso);
+  if (g.reino === "An") categoricalStep(cur, "morTorso", T.morTorso); // Fase 2, item 5.3 — removido reino Ar
   else g.morTorso = "0";
 
   // Passo 5 — LOC
   const locBasico = ["Q", "B", "S", "N", "H"]; // primordial: locomoção comum, nada de especializações já prontas
   let locOpts = {};
   if (g.reino === "Pl" || g.reino === "Fu") locOpts = { fixed: "F" };
+  else if (g.reino === "Ba") locOpts = { restrict: ["N", "F"] }; // Fase 1, item 4.1 — flagelo (natação) ou fixo/séssil (biofilme)
   else if (g.tolHidrica === "aq" && g.isPrimordial) locOpts = { restrict: ["N", "S"] }; // interseção de aquático com o conjunto básico
   else if (g.tolHidrica === "aq") locOpts = { restrict: ["N", "F", "O", "S"] };
   else if (g.isPrimordial) locOpts = { restrict: locBasico };
   if (g.morTorso === "se" && !locOpts.fixed && !locOpts.restrict) locOpts.bias = ["S"]; // corpo serpentino já decidido — a locomoção tende a acompanhar
   categoricalStep(cur, "locPrimario", T.locPrim, mergeOpts(locOpts, classeOpts(g, "locPrimario")));
-  const locSecOpts = (g.reino === "Pl" || g.reino === "Fu")
+  const locSecOpts = (g.reino === "Pl" || g.reino === "Fu" || g.reino === "Ba") // Fase 1, item 4.1 — bactéria não tem modo secundário
     ? { fixed: "0" }
     : g.isPrimordial
       ? { restrict: [...locBasico, "0"], exclude: g.locPrimario !== "0" ? [g.locPrimario] : [] }
@@ -460,10 +510,10 @@ function runSpeciesSteps(cur, isPrimordialIntent) {
   scalarStep(cur, "locVelocidade", g.locPrimario === "F" ? { min: 0, max: 0 } : {});
 
   // Passo 6 — MEM
-  categoricalStep(cur, "memSup", T.memSup, mergeOpts((g.reino === "Pl" || g.reino === "Fu") ? { fixed: "0S" } : g.isPrimordial ? { restrict: ["0S", "2S"] } : {}, classeOpts(g, "memSup")));
+  categoricalStep(cur, "memSup", T.memSup, mergeOpts((g.reino === "Pl" || g.reino === "Fu" || g.reino === "Ba") ? { fixed: "0S" } : g.isPrimordial ? { restrict: ["0S", "2S"] } : {}, classeOpts(g, "memSup"))); // Fase 1, item 4.1
   const memInfClasse = classeOpts(g, "memInf");
   const memInfFixed = { B: "2I", Q: "4I", H: "6I", O: "8I", S: "0I", N: "0I", F: "0I", R: "0I" }[g.locPrimario];
-  if (g.reino === "Sp") { g.memInf = "0I"; g.memInfRaw = undefined; }
+  if (g.reino === "Ba") { g.memInf = "0I"; g.memInfRaw = undefined; } // Fase 1, item 4.1 (Sp removido — Fase 2, item 5.3)
   else if (memInfClasse?.fixed) { g.memInf = memInfClasse.fixed; g.memInfRaw = undefined; } // classe vence a derivação por locomoção (pinguim nada e continua bípede)
   else if (memInfFixed) { g.memInf = memInfFixed; g.memInfRaw = undefined; }
   else {
@@ -474,8 +524,8 @@ function runSpeciesSteps(cur, isPrimordialIntent) {
     });
     g.memInf = opt;
   }
-  categoricalStep(cur, "memApendices", [{ max: 75, value: "0X" }, { max: 90, value: "2X" }, { max: 96, value: "4X" }, { max: 99, value: "6X" }, { max: 100, value: "8X" }], (g.reino === "Pl" || g.reino === "Fu") ? { fixed: "0X" } : g.isPrimordial ? { restrict: ["0X", "2X"] } : {});
-  categoricalStep(cur, "memTerm", T.memTerm, mergeOpts(g.reino === "Pl" ? { fixed: "ra" } : g.reino === "Fu" ? { fixed: "no" } : g.tolHidrica === "aq" ? { bias: ["ba", "ve"] } : {}, classeOpts(g, "memTerm")));
+  categoricalStep(cur, "memApendices", [{ max: 75, value: "0X" }, { max: 90, value: "2X" }, { max: 96, value: "4X" }, { max: 99, value: "6X" }, { max: 100, value: "8X" }], (g.reino === "Pl" || g.reino === "Fu" || g.reino === "Ba") ? { fixed: "0X" } : g.isPrimordial ? { restrict: ["0X", "2X"] } : {}); // Fase 1, item 4.1
+  categoricalStep(cur, "memTerm", T.memTerm, mergeOpts(g.reino === "Pl" ? { fixed: "ra" } : (g.reino === "Fu" || g.reino === "Ba") ? { fixed: "no" } : g.tolHidrica === "aq" ? { bias: ["ba", "ve"] } : {}, classeOpts(g, "memTerm"))); // Fase 1, item 4.1
   if (g.memSup !== "0S" || g.memInf !== "0I") {
     const memPropOpts = g.locPrimario === "C" ? { bias: ["cu"] } : ["V", "E"].includes(g.locPrimario) ? { bias: ["lo", "ex"] } : {};
     categoricalStep(cur, "memProp", T.memProp, memPropOpts);
@@ -557,21 +607,21 @@ function runSpeciesSteps(cur, isPrimordialIntent) {
   // Passo 7 — REP
   let repOpts = {};
   if (g.reino === "Fu") repOpts = { fixed: "sp" };
-  else if (g.reino === "Ar") repOpts = { fixed: "an" };
+  else if (g.reino === "Ba") repOpts = { fixed: "fs" }; // Fase 1, item 4.1 — fissão binária (valor "fs" já existia na tabela)
   /* Plantas não tinham trava nenhuma de reprodução: saíam plantas
      vivíparas, hematófagas de ninhada, e plantas "que não se reproduzem"
      (0,36% da amostra). Restringido aos modos que uma planta de fato usa. */
   else if (g.reino === "Pl") repOpts = { restrict: ["sp", "gm", "fs", "ax", "ov"] };
-  else if (g.reino === "Sp") repOpts = { restrict: ["an", "gm", "ax", "ni"] };
+  // Fase 2, item 5.3 — reinos Ar/Sp removidos (repOpts fixo "an" e restrito respectivamente saíram)
   categoricalStep(cur, "repModo", T.repModo, mergeOpts(repOpts, classeOpts(g, "repModo")));
   scalarStep(cur, "repProle", porteRow.n >= 4 ? { max: 3 } : porteRow.n === 0 ? { min: 5 } : {});
   scalarStep(cur, "repMaturacao", porteRow.n >= 4 ? { min: 5 } : {});
   scalarStep(cur, "repLongevidade", (g.mag && Number(g.mag.slice(1)) >= 8) ? { min: 7 } : porteRow.n === 0 ? { max: 3 } : {});
 
   // Passo 8 — CRN
-  categoricalStep(cur, "crnFormato", T.crnFormato, mergeOpts((g.reino === "Pl" || g.reino === "Fu") ? { fixed: "0" } : g.isPrimordial ? { exclude: ["hu"] } : {}, classeOpts(g, "crnFormato")));
+  categoricalStep(cur, "crnFormato", T.crnFormato, mergeOpts((g.reino === "Pl" || g.reino === "Fu" || g.reino === "Ba") ? { fixed: "0" } : g.isPrimordial ? { exclude: ["hu"] } : {}, classeOpts(g, "crnFormato"))); // Fase 1, item 4.1 — sem crânio
   const semCranio = g.crnFormato === "0";
-  categoricalStep(cur, "crnChifreQtd", T.crnChifreQtd, (semCranio || g.reino === "Sp") ? { fixed: "0" } : {});
+  categoricalStep(cur, "crnChifreQtd", T.crnChifreQtd, semCranio ? { fixed: "0" } : {}); // Fase 2, item 5.3 — removida cláusula de reino Sp
   if (g.crnChifreQtd !== "0") categoricalStep(cur, "crnChifreForma", T.crnChifreForma); else g.crnChifreForma = "";
   categoricalStep(cur, "crnCrista", T.crnCrista, semCranio ? { restrict: ["0", "ap", "au"], exclude: g.isPrimordial ? ["ap", "au"] : [] } : g.isPrimordial ? { exclude: ["ap", "au"] } : {});
   if (!semCranio) {
@@ -586,8 +636,8 @@ function runSpeciesSteps(cur, isPrimordialIntent) {
   const dieBasePl = [{ max: 85, value: "ft", label: "Fotossintético" }, { max: 94, value: "in", label: "Insetívoro" }, { max: 98, value: "de", label: "Detritívoro" }, { max: 100, value: "qm", label: "Quimiossintético" }];
   let dieOpts = {};
   if (g.reino === "Fu") dieOpts = { restrict: ["de", "qm"] };
-  else if (g.reino === "Ar") dieOpts = { restrict: ["ni", "au"] };
-  else if (g.reino === "Sp") dieOpts = { restrict: ["ni", "au"] };
+  else if (g.reino === "Ba") dieOpts = { restrict: ["de", "qm"] }; // Fase 1, item 4.1 — decomposição/quimiossíntese, restrito (confirmado)
+  // Fase 2, item 5.3 — reinos Ar/Sp removidos (dieOpts restrito a ni/au saiu)
   categoricalStep(cur, "dieBase", g.reino === "Pl" ? dieBasePl : T.dieBase, g.reino === "Pl" ? {} : dieOpts);
   scalarStep(cur, "dieFrequencia", g.tolHidrica === "xe" ? { max: 5 } : {});
   categoricalStep(cur, "dieRestricao", T.dieRestricao);
@@ -599,7 +649,7 @@ function runSpeciesSteps(cur, isPrimordialIntent) {
     categoricalStep(cur, "facFocinho", T.facFocinho, mergeOpts({}, classeOpts(g, "facFocinho")));
     categoricalStep(cur, "facOrelha", T.facOrelha, mergeOpts(g.tolHidrica === "aq" ? { bias: ["in", "mb"] } : {}, classeOpts(g, "facOrelha")));
   }
-  categoricalStep(cur, "facOlhosQtd", T.facOlhosQtd, (g.reino === "Pl" || g.reino === "Fu") ? { fixed: 0 } : {});
+  categoricalStep(cur, "facOlhosQtd", T.facOlhosQtd, (g.reino === "Pl" || g.reino === "Fu" || g.reino === "Ba") ? { fixed: 0 } : {}); // Fase 1, item 4.1
   if (g.facOlhosQtd !== 0) categoricalStep(cur, "facOlhosTipo", T.facOlhosTipo, g.isPrimordial ? { restrict: ["rd", "fd", "cg"] } : {}); else g.facOlhosTipo = "";
   if (cranial0) g.facDenticao = "0";
   else {
@@ -611,10 +661,10 @@ function runSpeciesSteps(cur, isPrimordialIntent) {
 
   // Passo 11 — TEG
   let tegOpts = {};
-  if (g.reino === "Sp") tegOpts = { fixed: "Et" };
+  if (g.reino === "Ba") tegOpts = { fixed: "Mu" }; // Fase 1, item 4.1 — membrana simples (reaproveita "Mucosa")
   else if (g.reino === "Pl") tegOpts = { restrict: ["Cs", "Mu", "Cn"] };
   else if (g.reino === "Fu") tegOpts = { restrict: ["Ql", "Mu", "Pd"] };
-  else if (g.reino === "Ar") tegOpts = { restrict: ["Me", "Pd", "Cn"] };
+  // Fase 2, item 5.3 — reinos Ar/Sp removidos (tegOpts fixo "Et" e restrito "Me/Pd/Cn" saíram)
   else if (g.tolHidrica === "aq") tegOpts = { exclude: ["Pe", "Cs"] };
   else if (g.tolHidrica === "sa") tegOpts = { exclude: ["Cs"] };
   else if (g.tolTermica === "qt") tegOpts = { exclude: ["Pe"] };
@@ -631,7 +681,8 @@ function runSpeciesSteps(cur, isPrimordialIntent) {
 
   // Passo 12 — ASA
   let asaOpts = {};
-  if (g.locPrimario === "F") asaOpts = { fixed: 0 };
+  if (g.reino === "Ba") asaOpts = { fixed: 0 }; // Fase 1, item 4.1
+  else if (g.locPrimario === "F") asaOpts = { fixed: 0 };
   else if (g.locPrimario === "V" && !(g.mag && Number(g.mag.slice(1)) >= 4)) asaOpts = { exclude: [0] };
   /* Aquático obrigatório respira por brânquias — o próprio REGRAS_COERENCIA
      trata "aquático com asas" como erro BLOQUEANTE, mas o gerador só
@@ -640,7 +691,7 @@ function runSpeciesSteps(cur, isPrimordialIntent) {
   else if (g.tolHidrica === "aq") asaOpts = { fixed: 0 };
   categoricalStep(cur, "asaQtd", T.asaQtd, mergeOpts(asaOpts, classeOpts(g, "asaQtd")));
   if (g.asaQtd !== 0) {
-    categoricalStep(cur, "asaTipo", T.asaTipo, mergeOpts(g.isPrimordial ? { exclude: ["et"] } : {}, classeOpts(g, "asaTipo")));
+    categoricalStep(cur, "asaTipo", T.asaTipo, classeOpts(g, "asaTipo")); // Fase 2, item 5.3 — exclude ["et"] removido (valor não existe mais)
     scalarStep(cur, "asaFuncionalidade", g.densidade >= 6 ? { max: 4 } : {});
   } else { g.asaTipo = undefined; g.asaFuncionalidade = undefined; }
 
@@ -656,7 +707,7 @@ function runSpeciesSteps(cur, isPrimordialIntent) {
   }
 
   // Passo 13 — CDA
-  categoricalStep(cur, "cdaComp", T.cdaComp, (g.reino === "Pl" || g.reino === "Fu") ? { fixed: "0" } : {});
+  categoricalStep(cur, "cdaComp", T.cdaComp, (g.reino === "Pl" || g.reino === "Fu" || g.reino === "Ba") ? { fixed: "0" } : {}); // Fase 1, item 4.1
   if (g.cdaComp !== "0") { categoricalStep(cur, "cdaTipo", T.cdaTipo, mergeOpts(g.isPrimordial ? { exclude: ["lq"] } : {}, classeOpts(g, "cdaTipo"))); scalarStep(cur, "cdaFuncao"); } else { g.cdaTipo = undefined; g.cdaFuncao = undefined; }
 
   // Passo 14 — SEN
@@ -664,7 +715,8 @@ function runSpeciesSteps(cur, isPrimordialIntent) {
   if (g.facOlhosQtd === 0 || g.facOlhosTipo === "cg") g.senVisao = Math.min(g.senVisao, 1);
   scalarStep(cur, "senOlfato"); scalarStep(cur, "senAudicao"); scalarStep(cur, "senTato");
   let senEspOpts = {};
-  if (g.mag && Number(g.mag.slice(1)) >= 7) senEspOpts = { fixed: "au" };
+  if (g.reino === "Ba") senEspOpts = { restrict: ["0", "vb"] }; // Fase 1, item 4.1 — sem sistema nervoso, só quimio/vibrotaxia rasa
+  else if (g.mag && Number(g.mag.slice(1)) >= 7) senEspOpts = { fixed: "au" };
   else if (g.isPrimordial && g.tolCiclo === "no" && g.senVisao < 6) senEspOpts = { restrict: ["vb", "tr"] };
   else if (g.isPrimordial) senEspOpts = { restrict: ["0", "vb", "tr"] };
   else if (g.tolCiclo === "no" && g.senVisao < 6) senEspOpts = { exclude: ["0"] };
@@ -679,9 +731,9 @@ function runSpeciesSteps(cur, isPrimordialIntent) {
   let sencFinal = penalizado ? Math.max(0, g.socSencienciaBruta - 2) : g.socSencienciaBruta;
   if (g.mag && Number(g.mag.slice(1)) >= 8) sencFinal = Math.max(sencFinal, 4);
   if (g.isPrimordial) sencFinal = Math.min(sencFinal, 5); // raiz nunca nasce com cognição abstrata plena
-  if (g.reino === "Pl" || g.reino === "Fu") sencFinal = 0; // sem sistema nervoso centralizado — vence qualquer piso de magia
+  if (g.reino === "Pl" || g.reino === "Fu" || g.reino === "Ba") sencFinal = 0; // sem sistema nervoso centralizado — vence qualquer piso de magia (Fase 1, item 4.1)
   g.socSenciencia = sencFinal;
-  g.socSencienciaPenalizada = penalizado && g.reino !== "Pl" && g.reino !== "Fu";
+  g.socSencienciaPenalizada = penalizado && g.reino !== "Pl" && g.reino !== "Fu" && g.reino !== "Ba";
 
   /* Passo 16 — DEF
      A arma natural agora depende da estrutura que a produz. Antes o gene
@@ -690,7 +742,10 @@ function runSpeciesSteps(cur, isPrimordialIntent) {
      "arma: garras" sem membro nenhum onde a garra ficaria. A trava entra
      como `exclude` no próprio categoricalStep, então a seed continua
      simétrica (decode/encode/randomize enxergam o mesmo domínio). */
-  const defArmaExclude = (g.reino === "Pl" || g.reino === "Fu") ? ["gr", "pr", "cn"] : [];
+  // Fase 1, item 4.1 — bactéria só tem "arma" quando ela implica doença (veneno/toxina);
+  // sem estrutura física, todo o resto (espinho, descarga, ataque sônico/áurico) é excluído.
+  const defArmaExclude = (g.reino === "Pl" || g.reino === "Fu") ? ["gr", "pr", "cn"]
+    : g.reino === "Ba" ? ["gr", "pr", "cn", "ch", "cu", "es", "el", "so", "au"] : [];
   const pernasDef = Number(String(g.memInf).replace("I", "")) || 0;
   const supDef = Number(String(g.memSup).replace("S", "")) || 0;
   const apendicesDef = Number(String(g.memApendices).replace("X", "")) || 0;
@@ -706,6 +761,98 @@ function runSpeciesSteps(cur, isPrimordialIntent) {
   categoricalStep(cur, "defArma", T.defArma, defArmaOpts);
   scalarStep(cur, "defBlindagem");
   categoricalStep(cur, "defEstrategia", T.defEstrategia, g.locPrimario === "F" ? { restrict: ["ri", "to", "ca", "re"] } : {});
+
+  // Passo 16.5 — GENES POR TÁXON (Fase 3) — condicionados a g.classe/g.reino,
+  // aprovados na proposta de expansão de DNA por táxon. Cada gene segue o
+  // procedimento de 5 passos do plano: tabela em T (quando categórico),
+  // step aqui, entrada em GENE_TABLE_MAP/ESCALAR_KEYS, estrato de mutação,
+  // e frase em describeCreatureProse.
+  if (g.classe === "MAM") {
+    categoricalStep(cur, "glandulaMamaria", T.glandulaMamaria);
+    scalarStep(cur, "pelagemDensidade");
+    categoricalStep(cur, "dentesTipo", T.dentesTipo);
+    categoricalStep(cur, "termorregulacao", T.termorregulacao);
+    categoricalStep(cur, "gestacao", T.gestacao);
+  } else {
+    g.glandulaMamaria = undefined; g.pelagemDensidade = undefined; g.dentesTipo = undefined;
+    g.termorregulacao = undefined; g.gestacao = undefined;
+  }
+
+  if (g.classe === "AVE") {
+    categoricalStep(cur, "bicoFormato", T.bicoFormato);
+    categoricalStep(cur, "penaFuncao", T.penaFuncao);
+    scalarStep(cur, "ovoCasca");
+    categoricalStep(cur, "migratorio", T.migratorio);
+  } else {
+    g.bicoFormato = undefined; g.penaFuncao = undefined; g.ovoCasca = undefined; g.migratorio = undefined;
+  }
+
+  if (g.classe === "REP") {
+    categoricalStep(cur, "escamaTipo", T.escamaTipo);
+    categoricalStep(cur, "venenoAparato", T.venenoAparato);
+    categoricalStep(cur, "regeneracaoCauda", T.regeneracaoCauda);
+    scalarStep(cur, "ectotermiaDependencia");
+  } else {
+    g.escamaTipo = undefined; g.venenoAparato = undefined; g.regeneracaoCauda = undefined; g.ectotermiaDependencia = undefined;
+  }
+
+  if (g.classe === "AMP") {
+    categoricalStep(cur, "metamorfose", T.metamorfose);
+    categoricalStep(cur, "peleToxinas", T.peleToxinas);
+    scalarStep(cur, "respiracaoCutanea");
+  } else {
+    g.metamorfose = undefined; g.peleToxinas = undefined; g.respiracaoCutanea = undefined;
+  }
+
+  if (g.classe === "PSC") {
+    categoricalStep(cur, "nadadeiraConfiguracao", T.nadadeiraConfiguracao);
+    categoricalStep(cur, "respiracaoBranquial", T.respiracaoBranquial);
+    categoricalStep(cur, "bexigaNatatoria", T.bexigaNatatoria);
+  } else {
+    g.nadadeiraConfiguracao = undefined; g.respiracaoBranquial = undefined; g.bexigaNatatoria = undefined;
+  }
+
+  if (g.classe === "INS") {
+    categoricalStep(cur, "metamorfoseTipo", T.metamorfoseTipo);
+    categoricalStep(cur, "patasQtdEspecializada", T.patasQtdEspecializada);
+    categoricalStep(cur, "venenoOuFerroao", T.venenoOuFerroao);
+    categoricalStep(cur, "coloniaTipo", T.coloniaTipo);
+  } else {
+    g.metamorfoseTipo = undefined; g.patasQtdEspecializada = undefined; g.venenoOuFerroao = undefined; g.coloniaTipo = undefined;
+  }
+
+  if (g.classe === "MOL") {
+    categoricalStep(cur, "concha", T.concha);
+    categoricalStep(cur, "tentaculosQtd", T.tentaculosQtd);
+    categoricalStep(cur, "tintaDefensiva", T.tintaDefensiva);
+  } else {
+    g.concha = undefined; g.tentaculosQtd = undefined; g.tintaDefensiva = undefined;
+  }
+
+  if (g.reino === "Pl") {
+    categoricalStep(cur, "raizTipo", T.raizTipo);
+    categoricalStep(cur, "folhaTipo", T.folhaTipo);
+    categoricalStep(cur, "reproducaoEstrutura", T.reproducaoEstrutura);
+    scalarStep(cur, "fotossinteseIntensidade");
+  } else {
+    g.raizTipo = undefined; g.folhaTipo = undefined; g.reproducaoEstrutura = undefined; g.fotossinteseIntensidade = undefined;
+  }
+
+  if (g.reino === "Fu") {
+    categoricalStep(cur, "corpoFrutiferoTipo", T.corpoFrutiferoTipo);
+    scalarStep(cur, "redeMicelialAlcance");
+    categoricalStep(cur, "esporoDispersao", T.esporoDispersao);
+  } else {
+    g.corpoFrutiferoTipo = undefined; g.redeMicelialAlcance = undefined; g.esporoDispersao = undefined;
+  }
+
+  if (g.reino === "Ba") {
+    categoricalStep(cur, "paredeCelularTipo", T.paredeCelularTipo);
+    categoricalStep(cur, "metabolismoTipo", T.metabolismoTipo);
+    categoricalStep(cur, "formaColonia", T.formaColonia);
+  } else {
+    g.paredeCelularTipo = undefined; g.metabolismoTipo = undefined; g.formaColonia = undefined;
+  }
 
   // Passo 17 — Anomalia
   const scalarKeys = ["densidade", "locVelocidade", "repProle", "repMaturacao", "repLongevidade", "tegResistencia", "tegCorIntensidade", "cdaFuncao", "senVisao", "senOlfato", "senAudicao", "senTato", "senEspecialIntensidade", "socAgressividade", "defBlindagem", "asaFuncionalidade"];
@@ -1025,7 +1172,7 @@ const HABITAT_CODEX = [
     vantagem: (g) => g.senEspecial === "au" || g.dieBase === "au" || g.tegTipo === "Cn",
     letal: (g) => magNum(g) <= 1 },
   { nome: "Nuvem Tempestuosa Contínua", dominio: "Extremos e Mágicos", exige: (g) => g.locPrimario === "V" && magNum(g) >= 6,
-    vantagem: (g) => g.reino === "Sp" || magNum(g) >= 8,
+    vantagem: (g) => magNum(g) >= 8, // Fase 2, item 5.3 — removida cláusula de reino Sp
     letal: (g) => (!["V", "P"].includes(g.locPrimario) && magNum(g) < 6) || g.densidade >= 8 },
 ];
 
@@ -1046,14 +1193,64 @@ const HABITAT_CODEX = [
    ============================================================ */
 const DOMINIOS_CLIMATICOS = ["Frio e Gelo", "Temperados", "Quentes e Áridos", "Aquáticos", "Extremos e Mágicos"];
 
+/* Fase 5, item 9.5 — domínios climáticos customizados, adicionados pelo
+   usuário além dos 5 embutidos acima. Aditivo por design (nenhum dos 27
+   biomas nem seus domínios originais em HABITAT_CODEX é tocado): um
+   domínio customizado é só um "pacote" com nome próprio agrupando um
+   subconjunto dos biomas JÁ existentes — não autora bioma novo com regras
+   de exige/vantagem/letal próprias (isso exigiria uma UI de autoria de
+   regras, fora de escopo razoável). Estado mutável no módulo, espelhado
+   em `state.dominiosCustom` no App e persistido no export/import. */
+let DOMINIOS_CUSTOM = []; // [{ nome, biomas: [nomeDoBioma, ...] }]
+
+function listarDominiosDisponiveis() {
+  return [...DOMINIOS_CLIMATICOS, ...DOMINIOS_CUSTOM.map((d) => d.nome)];
+}
+function adicionarDominioCustom(nome, biomasNomes) {
+  if (!nome || !nome.trim() || DOMINIOS_CUSTOM.some((d) => d.nome === nome) || DOMINIOS_CLIMATICOS.includes(nome)) return false;
+  DOMINIOS_CUSTOM = [...DOMINIOS_CUSTOM, { nome: nome.trim(), biomas: biomasNomes || [] }];
+  return true;
+}
+function removerDominioCustom(nome) {
+  DOMINIOS_CUSTOM = DOMINIOS_CUSTOM.filter((d) => d.nome !== nome);
+}
+function restaurarDominiosCustom(lista) {
+  DOMINIOS_CUSTOM = Array.isArray(lista) ? lista : [];
+}
+
 let __idRegiaoCounter = 1;
 function novoIdRegiao() { return "rg" + __idRegiaoCounter++ + "_" + Math.random().toString(36).slice(2, 6); }
 
 /* Cria uma massa de terra dentro de uma era. dominios: subconjunto de
    DOMINIOS_CLIMATICOS presente ali — controla quais dos 27 biomas do
    códice essa massa consegue oferecer a qualquer espécie que viva nela. */
-function criarMassaDeTerra(nome, dominios) {
-  return { id: novoIdRegiao(), nome, dominios: dominios && dominios.length ? dominios : [...DOMINIOS_CLIMATICOS] };
+function criarMassaDeTerra(nome, dominios, biomasExcluidos) {
+  // Fase 5, item 9.3 — biomasExcluidos: lista de nomes de bioma (do
+  // HABITAT_CODEX) explicitamente desligados mesmo com o domínio deles
+  // habilitado (ex.: manter o domínio "Aquáticos" mas excluir "Abismo
+  // Oceânico Afótico" numa massa sem fossas profundas).
+  const massa = { id: novoIdRegiao(), nome, dominios: dominios && dominios.length ? dominios : [...DOMINIOS_CLIMATICOS], biomasExcluidos: biomasExcluidos || [] };
+  // Fase 2, item 5.5 (pré-requisito 1) — bioma prevalecente por divisão
+  // espacial simulada. Modo aleatório: sorteia, para cada uma das
+  // DIVISOES_POR_MASSA divisões, um bioma válido dentre os domínios
+  // climáticos habilitados na massa (biomasDaMassa). Sem isso, "divisao"
+  // era só um índice sem nenhum significado geográfico, e a migração
+  // (item 5.5) não tinha pra onde apontar de forma coerente.
+  const biomasValidos = biomasDaMassa(massa);
+  massa.divisoesBiomas = Array.from({ length: DIVISOES_POR_MASSA }, (_, i) => ({
+    id: i,
+    biomaNome: biomasValidos.length ? biomasValidos[Math.floor(Math.random() * biomasValidos.length)].nome : null,
+  }));
+  return massa;
+}
+
+/* Fase 2, item 5.5 (pré-requisito 2) — topologia de vizinhança entre
+   divisões: grade circular simples (0↔1↔2...↔7↔0), cada divisão vizinha
+   das duas adjacentes por índice. Escolhida por ser a opção mais simples
+   de implementar sem inventar geometria nova, dado que DIVISOES_POR_MASSA
+   já é um número fixo pequeno (recomendação do próprio plano). */
+function divisoesVizinhas(divisao, total = DIVISOES_POR_MASSA) {
+  return [(divisao - 1 + total) % total, (divisao + 1) % total];
 }
 
 let __idEraCounter = 1;
@@ -1080,11 +1277,11 @@ function dividirEra(eraAtual, novoNomeEra, novasMassasPorAntiga, auDivisao) {
   for (const massaAntiga of eraAtual.massas) {
     const definicoes = novasMassasPorAntiga[massaAntiga.id];
     if (definicoes && definicoes.length) {
-      const novas = definicoes.map((d) => criarMassaDeTerra(d.nome, d.dominios || massaAntiga.dominios));
+      const novas = definicoes.map((d) => criarMassaDeTerra(d.nome, d.dominios || massaAntiga.dominios, d.biomasExcluidos || massaAntiga.biomasExcluidos)); // Fase 5, item 9.3
       todasNovasMassas.push(...novas);
       mapaAntigaParaNovas[massaAntiga.id] = novas.map((n) => n.id);
     } else {
-      const clone = criarMassaDeTerra(massaAntiga.nome, massaAntiga.dominios);
+      const clone = criarMassaDeTerra(massaAntiga.nome, massaAntiga.dominios, massaAntiga.biomasExcluidos); // Fase 5, item 9.3
       todasNovasMassas.push(clone);
       mapaAntigaParaNovas[massaAntiga.id] = [clone.id];
     }
@@ -1111,10 +1308,19 @@ function herdarMassaNaDivisao(massaAntigaId, mapaAntigaParaNovas) {
 }
 
 /* Biomas específicos (do Códice) que uma massa de terra consegue oferecer:
-   filtra HABITAT_CODEX pelos domínios climáticos presentes na massa. */
+   filtra HABITAT_CODEX pelos domínios climáticos presentes na massa
+   (embutidos, via o campo `dominio` de cada bioma) mais os biomas
+   agrupados por qualquer domínio CUSTOMIZADO presente na massa (Fase 5,
+   item 9.5), e remove qualquer bioma individualmente excluído (item 9.3). */
 function biomasDaMassa(massa) {
   if (!massa) return HABITAT_CODEX;
-  return HABITAT_CODEX.filter((b) => massa.dominios.includes(b.dominio));
+  const excluidos = massa.biomasExcluidos || [];
+  const viaEmbutido = HABITAT_CODEX.filter((b) => massa.dominios.includes(b.dominio));
+  const dominiosCustomNaMassa = DOMINIOS_CUSTOM.filter((d) => massa.dominios.includes(d.nome));
+  const nomesViaCustom = new Set(dominiosCustomNaMassa.flatMap((d) => d.biomas));
+  const viaCustom = HABITAT_CODEX.filter((b) => nomesViaCustom.has(b.nome));
+  const todos = [...new Map([...viaEmbutido, ...viaCustom].map((b) => [b.nome, b])).values()]; // dedupe por nome
+  return todos.filter((b) => !excluidos.includes(b.nome));
 }
 
 /* Igual a readHabitat, mas restrito aos biomas que a massa de terra da
@@ -1189,9 +1395,23 @@ function seedParaGenoma(g, isPrimordial) {
    deliberada (Parte V). Estrato II muda por deriva (custo 4).
    Estrato III muda por deriva (custo 1) e mutação de nascimento.
    ============================================================ */
-const ESTRATO_I = ["reino", "classe", "simetria", "morForma", "locPrimario", "memSup", "memInf", "repModo", "crnFormato", "facFocinho", "tolHidrica"];
-const ESTRATO_II = ["porte", "densidade", "morTorso", "locSecundario", "locVelocidade", "memApendices", "memTerm", "memProp", "tegTipo", "tegResistencia", "crnChifreQtd", "crnCrista", "crnPescoco", "facOrelha", "facOlhosQtd", "facDenticao", "asaQtd", "asaTipo", "cdaComp", "cdaTipo", "dieBase", "mag", "repProle", "repMaturacao", "repLongevidade", "tolTermica"];
-const ESTRATO_III = ["tegCor", "tegPadrao", "asaFuncionalidade", "cdaFuncao", "dieFrequencia", "dieRestricao", "senVisao", "senOlfato", "senAudicao", "senTato", "senEspecial", "tolCiclo", "socEstrutura", "socAgressividade", "socSenciencia", "defArma", "defBlindagem", "defEstrategia"];
+const ESTRATO_I = ["reino", "classe", "simetria", "morForma", "locPrimario", "memSup", "memInf", "repModo", "crnFormato", "facFocinho", "tolHidrica",
+  "metamorfoseTipo"]; // Fase 3 — gene central ao plano corporal do INS (ametábola/hemi/holometábola)
+const ESTRATO_II = ["porte", "densidade", "morTorso", "locSecundario", "locVelocidade", "memApendices", "memTerm", "memProp", "tegTipo", "tegResistencia", "crnChifreQtd", "crnCrista", "crnPescoco", "facOrelha", "facOlhosQtd", "facDenticao", "asaQtd", "asaTipo", "cdaComp", "cdaTipo", "dieBase", "mag", "repProle", "repMaturacao", "repLongevidade", "tolTermica",
+  // Fase 3 — genes categóricos novos por táxon (taxa de mutação moderada)
+  "glandulaMamaria", "dentesTipo", "termorregulacao", "gestacao",
+  "bicoFormato", "penaFuncao", "migratorio",
+  "escamaTipo", "venenoAparato", "regeneracaoCauda",
+  "metamorfose", "peleToxinas",
+  "nadadeiraConfiguracao", "respiracaoBranquial", "bexigaNatatoria",
+  "patasQtdEspecializada", "venenoOuFerroao", "coloniaTipo",
+  "concha", "tentaculosQtd", "tintaDefensiva",
+  "raizTipo", "folhaTipo", "reproducaoEstrutura",
+  "corpoFrutiferoTipo", "esporoDispersao",
+  "paredeCelularTipo", "metabolismoTipo", "formaColonia"];
+const ESTRATO_III = ["tegCor", "tegPadrao", "asaFuncionalidade", "cdaFuncao", "dieFrequencia", "dieRestricao", "senVisao", "senOlfato", "senAudicao", "senTato", "senEspecial", "tolCiclo", "socEstrutura", "socAgressividade", "socSenciencia", "defArma", "defBlindagem", "defEstrategia",
+  // Fase 3 — genes escalares novos por táxon (detalhe fino)
+  "pelagemDensidade", "ovoCasca", "ectotermiaDependencia", "respiracaoCutanea", "fotossinteseIntensidade", "redeMicelialAlcance"];
 
 /* Genes categóricos com tabela fixa — usados para rerrolar em deriva.
    Escalares (3d4-3, 0-9) deslocam ±1 em vez de rerrolar. */
@@ -1205,8 +1425,21 @@ const GENE_TABLE_MAP = {
   tegTipo: T.tegTipo, tegCor: T.tegCor, tegPadrao: T.tegPadrao,
   asaQtd: T.asaQtd, asaTipo: T.asaTipo, cdaComp: T.cdaComp, cdaTipo: T.cdaTipo,
   senEspecial: T.senEspecial, socEstrutura: T.socEstrutura, defArma: T.defArma, defEstrategia: T.defEstrategia,
+  // Fase 3 — genes categóricos novos por táxon
+  glandulaMamaria: T.glandulaMamaria, dentesTipo: T.dentesTipo, termorregulacao: T.termorregulacao, gestacao: T.gestacao,
+  bicoFormato: T.bicoFormato, penaFuncao: T.penaFuncao, migratorio: T.migratorio,
+  escamaTipo: T.escamaTipo, venenoAparato: T.venenoAparato, regeneracaoCauda: T.regeneracaoCauda,
+  metamorfose: T.metamorfose, peleToxinas: T.peleToxinas,
+  nadadeiraConfiguracao: T.nadadeiraConfiguracao, respiracaoBranquial: T.respiracaoBranquial, bexigaNatatoria: T.bexigaNatatoria,
+  metamorfoseTipo: T.metamorfoseTipo, patasQtdEspecializada: T.patasQtdEspecializada, venenoOuFerroao: T.venenoOuFerroao, coloniaTipo: T.coloniaTipo,
+  concha: T.concha, tentaculosQtd: T.tentaculosQtd, tintaDefensiva: T.tintaDefensiva,
+  raizTipo: T.raizTipo, folhaTipo: T.folhaTipo, reproducaoEstrutura: T.reproducaoEstrutura,
+  corpoFrutiferoTipo: T.corpoFrutiferoTipo, esporoDispersao: T.esporoDispersao,
+  paredeCelularTipo: T.paredeCelularTipo, metabolismoTipo: T.metabolismoTipo, formaColonia: T.formaColonia,
 };
-const ESCALAR_KEYS = new Set(["densidade", "locVelocidade", "repProle", "repMaturacao", "repLongevidade", "tegResistencia", "tegCorIntensidade", "cdaFuncao", "senVisao", "senOlfato", "senAudicao", "senTato", "senEspecialIntensidade", "socAgressividade", "defBlindagem", "asaFuncionalidade", "dieFrequencia", "socSenciencia", "socSencienciaBruta"]);
+const ESCALAR_KEYS = new Set(["densidade", "locVelocidade", "repProle", "repMaturacao", "repLongevidade", "tegResistencia", "tegCorIntensidade", "cdaFuncao", "senVisao", "senOlfato", "senAudicao", "senTato", "senEspecialIntensidade", "socAgressividade", "defBlindagem", "asaFuncionalidade", "dieFrequencia", "socSenciencia", "socSencienciaBruta",
+  // Fase 3 — genes escalares novos por táxon
+  "pelagemDensidade", "ovoCasca", "ectotermiaDependencia", "respiracaoCutanea", "fotossinteseIntensidade", "redeMicelialAlcance"]);
 
 /* Genes cujo valor decide se OUTROS genes existem, quais opções eles têm,
    ou que faixa podem assumir — ou seja, os que aparecem em alguma condição
@@ -1350,18 +1583,23 @@ function tier(n, labels = ["muito baixo", "baixo", "moderado", "alto", "muito al
   return labels[4];
 }
 function generoReino(reino) {
-  return { An: "um animal", Pl: "uma planta", Fu: "um fungo", Ar: "um construto", Sp: "um ser espiritual" }[reino] || "uma criatura";
+  return { An: "um animal", Pl: "uma planta", Fu: "um fungo", Ba: "uma bactéria" }[reino] || "uma criatura"; // Fase 1, item 4.1 / Fase 2, item 5.3 — Ar/Sp removidos
 }
 function describeCreatureProse(g) {
   const p = [];
 
   p.push(
-    `${g.isPrimordial ? "Primordial" : "Espécie"} do clado ${g.clado}: ${generoReino(g.reino)}${g.classe && !["VEG", "FUN", "CON", "ETH"].includes(g.classe) ? ` da classe ${labelOf(T.classeAn, g.classe).toLowerCase()}` : ""}, de porte ${labelOf(T.porte, g.porte).toLowerCase()} e simetria ${labelOf(T.simetria, g.simetria).toLowerCase()}, com densidade corporal ${tier(g.densidade, ["quase sem massa", "leve", "mediana", "densa", "pétrea ou metálica"])}${g.morForma !== "0" ? `, de forma de crescimento ${labelOf(g.reino === "Pl" ? T.morFormaPl : T.morFormaFu, g.morForma).toLowerCase()}` : ""}${g.morTorso !== "0" ? `, tronco ${labelOf(T.morTorso, g.morTorso).toLowerCase()}` : ""}.`
+    `${g.isPrimordial ? "Primordial" : "Espécie"} do clado ${g.clado}: ${generoReino(g.reino)}${g.classe && !["VEG", "FUN", "MIC"].includes(g.classe) ? ` da classe ${labelOf(T.classeAn, g.classe).toLowerCase()}` : ""}, de porte ${labelOf(T.porte, g.porte).toLowerCase()} e simetria ${labelOf(T.simetria, g.simetria).toLowerCase()}, com densidade corporal ${tier(g.densidade, ["quase sem massa", "leve", "mediana", "densa", "pétrea ou metálica"])}${g.morForma !== "0" ? `, de forma de crescimento ${labelOf(g.reino === "Pl" ? T.morFormaPl : g.reino === "Ba" ? T.morFormaBa : T.morFormaFu, g.morForma).toLowerCase()}` : ""}${g.morTorso !== "0" ? `, tronco ${labelOf(T.morTorso, g.morTorso).toLowerCase()}` : ""}.`
   );
 
-  let locFrase = `Locomove-se principalmente por ${labelOf(T.locPrim, g.locPrimario).toLowerCase()}`;
-  if (g.locSecundario !== "0") locFrase += `, com ${labelOf(T.locSec, g.locSecundario).toLowerCase()} como modo secundário`;
-  locFrase += `, a uma velocidade ${tier(g.locVelocidade)}. Tem ${labelOf(T.memSup, g.memSup).toLowerCase()} e ${g.memInf.replace("I", "")} membro(s) inferior(es)${g.memApendices !== "0X" ? `, além de ${g.memApendices.replace("X", "")} apêndices auxiliares` : ""}, terminando em ${labelOf(T.memTerm, g.memTerm).toLowerCase()}${g.memProp !== "0" ? `, com membros ${labelOf(T.memProp, g.memProp).toLowerCase()}` : ""}.`;
+  // Fase 1, item 4.1 — bactéria não tem membros; molde próprio, sem falar em
+  // membro/terminação (o molde geral com membros fica para o resto dos reinos).
+  let locFrase;
+  if (g.reino === "Ba") {
+    locFrase = `Locomove-se principalmente por ${labelOf(T.locPrim, g.locPrimario).toLowerCase()}, a uma velocidade ${tier(g.locVelocidade)}, sem membros diferenciados — organismo unicelular.`;
+  } else {
+    locFrase = `Locomove-se principalmente por ${labelOf(T.locPrim, g.locPrimario).toLowerCase()}${g.locSecundario !== "0" ? `, com ${labelOf(T.locSec, g.locSecundario).toLowerCase()} como modo secundário` : ""}, a uma velocidade ${tier(g.locVelocidade)}. Tem ${labelOf(T.memSup, g.memSup).toLowerCase()} e ${g.memInf.replace("I", "")} membro(s) inferior(es)${g.memApendices !== "0X" ? `, além de ${g.memApendices.replace("X", "")} apêndices auxiliares` : ""}, terminando em ${labelOf(T.memTerm, g.memTerm).toLowerCase()}${g.memProp !== "0" ? `, com membros ${labelOf(T.memProp, g.memProp).toLowerCase()}` : ""}.`;
+  }
   p.push(locFrase);
 
   let tegFrase = `O corpo é revestido por ${labelOf(T.tegTipo, g.tegTipo).toLowerCase()}, na cor ${labelOf(T.tegCor, g.tegCor).toLowerCase()} (intensidade ${g.tegCorIntensidade}), em padrão ${labelOf(T.tegPadrao, g.tegPadrao).toLowerCase()}, com resistência ${tier(g.tegResistencia)}.`;
@@ -1397,6 +1635,38 @@ function describeCreatureProse(g) {
 
   let defFrase = `Defende-se com ${g.defArma === "0" ? "nenhuma arma natural" : labelOf(T.defArma, g.defArma).toLowerCase()}, blindagem ${tier(g.defBlindagem)}, e estratégia de ${labelOf(T.defEstrategia, g.defEstrategia).toLowerCase()}. Nível de magia: ${labelOf(T.mag, g.mag).toLowerCase()}.`;
   p.push(defFrase);
+
+  // Fase 3 — frases dos genes novos por táxon
+  if (g.classe === "MAM") {
+    p.push(`Mamífero com termorregulação ${labelOf(T.termorregulacao, g.termorregulacao).toLowerCase()}, dentição ${labelOf(T.dentesTipo, g.dentesTipo).toLowerCase()}, gestação ${labelOf(T.gestacao, g.gestacao).toLowerCase()}, pelagem de densidade ${tier(g.pelagemDensidade)}${g.glandulaMamaria !== "au" ? ` e glândulas mamárias ${labelOf(T.glandulaMamaria, g.glandulaMamaria).toLowerCase()}` : ""}.`);
+  }
+  if (g.classe === "AVE") {
+    p.push(`Ave de bico ${labelOf(T.bicoFormato, g.bicoFormato).toLowerCase()}, penas com função ${labelOf(T.penaFuncao, g.penaFuncao).toLowerCase()}, casca de ovo com resistência ${tier(g.ovoCasca)}, hábito ${labelOf(T.migratorio, g.migratorio).toLowerCase()}.`);
+  }
+  if (g.classe === "REP") {
+    p.push(`Réptil de escama ${labelOf(T.escamaTipo, g.escamaTipo).toLowerCase()}, dependência solar (ectotermia) ${tier(g.ectotermiaDependencia)}${g.venenoAparato !== "au" ? `, com aparato de veneno: ${labelOf(T.venenoAparato, g.venenoAparato).toLowerCase()}` : ""}, regeneração de cauda ${labelOf(T.regeneracaoCauda, g.regeneracaoCauda).toLowerCase()}.`);
+  }
+  if (g.classe === "AMP") {
+    p.push(`Anfíbio de metamorfose ${labelOf(T.metamorfose, g.metamorfose).toLowerCase()}, respiração cutânea ${tier(g.respiracaoCutanea)}${g.peleToxinas !== "au" ? `, pele ${labelOf(T.peleToxinas, g.peleToxinas).toLowerCase()}` : ""}.`);
+  }
+  if (g.classe === "PSC") {
+    p.push(`Peixe de nadadeiras ${labelOf(T.nadadeiraConfiguracao, g.nadadeiraConfiguracao).toLowerCase()}, respiração ${labelOf(T.respiracaoBranquial, g.respiracaoBranquial).toLowerCase()}, ${g.bexigaNatatoria === "pr" ? "com" : "sem"} bexiga natatória.`);
+  }
+  if (g.classe === "INS") {
+    p.push(`Inseto/artrópode de metamorfose ${labelOf(T.metamorfoseTipo, g.metamorfoseTipo).toLowerCase()}, patas ${labelOf(T.patasQtdEspecializada, g.patasQtdEspecializada).toLowerCase()}, colônia ${labelOf(T.coloniaTipo, g.coloniaTipo).toLowerCase()}${g.venenoOuFerroao !== "au" ? `, com ${labelOf(T.venenoOuFerroao, g.venenoOuFerroao).toLowerCase()}` : ""}.`);
+  }
+  if (g.classe === "MOL") {
+    p.push(`Molusco de concha ${labelOf(T.concha, g.concha).toLowerCase()}, ${g.tentaculosQtd === 99 ? "muitos" : g.tentaculosQtd} tentáculo(s)${g.tintaDefensiva === "pr" ? ", com tinta defensiva" : ""}.`);
+  }
+  if (g.reino === "Pl") {
+    p.push(`Raiz ${labelOf(T.raizTipo, g.raizTipo).toLowerCase()}, folhas do tipo ${g.folhaTipo === "au" ? "ausentes" : labelOf(T.folhaTipo, g.folhaTipo).toLowerCase()}, reprodução por ${labelOf(T.reproducaoEstrutura, g.reproducaoEstrutura).toLowerCase()}, intensidade fotossintética ${tier(g.fotossinteseIntensidade)}.`);
+  }
+  if (g.reino === "Fu") {
+    p.push(`Corpo frutífero: ${labelOf(T.corpoFrutiferoTipo, g.corpoFrutiferoTipo).toLowerCase()}. Alcance da rede micelial ${tier(g.redeMicelialAlcance)}, dispersão de esporos por ${labelOf(T.esporoDispersao, g.esporoDispersao).toLowerCase()}.`);
+  }
+  if (g.reino === "Ba") {
+    p.push(`Parede celular ${labelOf(T.paredeCelularTipo, g.paredeCelularTipo).toLowerCase()}, metabolismo ${labelOf(T.metabolismoTipo, g.metabolismoTipo).toLowerCase()}, colônia em formação ${labelOf(T.formaColonia, g.formaColonia).toLowerCase()}.`);
+  }
 
   if (g.anomalias?.length) p.push(`Carrega ${g.anomalias.length > 1 ? "as anomalias" : "a anomalia"}: ${g.anomalias.map((a) => labelOf(T.ano, a).toLowerCase()).join(", ")}.`);
 
@@ -1483,6 +1753,145 @@ function calcularDL(gA, gB) {
   return dl;
 }
 
+/* ============================================================
+   FASE 4, ITEM 7.3 — ÁRVORE REVERSA (busca de trilha até um DNA-alvo)
+   ============================================================ */
+/* Extrai só os campos usados por calcularDL (DL_PESOS) de um código DRN2
+   colado — o suficiente pra medir distância genômica sem precisar de um
+   parser completo da notação. Um parser completo teria ambiguidades reais
+   em campos concatenados sem separador (CRN: qtd+forma, FAC: qtd+tipo,
+   SEN: especial+intensidade) que não afetam nenhuma chave de DL_PESOS —
+   por isso a extração abaixo é sempre não-ambígua para as 10 chaves que
+   importam pra essa busca. */
+function parseAlvoDLDoCode(codigo) {
+  const segs = {};
+  for (const parte of String(codigo).trim().replace(/^DRN2-/, "").split("-")) {
+    const m = parte.match(/^([A-Z]{3}):(.*)$/);
+    if (m) segs[m[1]] = m[2].split(".");
+  }
+  const alvo = {};
+  if (segs.TAX) { alvo.reino = segs.TAX[0]; alvo.classe = segs.TAX[1]; }
+  if (segs.MOR) { alvo.simetria = segs.MOR[2]; }
+  if (segs.LOC) { alvo.locPrimario = segs.LOC[0]; }
+  if (segs.MEM) { alvo.memSup = segs.MEM[0]; alvo.memInf = segs.MEM[1]; }
+  if (segs.CRN) { alvo.crnFormato = segs.CRN[2]; }
+  if (segs.FAC) { alvo.facFocinho = segs.FAC[1]; }
+  if (segs.REP) { alvo.repModo = segs.REP[0]; }
+  if (segs.TOL) { alvo.tolHidrica = segs.TOL[0]; }
+  return alvo;
+}
+
+/* Guard de segurança generoso (não é ciclo de deriva real, é TENTATIVA de
+   ciclo — a maioria não melhora e é descartada, então precisa de bem mais
+   tentativas que uma deriva normal pra ter chance real de convergir). Se o
+   alvo for genotipicamente inatingível a partir da origem (ex.: reino
+   diferente e travado pela barreira da Fase 2, item 5.1, quando a origem
+   não é Ba), a busca encerra com aviso claro em vez de travar em loop. */
+const GUARD_MAX_BUSCA_TRILHA = 4000;
+
+async function buscarTrilhaParaAlvo(nodeOrigem, alvoCodigo, onProgress) {
+  const alvo = parseAlvoDLDoCode(alvoCodigo);
+  if (!Object.keys(alvo).length) return { sucesso: false, motivo: "codigo-invalido", trilha: [], dlFinal: null };
+
+  let gAtual = JSON.parse(JSON.stringify(nodeOrigem.g));
+  let melhorDL = calcularDL(gAtual, alvo);
+  const dlInicial = melhorDL || 1;
+  const trilha = [];
+  let orcamento = 0;
+  let guard = 0;
+  let semMelhoraSeguidas = 0;
+  const SEM_MELHORA_MAX = 500; // detecta alvo inatingível bem antes do guard absoluto
+  let ultimoYield = agoraMs();
+
+  while (melhorDL > 0 && guard++ < GUARD_MAX_BUSCA_TRILHA) {
+    const gTentativa = JSON.parse(JSON.stringify(gAtual));
+    const r = aplicarCicloDeriva(gTentativa, orcamento, sortFontePressao());
+    const novoDL = calcularDL(gTentativa, alvo);
+    if (novoDL < melhorDL) {
+      gAtual = gTentativa;
+      orcamento = r.orcamentoRestante;
+      melhorDL = novoDL;
+      trilha.push(r.genesAlterados);
+      semMelhoraSeguidas = 0;
+    } else {
+      semMelhoraSeguidas++;
+      if (semMelhoraSeguidas >= SEM_MELHORA_MAX) break; // provavelmente inatingível a partir daqui
+    }
+    const agora = agoraMs();
+    if (agora - ultimoYield > 12) {
+      if (onProgress) onProgress(Math.min(0.99, 1 - melhorDL / dlInicial));
+      await cederControle();
+      ultimoYield = agoraMs();
+    }
+  }
+  if (onProgress) onProgress(1);
+
+  return {
+    sucesso: melhorDL === 0,
+    trilha, // um {I:[...], II:[...], III:[...]} por ciclo aceito, em ordem
+    dlFinal: melhorDL,
+    ciclos: trilha.length,
+    gFinal: gAtual,
+    inatingivel: melhorDL > 0 && semMelhoraSeguidas >= SEM_MELHORA_MAX,
+  };
+}
+
+/* Serializa a trilha encontrada num texto colável — cada ciclo aceito vira
+   um bloco `{gene:valor,...}` (só os genes que de fato mudaram naquele
+   ciclo, lidos do gFinal reconstruído passo a passo), ciclos separados por
+   `|`. Formato enxuto, no mesmo espírito de notação do resto do DRN2. */
+function serializarTrilha(nodeOrigem, resultadoBusca) {
+  if (!resultadoBusca.trilha.length) return "";
+  let g = JSON.parse(JSON.stringify(nodeOrigem.g));
+  const blocos = [];
+  // Precisa dos VALORES finais de cada gene alterado por ciclo, não só os
+  // nomes — replay contra uma cópia do genoma original não é confiável
+  // (a mutação já foi aplicada uma vez durante a busca); por isso a busca
+  // guarda genesAlterados por ciclo, e aqui lemos o valor final direto do
+  // gFinal quando é a ÚLTIMA vez que aquele gene aparece na trilha (senão
+  // teríamos que re-simular; como só o valor final importa pra reproduzir
+  // o alvo, isso é suficiente e muito mais simples).
+  const gFinal = resultadoBusca.gFinal;
+  for (const genesAlterados of resultadoBusca.trilha) {
+    const todos = [...genesAlterados.I, ...genesAlterados.II, ...genesAlterados.III];
+    if (!todos.length) { blocos.push("{}"); continue; }
+    const pares = todos.map((k) => `${k}:${JSON.stringify(gFinal[k])}`);
+    blocos.push(`{${pares.join(",")}}`);
+  }
+  return "TRILHA1|" + blocos.join("|");
+}
+
+/* Importa uma trilha serializada (formato acima) e reaplica os valores
+   finais de cada gene, ciclo a ciclo, direto no genoma — não resorteia
+   nada, só copia os valores exatos que a busca encontrou, então o
+   resultado final bate exatamente com o DNA-alvo original (mesmos campos
+   que calcularDL compara; os demais genes do genoma continuam os do
+   primordial recém-criado, normalizados a cada passo pra manter
+   coerência). */
+function aplicarTrilhaImportada(g, textoTrilha) {
+  const corpo = String(textoTrilha).trim().replace(/^TRILHA1\|/, "");
+  if (!corpo) return { aplicados: 0 };
+  const blocos = corpo.split("|");
+  let aplicados = 0;
+  for (const bloco of blocos) {
+    const conteudo = bloco.trim().replace(/^\{/, "").replace(/\}$/, "");
+    if (!conteudo) continue;
+    for (const par of conteudo.split(",")) {
+      const idx = par.indexOf(":");
+      if (idx < 0) continue;
+      const chave = par.slice(0, idx).trim();
+      let valorTexto = par.slice(idx + 1).trim();
+      let valor;
+      try { valor = JSON.parse(valorTexto); } catch { valor = valorTexto; }
+      g[chave] = valor;
+      aplicados++;
+    }
+    const limpo = normalizarGenoma(g, g.isPrimordial);
+    Object.assign(g, limpo);
+  }
+  return { aplicados };
+}
+
 /* Duração de 1 ciclo de deriva (CD) em AU (milhões de anos). 1 CD =
    1000 gerações (Parte V do documento). anosGeracao vem da tabela de
    maturação (0-9); o resultado já sai em AU, pronto para somar
@@ -1527,6 +1936,25 @@ function normalizarGenoma(g, isPrimordial) {
   return cur.ctx;
 }
 
+/* Fase 3 — genes por táxon só existem para a classe/reino a que pertencem
+   (o resto das espécies carrega `undefined` nesses campos, ver Passo 16.5
+   de runSpeciesSteps). Sem este mapa, a deriva podia sortear um valor pra
+   um gene que a espécie nem deveria ter (ex.: "glandulaMamaria" num
+   réptil) — mesmo bug de raiz do guard de tolHidrica/reino, generalizado. */
+const GENE_TAXON_APLICAVEL = {
+  glandulaMamaria: (g) => g.classe === "MAM", dentesTipo: (g) => g.classe === "MAM",
+  termorregulacao: (g) => g.classe === "MAM", gestacao: (g) => g.classe === "MAM", pelagemDensidade: (g) => g.classe === "MAM",
+  bicoFormato: (g) => g.classe === "AVE", penaFuncao: (g) => g.classe === "AVE", migratorio: (g) => g.classe === "AVE", ovoCasca: (g) => g.classe === "AVE",
+  escamaTipo: (g) => g.classe === "REP", venenoAparato: (g) => g.classe === "REP", regeneracaoCauda: (g) => g.classe === "REP", ectotermiaDependencia: (g) => g.classe === "REP",
+  metamorfose: (g) => g.classe === "AMP", peleToxinas: (g) => g.classe === "AMP", respiracaoCutanea: (g) => g.classe === "AMP",
+  nadadeiraConfiguracao: (g) => g.classe === "PSC", respiracaoBranquial: (g) => g.classe === "PSC", bexigaNatatoria: (g) => g.classe === "PSC",
+  metamorfoseTipo: (g) => g.classe === "INS", patasQtdEspecializada: (g) => g.classe === "INS", venenoOuFerroao: (g) => g.classe === "INS", coloniaTipo: (g) => g.classe === "INS",
+  concha: (g) => g.classe === "MOL", tentaculosQtd: (g) => g.classe === "MOL", tintaDefensiva: (g) => g.classe === "MOL",
+  raizTipo: (g) => g.reino === "Pl", folhaTipo: (g) => g.reino === "Pl", reproducaoEstrutura: (g) => g.reino === "Pl", fotossinteseIntensidade: (g) => g.reino === "Pl",
+  corpoFrutiferoTipo: (g) => g.reino === "Fu", redeMicelialAlcance: (g) => g.reino === "Fu", esporoDispersao: (g) => g.reino === "Fu",
+  paredeCelularTipo: (g) => g.reino === "Ba", metabolismoTipo: (g) => g.reino === "Ba", formaColonia: (g) => g.reino === "Ba",
+};
+
 function aplicarCicloDeriva(g, orcamentoAtual, fonteFixa) {
   const pressaoValor = roll3d4menos3();
   const fonte = fonteFixa || sortFontePressao();
@@ -1554,6 +1982,22 @@ function aplicarCicloDeriva(g, orcamentoAtual, fonteFixa) {
     const key = sortGeneAlvo(estrato);
     if (estrato === "I" && key === "tolHidrica" && !["Bioma aquático", "Bioma árido"].includes(fonte.nome)) {
       orcamento -= CUSTO_ESTRATO.I;
+      continue;
+    }
+    // Fase 2, item 5.1 — barreira de reino: só bactéria pode ressortear
+    // "reino" livremente (evolução pra qualquer coisa); qualquer outra
+    // espécie tem o reino travado para sempre — só "classe" (filo) dentro
+    // dele continua variando. Mesmo padrão do bloqueio de tolHidrica acima.
+    if (estrato === "I" && key === "reino" && g.reino !== "Ba") {
+      orcamento -= CUSTO_ESTRATO.I;
+      continue;
+    }
+    // Fase 3 — gene de táxon sorteado, mas a espécie atual não pertence
+    // àquela classe/reino (o gene é undefined nela): descarta a tentativa,
+    // mesmo padrão dos guards de tolHidrica/reino acima.
+    const aplicavel = GENE_TAXON_APLICAVEL[key];
+    if (aplicavel && !aplicavel(g)) {
+      orcamento -= CUSTO_ESTRATO[estrato];
       continue;
     }
     const mudou = aplicarMutacaoGene(g, key, fonte);
@@ -1678,7 +2122,9 @@ function formatarLinhaLog(e) {
    MOTOR DE ÁRVORE GENEALÓGICA
    Um "nó" é uma espécie: { id, clado, g (genoma completo), code,
    auSurgimento, pais:[id], filhos:[id], primordialId, ordem,
-   ciclosDecorridos, historico:[{cd, pressao, fonte, genesAlterados}] }
+   ciclosDecorridos, historico:[{cd, pressao, fonte, genesAlterados}],
+   extinta, auExtincao, motivoExtincao } — os três últimos setados só por
+   extinção explícita (Fase 1, item 4.2; hoje só motivo "saturacao").
    ============================================================ */
 
 let __idCounter = 1;
@@ -1718,7 +2164,7 @@ function criarPrimordial(manual, auInicial, massaId) {
   });
   return node;
 }
-const REINO_LABEL_LOG = { An: "Animal", Pl: "Planta", Fu: "Fungo", Ar: "Construto", Sp: "Espiritual" };
+const REINO_LABEL_LOG = { An: "Animal", Pl: "Planta", Fu: "Fungo", Ba: "Bactéria", Ar: "Construto", Sp: "Espiritual" }; // Fase 1, item 4.1
 function auTextoLog(au) { return au === 0 ? "AU 0 (marco zero)" : `AU ${au.toLocaleString("pt-BR")}`; }
 
 function avancarCicloNaLinhagem(linhagemState) {
@@ -1917,6 +2363,12 @@ async function derivarLinhagem(nodeInicial, ciclosAlvo, registrarNo, onProgress)
   const guardMax = ciclosAlvo * 8 + 300; // custo agora é linear no teto de linhagens, não exponencial — guard bem mais barato
   let ultimoYield = agoraMs();
   let totalExtintasPorSaturacao = 0;
+  // Fase 1, item 4.2 — índice local id->node dos nós que passam por esta
+  // deriva (o inicial + toda filha registrada), pra poder marcar `extinta`
+  // no objeto real quando uma linhagem for descartada por saturação
+  // (o "maeAtual" que sobrevive de rodada em rodada é sempre um clone raso).
+  const __nodePorId = new Map();
+  __nodePorId.set(nodeInicialComPrimordial.id, nodeInicialComPrimordial);
 
   while (ativas.length > 0 && guard++ < guardMax && todasFilhas.length < MAX_ESPECIES_POR_DERIVACAO) {
     const proximaRodada = [];
@@ -1938,6 +2390,7 @@ async function derivarLinhagem(nodeInicial, ciclosAlvo, registrarNo, onProgress)
       const filhaComPrimordial = { ...filha, primordialClado };
       registrarNo(filha);
       todasFilhas.push(filha);
+      __nodePorId.set(filha.id, filha); // Fase 1, item 4.2
 
       // a linha da filha continua sempre (senão a deriva simplesmente para ali)
       proximaRodada.push({ maeAtual: filhaComPrimordial, state: novaLinhagemState(filhaComPrimordial, linhagem.state.fontePressaoFixa), ciclosRestantes });
@@ -1977,8 +2430,34 @@ async function derivarLinhagem(nodeInicial, ciclosAlvo, registrarNo, onProgress)
         const j = Math.floor(Math.random() * (k + 1));
         [ativas[k], ativas[j]] = [ativas[j], ativas[k]];
       }
-      totalExtintasPorSaturacao += ativas.length - MAX_LINHAGENS_ATIVAS;
+      const descartadasPorSaturacao = ativas.slice(MAX_LINHAGENS_ATIVAS); // Fase 1, item 4.2
+      totalExtintasPorSaturacao += descartadasPorSaturacao.length;
       ativas = ativas.slice(0, MAX_LINHAGENS_ATIVAS);
+
+      // Fase 1, item 4.2 — marca extinção explícita no nó real (via índice
+      // local id->node), com AU e motivo, e emite um evento de log dedicado.
+      for (const linhagemDescartada of descartadasPorSaturacao) {
+        const spId = linhagemDescartada.state.logContext?.speciesId;
+        const nodeReal = spId ? __nodePorId.get(spId) : null;
+        if (!nodeReal || nodeReal.extinta) continue; // já registrado (ou nó fora deste índice — não deveria ocorrer)
+        const cdDuracaoAU = duracaoCicloDeriva(linhagemDescartada.state.g);
+        const auAcumulado = linhagemDescartada.state.ciclosDecorridos * cdDuracaoAU;
+        const auAtual = nodeReal.auSurgimento + Math.max(0, auAcumulado);
+        nodeReal.extinta = true;
+        nodeReal.auExtincao = auAtual;
+        nodeReal.motivoExtincao = "saturacao";
+        emitirEvento({
+          tipo: "extincao",
+          tipoLabel: "EXTINÇÃO",
+          speciesId: nodeReal.id,
+          clado: nodeReal.clado,
+          primordialId: nodeReal.primordialId,
+          primordialClado: linhagemDescartada.state.logContext?.primordialClado || nodeReal.clado,
+          auSurgimento: nodeReal.auSurgimento,
+          texto: `${nodeReal.clado} é extinta por saturação de linhagens (teto de ${MAX_LINHAGENS_ATIVAS} linhagens ativas simultâneas) em ${auTextoLog(auAtual)}.`,
+          code: nodeReal.code,
+        });
+      }
     }
 
     const agora = agoraMs();
@@ -2074,12 +2553,18 @@ function geracoesDepois(nodeId, n, idx) {
    espécie, só transições entre espécies.
    ============================================================ */
 function auFimDeVida(node, idx) {
-  if (!node.filhos || !node.filhos.length) return Infinity;
+  // Fase 1, item 4.2 — extinção explícita por saturação também encerra a
+  // "ponta viva": se a linhagem foi extinta antes de qualquer filho nascer
+  // (ou mesmo tendo filhos, o que não deveria ocorrer, mas por segurança
+  // usamos o menor entre os dois), auExtincao vale como fim de vida.
   let menor = Infinity;
-  for (const fid of node.filhos) {
-    const f = idx.get(fid);
-    if (f && f.auSurgimento < menor) menor = f.auSurgimento;
+  if (node.filhos && node.filhos.length) {
+    for (const fid of node.filhos) {
+      const f = idx.get(fid);
+      if (f && f.auSurgimento < menor) menor = f.auSurgimento;
+    }
   }
+  if (node.extinta && typeof node.auExtincao === "number" && node.auExtincao < menor) menor = node.auExtincao;
   return menor;
 }
 
@@ -2296,13 +2781,26 @@ const TAMANHO_POPULACAO_INICIAL = 6;  // indivíduos gerados por espécie ao nas
 const TETO_POPULACAO_POR_DIVISAO = 10; // limite de indivíduos vivos de uma espécie numa única divisão
 const CICLO_SELECAO_AU = 0.1;         // quanto o "ano atual" avança por ciclo de seleção natural (100 mil anos)
 
-/* Gera `quantidade` indivíduos pra uma espécie, espalhados
-   aleatoriamente pelas divisões simuladas da massa de terra dela.
-   Cada indivíduo é gerado do zero pelo motor de indivíduo de sempre
-   (buildIndividual, seed livre) — nada aqui reinventa a geração,
-   só decide ONDE (qual divisão) cada um nasce. */
-function gerarPopulacaoParaEspecie(node, quantidade = TAMANHO_POPULACAO_INICIAL, divisoes = DIVISOES_POR_MASSA) {
+/* Gera `quantidade` indivíduos pra uma espécie, espalhados pelas divisões
+   simuladas da massa de terra dela. Fase 2, item 5.5 (pré-requisito 1) —
+   deixa de sortear a divisão puramente ao acaso: escolhe, com prioridade,
+   entre as divisões cujo bioma (massa.divisoesBiomas) é compatível com o
+   habitat da espécie (readHabitatNaMassa: primary > marginal); só cai para
+   sorteio totalmente aleatório se a massa não tiver divisoesBiomas (import
+   de projeto antigo) ou nenhuma divisão for compatível. */
+function gerarPopulacaoParaEspecie(node, quantidade = TAMANHO_POPULACAO_INICIAL, divisoes = DIVISOES_POR_MASSA, massa = null) {
   const individuos = [];
+  let poolPrimary = null, poolMarginal = null;
+  if (massa && massa.divisoesBiomas && massa.divisoesBiomas.length) {
+    const habitat = readHabitatNaMassa(node.g, massa);
+    poolPrimary = massa.divisoesBiomas.filter((d) => habitat.primary.includes(d.biomaNome)).map((d) => d.id);
+    poolMarginal = massa.divisoesBiomas.filter((d) => habitat.marginal.includes(d.biomaNome)).map((d) => d.id);
+  }
+  const sortearDivisao = () => {
+    if (poolPrimary && poolPrimary.length) return poolPrimary[Math.floor(Math.random() * poolPrimary.length)];
+    if (poolMarginal && poolMarginal.length) return poolMarginal[Math.floor(Math.random() * poolMarginal.length)];
+    return Math.floor(Math.random() * divisoes);
+  };
   for (let i = 0; i < quantidade; i++) {
     const r = buildIndividual(node.g, null);
     individuos.push({
@@ -2312,7 +2810,7 @@ function gerarPopulacaoParaEspecie(node, quantidade = TAMANHO_POPULACAO_INICIAL,
       ind: r.ind, code: r.code, individualSeed: r.individualSeed,
       attrBase: r.attrBase, attrVaried: r.attrVaried,
       massaId: node.massaId || null,
-      divisao: Math.floor(Math.random() * divisoes),
+      divisao: sortearDivisao(),
       viva: true,
     });
   }
@@ -2331,7 +2829,7 @@ function gerarPopulacaoParaEspecie(node, quantidade = TAMANHO_POPULACAO_INICIAL,
    naquela divisão, (3) faz nascer 1 indivíduo novo na vencedora,
    até um teto por divisão. */
 function rodarCicloSelecaoIndividual(idx, individuals, massas) {
-  const eventos = { colisoes: 0, nascimentos: 0, mortes: 0 };
+  const eventos = { colisoes: 0, nascimentos: 0, mortes: 0, migracoes: 0 }; // Fase 2, item 5.5 — +migracoes
   let individualsOut = individuals;
 
   for (const massa of massas) {
@@ -2383,16 +2881,41 @@ function rodarCicloSelecaoIndividual(idx, individuals, massas) {
       });
 
       const indsPerdedora = indsDivisao.filter((i) => i.especieId === perdedoraNode.id && i.viva);
-      const numMortes = Math.ceil(indsPerdedora.length / 2);
-      const idsQueMorrem = new Set(indsPerdedora.slice(0, numMortes).map((i) => i.id));
+      const numAfetados = Math.ceil(indsPerdedora.length / 2);
+      /* Fase 2, item 5.5 — antes, todo indivíduo perdedor de uma colisão
+         simplesmente morria. Agora só METADE dos afetados morre de fato; a
+         outra metade migra para uma divisão vizinha (topologia circular),
+         criando população nova lá e MANTENDO a população de origem — a
+         espécie passa a existir nos dois domínios, não se desloca. Decisão
+         de quantidade (não travada no plano): metade dos que seriam
+         mortos, como ponto médio entre "todos migram" (sem pressão real) e
+         "ninguém migra" (comportamento antigo). */
+      const afetados = indsPerdedora.slice(0, numAfetados);
+      const numMigram = Math.floor(afetados.length / 2);
+      const idsQueMigram = new Set(afetados.slice(0, numMigram).map((i) => i.id));
+      const idsQueMorrem = new Set(afetados.slice(numMigram).map((i) => i.id));
       if (idsQueMorrem.size) {
         individualsOut = individualsOut.map((i) => (idsQueMorrem.has(i.id) ? { ...i, viva: false } : i));
         eventos.mortes += idsQueMorrem.size;
       }
+      if (idsQueMigram.size) {
+        const vizinhas = divisoesVizinhas(divisao, DIVISOES_POR_MASSA);
+        const destino = vizinhas[Math.floor(Math.random() * vizinhas.length)];
+        individualsOut = individualsOut.map((i) => (idsQueMigram.has(i.id) ? { ...i, divisao: destino } : i));
+        eventos.migracoes += idsQueMigram.size;
+        emitirEvento({
+          tipo: "migracao",
+          tipoLabel: "MIGRAÇÃO",
+          speciesId: perdedoraNode.id, clado: perdedoraNode.clado,
+          primordialId: perdedoraNode.primordialId, primordialClado: idx.get(perdedoraNode.primordialId)?.clado || perdedoraNode.clado,
+          texto: `${perdedoraNode.clado} perde disputa de população na divisão ${divisao} de ${massa.nome} e migra ${idsQueMigram.size} indivíduo(s) para a divisão ${destino} (mantendo população de origem).`,
+          code: perdedoraNode.code,
+        });
+      }
 
       const vivasVencedoraNaDivisao = individualsOut.filter((i) => i.viva && i.especieId === vencedoraNode.id && i.divisao === divisao && i.massaId === massa.id).length;
       if (vivasVencedoraNaDivisao < TETO_POPULACAO_POR_DIVISAO) {
-        const novo = gerarPopulacaoParaEspecie(vencedoraNode, 1, DIVISOES_POR_MASSA)[0];
+        const novo = gerarPopulacaoParaEspecie(vencedoraNode, 1, DIVISOES_POR_MASSA, massa)[0]; // Fase 2, item 5.5
         novo.divisao = divisao; novo.massaId = massa.id;
         individualsOut = [...individualsOut, novo];
         eventos.nascimentos++;
@@ -2411,7 +2934,7 @@ function rodarCicloSelecaoIndividual(idx, individuals, massas) {
    ver a mudança recriando o array de nodes. */
 async function rodarSelecaoNaturalPopulacional(idx, individuals, massas, ciclos, onProgress) {
   let individualsAtual = individuals;
-  const resumo = { colisoes: 0, nascimentos: 0, mortes: 0 };
+  const resumo = { colisoes: 0, nascimentos: 0, mortes: 0, migracoes: 0 }; // Fase 2, item 5.5
   let ultimoCorte = agoraMs();
   for (let c = 0; c < ciclos; c++) {
     const { individuals: out, eventos } = rodarCicloSelecaoIndividual(idx, individualsAtual, massas);
@@ -2419,6 +2942,7 @@ async function rodarSelecaoNaturalPopulacional(idx, individuals, massas, ciclos,
     resumo.colisoes += eventos.colisoes;
     resumo.nascimentos += eventos.nascimentos;
     resumo.mortes += eventos.mortes;
+    resumo.migracoes += eventos.migracoes; // Fase 2, item 5.5
     if (onProgress) onProgress((c + 1) / ciclos);
     if (agoraMs() - ultimoCorte > 12) { await cederControle(); ultimoCorte = agoraMs(); }
   }

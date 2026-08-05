@@ -26,7 +26,7 @@ function FileText(props) { return <Icon {...props}><path d="M14 2H6a2 2 0 0 0-2 
 /* ============================================================
    HELPERS DE UI (portado verbatim do v16)
    ============================================================ */
-const REINO_LABEL = { An: "Animal", Pl: "Planta", Fu: "Fungo", Ar: "Construto", Sp: "Espiritual" };
+const REINO_LABEL = { An: "Animal", Pl: "Planta", Fu: "Fungo", Ba: "Bactéria", Ar: "Construto", Sp: "Espiritual" }; // Fase 1, item 4.1
 function sortNomeIndividuo() {
   const s = CONS[Math.floor(Math.random() * CONS.length)] + VOG[Math.floor(Math.random() * VOG.length)] +
     CONS[Math.floor(Math.random() * CONS.length)] + VOG[Math.floor(Math.random() * VOG.length)] +
@@ -108,11 +108,23 @@ function BarraFases({ faseAtual, geoOk, erasOk }) {
    climáticos). Ao confirmar, vira a Era 1 e desbloqueia a Fase 2.
    Bloqueio: não há como avançar com 0 massas.
    ============================================================ */
-function FaseGeografia({ onConfirmar, jaConfirmada, eras }) {
-  const [massas, setMassas] = useState([{ tempId: 1, nome: "Pangeia Primordial", dominios: [...DOMINIOS_CLIMATICOS] }]);
+function FaseGeografia({ onConfirmar, jaConfirmada, eras, dominiosDisponiveis, dominiosCustom, onAdicionarDominio, onRemoverDominio }) {
+  const [massas, setMassas] = useState([{ tempId: 1, nome: "Pangeia Primordial", dominios: [...(dominiosDisponiveis || DOMINIOS_CLIMATICOS)], biomasExcluidos: [] }]);
   const [nextId, setNextId] = useState(2);
+  const [dominioExpandido, setDominioExpandido] = useState({}); // Fase 5, item 9.3 — `${tempId}:${dom}` -> bool
+  // Fase 5, item 9.5 — criação de domínio climático customizado
+  const [novoDominioAberto, setNovoDominioAberto] = useState(false);
+  const [novoDominioNome, setNovoDominioNome] = useState("");
+  const [novoDominioBiomas, setNovoDominioBiomas] = useState([]);
+  const listaDominios = dominiosDisponiveis || DOMINIOS_CLIMATICOS;
+  const toggleBiomaNovoDominio = (nome) => setNovoDominioBiomas((b) => (b.includes(nome) ? b.filter((x) => x !== nome) : [...b, nome]));
+  const criarDominio = () => {
+    if (!novoDominioNome.trim() || novoDominioBiomas.length === 0) return; // exige nome + ao menos 1 bioma
+    onAdicionarDominio(novoDominioNome.trim(), novoDominioBiomas);
+    setNovoDominioNome(""); setNovoDominioBiomas([]); setNovoDominioAberto(false);
+  };
 
-  const addMassa = () => { setMassas((m) => [...m, { tempId: nextId, nome: `Massa ${nextId}`, dominios: [...DOMINIOS_CLIMATICOS] }]); setNextId((n) => n + 1); };
+  const addMassa = () => { setMassas((m) => [...m, { tempId: nextId, nome: `Massa ${nextId}`, dominios: [...listaDominios], biomasExcluidos: [] }]); setNextId((n) => n + 1); };
   const rmMassa = (tempId) => setMassas((m) => m.filter((x) => x.tempId !== tempId));
   const setNome = (tempId, nome) => setMassas((m) => m.map((x) => (x.tempId === tempId ? { ...x, nome } : x)));
   const toggleDominio = (tempId, dom) => setMassas((m) => m.map((x) => {
@@ -120,6 +132,14 @@ function FaseGeografia({ onConfirmar, jaConfirmada, eras }) {
     const tem = x.dominios.includes(dom);
     const dominios = tem ? x.dominios.filter((d) => d !== dom) : [...x.dominios, dom];
     return { ...x, dominios };
+  }));
+  // Fase 5, item 9.3 — toggle individual de bioma específico dentro de um
+  // domínio habilitado (mantendo o domínio, só desliga aquele bioma)
+  const toggleBioma = (tempId, biomaNome) => setMassas((m) => m.map((x) => {
+    if (x.tempId !== tempId) return x;
+    const excluido = x.biomasExcluidos.includes(biomaNome);
+    const biomasExcluidos = excluido ? x.biomasExcluidos.filter((b) => b !== biomaNome) : [...x.biomasExcluidos, biomaNome];
+    return { ...x, biomasExcluidos };
   }));
 
   const podeConfirmar = massas.length > 0 && massas.every((m) => m.nome.trim() && m.dominios.length > 0);
@@ -141,6 +161,42 @@ function FaseGeografia({ onConfirmar, jaConfirmada, eras }) {
   return (
     <Section title="Fase 1 · Geografia" accent="text-emerald-500" right={<Badge className="border-amber-800 text-amber-500">em edição</Badge>}>
       <p className="text-xs text-stone-500 mb-4">Defina as massas de terra do mundo no início (Era Inicial). Cada massa carrega os domínios climáticos que ela oferece — isso restringe quais biomas específicos existirão nela.</p>
+
+      {/* Fase 5, item 9.5 — domínios climáticos customizados (além dos 5 embutidos) */}
+      <div className="rounded border border-stone-800 p-2.5 mb-4">
+        <div className="flex items-center justify-between mb-1.5">
+          <span className="text-[10px] uppercase tracking-widest text-stone-500 font-mono">Domínios climáticos disponíveis</span>
+          <button onClick={() => setNovoDominioAberto((v) => !v)} className="text-[10px] font-mono uppercase text-stone-500 hover:text-emerald-400">+ novo domínio</button>
+        </div>
+        <div className="flex flex-wrap gap-1.5">
+          {DOMINIOS_CLIMATICOS.map((dom) => <Badge key={dom} className="border-stone-700 text-stone-400">{dom}</Badge>)}
+          {(dominiosCustom || []).map((d) => (
+            <span key={d.nome} className="inline-flex items-center gap-1">
+              <Badge className="border-emerald-800 text-emerald-500">{d.nome} ({d.biomas.length})</Badge>
+              <button onClick={() => onRemoverDominio(d.nome)} className="text-stone-600 hover:text-red-500"><Trash size={11} /></button>
+            </span>
+          ))}
+        </div>
+        {novoDominioAberto && (
+          <div className="mt-3 pt-3 border-t border-stone-800 space-y-2">
+            <CampoTexto value={novoDominioNome} onChange={setNovoDominioNome} placeholder="Nome do novo domínio (ex.: Deserto de Cristal)" />
+            <div className="text-[10px] text-stone-500">Escolha ao menos 1 bioma já existente pra agrupar sob esse domínio (não cria bioma novo, só reagrupa):</div>
+            <div className="flex flex-wrap gap-1 max-h-32 overflow-y-auto">
+              {HABITAT_CODEX.map((b) => (
+                <button key={b.nome} onClick={() => toggleBiomaNovoDominio(b.nome)}
+                  className={`text-[9px] font-data px-1.5 py-0.5 rounded border ${novoDominioBiomas.includes(b.nome) ? "border-emerald-700 bg-emerald-950/50 text-emerald-400" : "border-stone-800 text-stone-600"}`}>
+                  {b.nome}
+                </button>
+              ))}
+            </div>
+            <div className="flex gap-2">
+              <BotaoPrimario disabled={!novoDominioNome.trim() || novoDominioBiomas.length === 0} onClick={criarDominio} className="px-3 py-1.5">Criar Domínio</BotaoPrimario>
+              <button onClick={() => setNovoDominioAberto(false)} className="text-[11px] font-mono uppercase text-stone-500 px-2">cancelar</button>
+            </div>
+          </div>
+        )}
+      </div>
+
       <div className="space-y-3">
         {massas.map((m) => (
           <div key={m.tempId} className="rounded border border-stone-800 p-3 bg-stone-950/50">
@@ -149,12 +205,43 @@ function FaseGeografia({ onConfirmar, jaConfirmada, eras }) {
               {massas.length > 1 && <button onClick={() => rmMassa(m.tempId)} className="text-stone-600 hover:text-red-500 shrink-0"><Trash size={14} /></button>}
             </div>
             <div className="flex flex-wrap gap-1.5">
-              {DOMINIOS_CLIMATICOS.map((dom) => (
-                <button key={dom} onClick={() => toggleDominio(m.tempId, dom)}
-                  className={`text-[10px] font-data px-2 py-1 rounded border ${m.dominios.includes(dom) ? "border-emerald-700 bg-emerald-950/50 text-emerald-400" : "border-stone-800 text-stone-600"}`}>
-                  {dom}
-                </button>
-              ))}
+              {listaDominios.map((dom) => {
+                const chaveExp = `${m.tempId}:${dom}`;
+                const habilitado = m.dominios.includes(dom);
+                const domCustom = (dominiosCustom || []).find((d) => d.nome === dom);
+                const biomasDoDominio = domCustom
+                  ? HABITAT_CODEX.filter((b) => domCustom.biomas.includes(b.nome))
+                  : HABITAT_CODEX.filter((b) => b.dominio === dom);
+                return (
+                  <div key={dom} className="flex flex-col gap-1">
+                    <div className="flex items-center gap-1">
+                      <button onClick={() => toggleDominio(m.tempId, dom)}
+                        className={`text-[10px] font-data px-2 py-1 rounded border ${habilitado ? "border-emerald-700 bg-emerald-950/50 text-emerald-400" : "border-stone-800 text-stone-600"}`}>
+                        {dom}
+                      </button>
+                      {habilitado && (
+                        <button onClick={() => setDominioExpandido((s) => ({ ...s, [chaveExp]: !s[chaveExp] }))} className="text-stone-600 hover:text-emerald-400">
+                          {dominioExpandido[chaveExp] ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
+                        </button>
+                      )}
+                    </div>
+                    {/* Fase 5, item 9.3 — biomas específicos desse domínio, toggle individual */}
+                    {habilitado && dominioExpandido[chaveExp] && (
+                      <div className="flex flex-wrap gap-1 pl-2 border-l border-stone-800 ml-1">
+                        {biomasDoDominio.map((b) => {
+                          const excluido = m.biomasExcluidos.includes(b.nome);
+                          return (
+                            <button key={b.nome} onClick={() => toggleBioma(m.tempId, b.nome)}
+                              className={`text-[9px] font-data px-1.5 py-0.5 rounded border ${excluido ? "border-stone-800 text-stone-700 line-through" : "border-stone-700 text-stone-400"}`}>
+                              {b.nome}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           </div>
         ))}
@@ -178,13 +265,34 @@ function FaseGeografia({ onConfirmar, jaConfirmada, eras }) {
    com ao menos a Era 1, pode confirmar e seguir pra Fase 3 —
    dividir não é obrigatório.
    ============================================================ */
-function FaseEras({ eras, setEras, onConfirmar, jaConfirmada, bloqueada, onNovaEra }) {
+function FaseEras({ eras, setEras, onConfirmar, jaConfirmada, bloqueada, onNovaEra, nodes, onExcluirMassa, dominiosDisponiveis }) {
   const [criando, setCriando] = useState(false);
   const [nomeEra, setNomeEra] = useState("");
   const [auDivisao, setAuDivisao] = useState("");
   const eraAtual = eras[eras.length - 1];
   // planoPorMassa: massaId -> null (mantém) | [{nome,dominios}] (divide em N)
   const [planoPorMassa, setPlanoPorMassa] = useState({});
+  // Fase 5, item 9.1 — editar era já adicionada (nome + AU de início; não
+  // reabre a divisão de massas, que é uma operação distinta e mais pesada)
+  const [editandoEraId, setEditandoEraId] = useState(null);
+  const [nomeEditado, setNomeEditado] = useState("");
+  const [auEditado, setAuEditado] = useState("");
+  const iniciarEdicaoEra = (era) => { setEditandoEraId(era.id); setNomeEditado(era.nome); setAuEditado(String(era.auInicio)); };
+  const salvarEdicaoEra = () => {
+    if (!nomeEditado.trim() || auEditado === "" || isNaN(Number(auEditado))) return;
+    setEras((prev) => prev.map((e) => (e.id === editandoEraId ? { ...e, nome: nomeEditado.trim(), auInicio: Number(auEditado) } : e)));
+    setEditandoEraId(null);
+  };
+  // Fase 5, item 9.2 — excluir massa de terra da era atual, com reatribuição
+  // se houver espécies vinculadas (mesmo padrão de segurança de deletarEspecie)
+  const [massaParaExcluir, setMassaParaExcluir] = useState(null); // massa sendo confirmada pra exclusão
+  const [destinoReatribuicao, setDestinoReatribuicao] = useState("");
+  const iniciarExclusaoMassa = (massa) => { setMassaParaExcluir(massa); setDestinoReatribuicao(""); };
+  const confirmarExclusaoMassa = () => {
+    onExcluirMassa(massaParaExcluir.id, destinoReatribuicao || null);
+    setMassaParaExcluir(null);
+  };
+  const vinculadasNaMassaParaExcluir = massaParaExcluir ? (nodes || []).filter((n) => n.massaId === massaParaExcluir.id).length : 0;
 
   if (bloqueada) {
     return (
@@ -195,7 +303,7 @@ function FaseEras({ eras, setEras, onConfirmar, jaConfirmada, bloqueada, onNovaE
   }
 
   const iniciarDivisao = (massaId) => setPlanoPorMassa((p) => ({ ...p, [massaId]: p[massaId] ? null : [{ nome: "", dominios: [...(eraAtual.massas.find((m) => m.id === massaId)?.dominios || [])] }, { nome: "", dominios: [...(eraAtual.massas.find((m) => m.id === massaId)?.dominios || [])] }] }));
-  const addParteDivisao = (massaId) => setPlanoPorMassa((p) => ({ ...p, [massaId]: [...(p[massaId] || []), { nome: "", dominios: [...DOMINIOS_CLIMATICOS] }] }));
+  const addParteDivisao = (massaId) => setPlanoPorMassa((p) => ({ ...p, [massaId]: [...(p[massaId] || []), { nome: "", dominios: [...(dominiosDisponiveis || DOMINIOS_CLIMATICOS)] }] })); // Fase 5, item 9.5
   const setNomeParte = (massaId, i, nome) => setPlanoPorMassa((p) => ({ ...p, [massaId]: p[massaId].map((x, idx) => (idx === i ? { ...x, nome } : x)) }));
   const toggleDomParte = (massaId, i, dom) => setPlanoPorMassa((p) => ({
     ...p, [massaId]: p[massaId].map((x, idx) => idx === i ? { ...x, dominios: x.dominios.includes(dom) ? x.dominios.filter((d) => d !== dom) : [...x.dominios, dom] } : x),
@@ -225,12 +333,63 @@ function FaseEras({ eras, setEras, onConfirmar, jaConfirmada, bloqueada, onNovaE
       right={jaConfirmada ? <Badge className="border-emerald-800 text-emerald-500"><Check size={10} className="inline -mt-0.5 mr-1" />confirmada</Badge> : <Badge className="border-amber-800 text-amber-500">em edição</Badge>}>
       <div className="space-y-2 mb-4">
         {eras.map((era, i) => (
-          <div key={era.id} className="rounded border border-stone-800 p-2.5 bg-stone-950/50 flex items-center justify-between text-xs">
-            <div><span className="font-mono text-stone-300">{era.nome}</span><span className="text-stone-600 ml-2">{fmtAU(era.auInicio)}</span></div>
-            <div className="text-stone-500">{era.massas.length} massa(s): {era.massas.map((m) => m.nome).join(", ")}</div>
+          <div key={era.id} className="rounded border border-stone-800 p-2.5 bg-stone-950/50 text-xs">
+            {editandoEraId === era.id ? (
+              <div className="flex flex-wrap items-center gap-2">
+                <CampoTexto value={nomeEditado} onChange={setNomeEditado} placeholder="Nome da era" className="flex-1 min-w-[120px]" />
+                <CampoNumero value={auEditado} onChange={setAuEditado} placeholder="AU de início" className="w-32" />
+                <BotaoPrimario onClick={salvarEdicaoEra} className="px-3 py-1.5">Salvar</BotaoPrimario>
+                <button onClick={() => setEditandoEraId(null)} className="text-[11px] font-mono uppercase text-stone-500 px-2">cancelar</button>
+              </div>
+            ) : (
+              <div className="flex items-center justify-between">
+                <div><span className="font-mono text-stone-300">{era.nome}</span><span className="text-stone-600 ml-2">{fmtAU(era.auInicio)}</span></div>
+                <div className="flex items-center gap-2">
+                  <div className="text-stone-500">{era.massas.length} massa(s): {era.massas.map((m) => m.nome).join(", ")}</div>
+                  <button onClick={() => iniciarEdicaoEra(era)} className="text-[10px] font-mono uppercase text-stone-500 hover:text-emerald-400 shrink-0">editar</button>{/* Fase 5, item 9.1 */}
+                </div>
+              </div>
+            )}
           </div>
         ))}
       </div>
+
+      {/* Fase 5, item 9.2 — excluir massa de terra da era atual */}
+      <div className="mb-4">
+        <div className="text-[10px] uppercase tracking-widest text-stone-500 font-mono mb-1.5">Massas da era atual ({eraAtual.nome})</div>
+        <div className="space-y-1.5">
+          {eraAtual.massas.map((massa) => (
+            <div key={massa.id} className="flex items-center justify-between text-xs rounded border border-stone-800 px-2.5 py-1.5">
+              <span className="text-stone-300 font-mono">{massa.nome}</span>
+              {eraAtual.massas.length > 1 && (
+                <button onClick={() => iniciarExclusaoMassa(massa)} className="text-stone-600 hover:text-red-500 shrink-0"><Trash size={13} /></button>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {massaParaExcluir && (
+        <div className="rounded border border-red-900 bg-red-950/20 p-3 mb-4 space-y-2 text-xs">
+          <div className="text-red-400">Excluir "{massaParaExcluir.nome}"?</div>
+          {vinculadasNaMassaParaExcluir > 0 ? (
+            <>
+              <div className="text-stone-400">{vinculadasNaMassaParaExcluir} espécie(s) vinculada(s) a essa massa — escolha pra onde reatribuí-las antes de excluir:</div>
+              <select value={destinoReatribuicao} onChange={(e) => setDestinoReatribuicao(e.target.value)} className="bg-stone-950 border border-stone-800 rounded px-2 py-1.5 text-stone-200 w-full">
+                <option value="">— escolha a massa de destino —</option>
+                {eraAtual.massas.filter((m) => m.id !== massaParaExcluir.id).map((m) => <option key={m.id} value={m.id}>{m.nome}</option>)}
+              </select>
+            </>
+          ) : (
+            <div className="text-stone-500">Nenhuma espécie vinculada — pode excluir com segurança.</div>
+          )}
+          <div className="flex gap-2">
+            <button disabled={vinculadasNaMassaParaExcluir > 0 && !destinoReatribuicao} onClick={confirmarExclusaoMassa}
+              className="text-[11px] font-mono uppercase text-red-400 hover:text-red-300 border border-red-900 rounded px-3 py-1.5 disabled:opacity-40">Confirmar Exclusão</button>
+            <button onClick={() => setMassaParaExcluir(null)} className="text-[11px] font-mono uppercase text-stone-500 px-3">cancelar</button>
+          </div>
+        </div>
+      )}
 
       {!criando && (
         <button onClick={() => setCriando(true)} className="text-[11px] font-mono uppercase text-stone-400 hover:text-emerald-400 border border-stone-800 rounded px-3 py-1.5">+ Nova era (dividir geografia)</button>
@@ -257,7 +416,7 @@ function FaseEras({ eras, setEras, onConfirmar, jaConfirmada, bloqueada, onNovaE
                     <div key={i}>
                       <CampoTexto value={parte.nome} onChange={(v) => setNomeParte(massa.id, i, v)} placeholder={`Nova massa ${i + 1}`} />
                       <div className="flex flex-wrap gap-1 mt-1">
-                        {DOMINIOS_CLIMATICOS.map((dom) => (
+                        {(dominiosDisponiveis || DOMINIOS_CLIMATICOS).map((dom) => (
                           <button key={dom} onClick={() => toggleDomParte(massa.id, i, dom)}
                             className={`text-[9px] font-data px-1.5 py-0.5 rounded border ${parte.dominios.includes(dom) ? "border-emerald-700 bg-emerald-950/50 text-emerald-400" : "border-stone-800 text-stone-600"}`}>
                             {dom}

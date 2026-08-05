@@ -18,6 +18,17 @@ function App() {
   const [patchnotesAberto, setPatchnotesAberto] = useState(false);
   const [individualViewer, setIndividualViewer] = useState(null); // { individual, especieNode|null } | null
   const [seedSearchAberto, setSeedSearchAberto] = useState(false);
+  // Fase 5, item 9.5 — domínios climáticos customizados vivem em estado
+  // mutável do motor (DOMINIOS_CUSTOM); dominiosVersion força re-render
+  // aqui quando eles mudam, mesmo padrão já usado pro eventLog (logVersion).
+  const [dominiosVersion, setDominiosVersion] = useState(0);
+  const dominiosDisponiveis = useMemo(() => listarDominiosDisponiveis(), [dominiosVersion]);
+  const onAdicionarDominio = (nome, biomas) => {
+    const ok = adicionarDominioCustom(nome, biomas);
+    if (ok) { setDominiosVersion((v) => v + 1); showToast(`Domínio "${nome}" criado com ${biomas.length} bioma(s).`); }
+    else showToast("Nome de domínio inválido ou já existente.");
+  };
+  const onRemoverDominio = (nome) => { removerDominioCustom(nome); setDominiosVersion((v) => v + 1); showToast(`Domínio "${nome}" removido.`); };
 
   const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(""), 2600); };
   const eventLog = useMemo(() => __eventLog, [logVersion]);
@@ -29,7 +40,7 @@ function App() {
 
   /* ---------- FASE 1 ---------- */
   const confirmarGeografia = (massasRascunho) => {
-    const massas = massasRascunho.map((m) => criarMassaDeTerra(m.nome, m.dominios));
+    const massas = massasRascunho.map((m) => criarMassaDeTerra(m.nome, m.dominios, m.biomasExcluidos)); // Fase 5, item 9.3
     const eraInicial = { id: novaIdEra(), nome: "Era 1", auInicio: 0, massas, eraAnteriorId: null };
     setEras([eraInicial]);
     setFaseGeoConfirmada(true);
@@ -38,6 +49,28 @@ function App() {
 
   /* ---------- FASE 2 ---------- */
   const confirmarEras = () => { setFaseErasConfirmada(true); showToast(`Eras confirmadas: ${eras.length} era(s). Biologia desbloqueada.`); };
+
+  /* Fase 5, item 9.2 — excluir massa de terra mal configurada/indesejada,
+     mesmo depois de confirmada. Mesmo padrão de segurança de deletarEspecie
+     (bloqueia/pede reatribuição em vez de deixar massaId órfão): se havia
+     espécies vinculadas, elas são reatribuídas pra novaMassaId (obrigatória
+     nesse caso) antes de remover a massa da era atual. */
+  const excluirMassa = (massaId, novaMassaId) => {
+    const eraAtual = eras[eras.length - 1];
+    const vinculadas = nodes.filter((n) => n.massaId === massaId);
+    if (vinculadas.length > 0 && !novaMassaId) {
+      showToast("Essa massa tem espécies vinculadas — escolha uma massa de destino antes de excluir.");
+      return;
+    }
+    if (vinculadas.length > 0) {
+      const idsVinculados = new Set(vinculadas.map((n) => n.id));
+      setNodes((prev) => prev.map((n) => (idsVinculados.has(n.id) ? { ...n, massaId: novaMassaId } : n)));
+      setIndividuals((prev) => prev.map((i) => (i.massaId === massaId ? { ...i, massaId: novaMassaId } : i)));
+    }
+    setEras((prev) => prev.map((e, i) => (i === prev.length - 1 ? { ...e, massas: e.massas.filter((m) => m.id !== massaId) } : e)));
+    setLogVersion((v) => v + 1);
+    showToast(vinculadas.length > 0 ? `Massa excluída — ${vinculadas.length} espécie(s) reatribuída(s).` : "Massa excluída.");
+  };
 
   /* Divisão de era: além de criar as massas novas, migra as espécies das
      massas antigas para as herdeiras (aplicarDivisaoEra estava escrito e
@@ -65,7 +98,7 @@ function App() {
      um passo manual separado. */
   const salvarNovoPrimordial = ({ g, auInicial, massaId }) => {
     const node = commitPrimordialFromGenome(g, auInicial, massaId);
-    const populacao = gerarPopulacaoParaEspecie(node);
+    const populacao = gerarPopulacaoParaEspecie(node, TAMANHO_POPULACAO_INICIAL, DIVISOES_POR_MASSA, massaIdx.get(node.massaId)); // Fase 2, item 5.5
     setNodes((prev) => [...prev, node]);
     setIndividuals((prev) => [...prev, ...populacao]);
     setAnoAtual((a) => Math.max(a, auInicial));
@@ -73,11 +106,16 @@ function App() {
     showToast(`Primordial ${node.clado} criado, com ${populacao.length} indivíduo(s) espalhados pelo território.`);
   };
   const salvarEdicao = ({ g, auInicial, massaId }) => {
+    // Fase 2, item 5.4 — edição de espécie já viva vira especiação manual:
+    // gera um nó FILHO novo a partir do genoma editado; o nó-mãe original
+    // permanece intacto e consultável (não sobrescrevemos mais `alvo`).
     const alvo = editor.node;
-    setNodes((prev) => prev.map((n) => (n.id === alvo.id ? { ...n, g, code: serialize(g), auSurgimento: auInicial, massaId } : n)));
-    emitirEvento({ tipo: "edicao", tipoLabel: "ESPÉCIE MODIFICADA", speciesId: alvo.id, clado: alvo.clado, primordialId: alvo.primordialId, primordialClado: alvo.clado, auSurgimento: auInicial, texto: `${alvo.clado} editada manualmente — validação ✓, recalculação ✓.`, code: serialize(g) });
+    const filho = commitEspeciacaoManualFromGenome(alvo, g, auInicial, massaId);
+    const populacao = gerarPopulacaoParaEspecie(filho, TAMANHO_POPULACAO_INICIAL, DIVISOES_POR_MASSA, massaIdx.get(filho.massaId)); // Fase 2, item 5.5
+    setNodes((prev) => [...prev.map((n) => (n.id === alvo.id ? { ...n, filhos: [...n.filhos] } : n)), filho]);
+    setIndividuals((prev) => [...prev, ...populacao]);
     setEditor(null); setLogVersion((v) => v + 1);
-    showToast(`${alvo.clado} atualizada e recalculada.`);
+    showToast(`${filho.clado} especiada manualmente a partir de ${alvo.clado} (${alvo.clado} preservada intacta), com ${populacao.length} indivíduo(s).`);
   };
   const deletarEspecie = (node) => {
     if (node.filhos.length > 0) { showToast("Remova (ou reatribua) os descendentes antes de deletar esta espécie."); return; }
@@ -103,7 +141,7 @@ function App() {
     gClone.clado = sortClado();
     const gNormalizado = normalizarGenoma(gClone, true);
     const novo = commitPrimordialFromGenome(gNormalizado, node.auSurgimento, node.massaId);
-    const populacao = gerarPopulacaoParaEspecie(novo);
+    const populacao = gerarPopulacaoParaEspecie(novo, TAMANHO_POPULACAO_INICIAL, DIVISOES_POR_MASSA, massaIdx.get(novo.massaId)); // Fase 2, item 5.5
     setNodes((prev) => [...prev, novo]);
     setIndividuals((prev) => [...prev, ...populacao]);
     setLogVersion((v) => v + 1);
@@ -114,7 +152,7 @@ function App() {
     const novos = [];
     const filhas = await derivarLinhagem(node, ciclos, (filha) => novos.push(filha), (fracao) => setProgressoDerivar(fracao));
     let novaPopulacao = [];
-    for (const filha of novos) novaPopulacao = novaPopulacao.concat(gerarPopulacaoParaEspecie(filha));
+    for (const filha of novos) novaPopulacao = novaPopulacao.concat(gerarPopulacaoParaEspecie(filha, TAMANHO_POPULACAO_INICIAL, DIVISOES_POR_MASSA, massaIdx.get(filha.massaId))); // Fase 2, item 5.5
     setNodes((prev) => [...prev, ...novos]);
     setIndividuals((prev) => [...prev, ...novaPopulacao]);
     if (novos.length) setAnoAtual((a) => novos.reduce((m, n) => Math.max(m, n.auSurgimento), a));
@@ -130,7 +168,7 @@ function App() {
      espécie — dava pra perder o indivíduo novo de vista e não tinha
      como ver os atributos completos). */
   const novoIndividuo = (node) => {
-    const individuo = gerarPopulacaoParaEspecie(node, 1)[0];
+    const individuo = gerarPopulacaoParaEspecie(node, 1, DIVISOES_POR_MASSA, massaIdx.get(node.massaId))[0]; // Fase 2, item 5.5
     setIndividuals((prev) => [...prev, individuo]);
     setLogVersion((v) => v + 1);
     setIndividualViewer({ individual: individuo, especieNode: node });
@@ -147,13 +185,14 @@ function App() {
     setFaseErasConfirmada(dados.faseErasConfirmada || dados.eras.length > 0);
     setSelectedSpeciesId(null); setEditor(null);
     setLogVersion((v) => v + 1);
+    setDominiosVersion((v) => v + 1); // Fase 5, item 9.5 — DOMINIOS_CUSTOM foi restaurado no import
   };
 
   /* ---------- v23: busca por seed — adicionar resultado ao mundo ---------- */
   const adicionarSeedComoPrimordial = (g) => {
     if (!eraAtual) return;
     const node = commitPrimordialFromGenome(g, eraAtual.auInicio, eraAtual.massas[0]?.id || null);
-    const populacao = gerarPopulacaoParaEspecie(node);
+    const populacao = gerarPopulacaoParaEspecie(node, TAMANHO_POPULACAO_INICIAL, DIVISOES_POR_MASSA, massaIdx.get(node.massaId)); // Fase 2, item 5.5
     setNodes((prev) => [...prev, node]);
     setIndividuals((prev) => [...prev, ...populacao]);
     setSeedSearchAberto(false);
@@ -202,11 +241,11 @@ function App() {
             o que tornava o resumo da geografia código morto — depois de
             confirmar, o usuário perdia a visão das massas de terra do mundo. */}
         {(faseAtual === 1 || eras.length > 0) && (
-          <FaseGeografia onConfirmar={confirmarGeografia} jaConfirmada={faseGeoConfirmada} eras={eras} />
+          <FaseGeografia onConfirmar={confirmarGeografia} jaConfirmada={faseGeoConfirmada} eras={eras} dominiosDisponiveis={dominiosDisponiveis} dominiosCustom={DOMINIOS_CUSTOM} onAdicionarDominio={onAdicionarDominio} onRemoverDominio={onRemoverDominio} />
         )}
 
         {faseGeoConfirmada && (
-          <FaseEras eras={eras} setEras={setEras} onConfirmar={confirmarEras} jaConfirmada={faseErasConfirmada} bloqueada={false} onNovaEra={aoCriarNovaEra} />
+          <FaseEras eras={eras} setEras={setEras} onConfirmar={confirmarEras} jaConfirmada={faseErasConfirmada} bloqueada={false} onNovaEra={aoCriarNovaEra} nodes={nodes} onExcluirMassa={excluirMassa} dominiosDisponiveis={dominiosDisponiveis} />
         )}
 
         {faseAtual === 3 && (

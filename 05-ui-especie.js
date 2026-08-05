@@ -18,6 +18,35 @@ const CAMPOS_EDITAVEIS = [
   { chave: "tegCor", label: "Cor", tabela: () => T.tegCor },
 ];
 
+/* Fase 2, item 5.4 — edição manual de espécie já viva deixou de sobrescrever
+   o nó existente in-place (alteração de DNA em vida, incoerente) e passa a
+   ser uma ESPECIAÇÃO MANUAL: cria um nó filho novo a partir do genoma
+   editado, preservando o nó-mãe original intacto — mesmo padrão de
+   especiar() (Fase 2 do motor), mas com os genes escolhidos manualmente em
+   vez de mutação por pressão evolutiva. */
+function commitEspeciacaoManualFromGenome(mae, g, auInicial, massaId) {
+  const novoClado = sortClado();
+  const g2 = { ...g, clado: novoClado, isPrimordial: false };
+  const id = novoId();
+  const auFilha = Math.max(mae.auSurgimento + 1e-6, auInicial ?? mae.auSurgimento);
+  const filho = {
+    id, clado: novoClado, g: g2, code: serialize(g2), auSurgimento: auFilha,
+    pais: [mae.id], filhos: [], primordialId: mae.primordialId, ordem: 0,
+    ciclosDecorridos: 0, orcamento: 0, acumEstratoII: new Set(), historico: [],
+    isPrimordial: false, extinta: false, massaId: massaId || mae.massaId || null,
+    origemEdicaoManual: true,
+  };
+  mae.filhos.push(id);
+  emitirEvento({
+    tipo: "especiacao-manual", tipoLabel: "ESPECIAÇÃO MANUAL", speciesId: id, clado: novoClado,
+    maeId: mae.id, maeClado: mae.clado, primordialId: filho.primordialId, primordialClado: mae.primordialClado || mae.clado,
+    auSurgimento: filho.auSurgimento,
+    texto: `${novoClado} especia manualmente a partir de ${mae.clado} (edição dirigida pelo usuário). Surge em ${auTextoLog(filho.auSurgimento)}.`,
+    code: filho.code, codeAntes: mae.code,
+  });
+  return filho;
+}
+
 /* Constrói um primordial a partir de um genoma JÁ ROLADO (preview),
    sem re-sortear — garante que "Confirmar" salva exatamente o que
    foi mostrado na pré-visualização. */
@@ -50,11 +79,16 @@ function commitPrimordialFromGenome(g, auInicial, massaId) {
    ============================================================ */
 function SpeciesEditor({ modo, node, eraAtual, onSalvar, onCancelar }) {
   const baseManual = modo === "editar" ? { ...node.g } : {};
-  const isPrimordial = modo === "editar" ? node.isPrimordial : true;
+  // Fase 2, item 5.4 — editar sempre resulta numa especiação manual (nó
+  // filho novo, nunca primordial), então a pré-visualização já roda sob as
+  // travas de NÃO-primordial, para não mostrar um preview que passa nas
+  // travas de primordial (ex.: magia A0-A3) e falhar ao normalizar como filho.
+  const isPrimordial = modo === "criar";
   const [overrides, setOverrides] = useState({});
   const [g, setG] = useState(() => buildSpecies(null, baseManual, isPrimordial, false).g);
   const [auInicial, setAuInicial] = useState(modo === "criar" ? "0" : String(node.auSurgimento));
   const [massaId, setMassaId] = useState(modo === "criar" ? (eraAtual.massas[0]?.id || "") : node.massaId);
+  const [trilhaImportar, setTrilhaImportar] = useState(""); // Fase 4, item 7.3 — só usado em modo "criar"
 
   const recalcular = (novosOverrides) => {
     const manual = { ...baseManual, ...novosOverrides };
@@ -89,14 +123,23 @@ function SpeciesEditor({ modo, node, eraAtual, onSalvar, onCancelar }) {
   const podeConfirmar = erros.length === 0;
   const confirmar = () => {
     if (!podeConfirmar) return;
-    onSalvar({ g, auInicial: Number(auInicial) || 0, massaId: massaId || null });
+    // Fase 4, item 7.3 — se uma trilha foi colada, reaplica os valores
+    // exatos encontrados pela busca em cima do genoma recém-criado, em vez
+    // de rodar deriva aleatória; o resultado final bate exatamente com o
+    // DNA-alvo original (nos campos que a busca comparou).
+    let gFinal = g;
+    if (modo === "criar" && trilhaImportar.trim()) {
+      gFinal = JSON.parse(JSON.stringify(g));
+      aplicarTrilhaImportada(gFinal, trilhaImportar.trim());
+    }
+    onSalvar({ g: gFinal, auInicial: Number(auInicial) || 0, massaId: massaId || null });
   };
 
   return (
     <div className="fixed inset-0 z-40 bg-black/70 flex items-end sm:items-center justify-center p-0 sm:p-4">
       <div className="bg-stone-950 border border-stone-800 rounded-t-lg sm:rounded-lg w-full sm:max-w-2xl max-h-[92vh] overflow-y-auto">
         <div className="sticky top-0 bg-stone-950 border-b border-stone-800 px-4 py-3 flex items-center justify-between">
-          <h2 className="font-mono text-sm text-emerald-400 uppercase tracking-widest">{modo === "criar" ? "Nova Espécie Primordial" : `Editar · ${node.clado}`}</h2>
+          <h2 className="font-mono text-sm text-emerald-400 uppercase tracking-widest">{modo === "criar" ? "Nova Espécie Primordial" : `Especiação Manual · a partir de ${node.clado}`}</h2>
           <button onClick={onCancelar} className="text-stone-500 hover:text-stone-200"><X size={18} /></button>
         </div>
 
@@ -113,6 +156,22 @@ function SpeciesEditor({ modo, node, eraAtual, onSalvar, onCancelar }) {
                   {eraAtual.massas.map((m) => <option key={m.id} value={m.id}>{m.nome}</option>)}
                 </select>
               </div>
+            </div>
+          )}
+
+          {/* Fase 4, item 7.3 — importar trilha de deriva encontrada pela busca
+              (SpeciesViewer › "Buscar Trilha até DNA-alvo" › "Copiar Trilha").
+              Reaplica os valores exatos ao confirmar, em vez de deriva aleatória. */}
+          {modo === "criar" && (
+            <div>
+              <label className="text-[10px] uppercase text-stone-500 font-mono">Importar trilha de deriva (opcional — cole o texto "TRILHA1|..." copiado da busca)</label>
+              <textarea
+                value={trilhaImportar}
+                onChange={(e) => setTrilhaImportar(e.target.value)}
+                placeholder="TRILHA1|{...}|{...}|..."
+                rows={2}
+                className="w-full text-[11px] font-mono bg-stone-950 border border-stone-800 rounded px-2 py-1.5 text-stone-300 placeholder-stone-600 focus:border-emerald-700 focus:outline-none"
+              />
             </div>
           )}
 
@@ -182,7 +241,7 @@ function SpeciesEditor({ modo, node, eraAtual, onSalvar, onCancelar }) {
 
         <div className="sticky bottom-0 bg-stone-950 border-t border-stone-800 px-4 py-3 flex gap-2">
           <BotaoPrimario disabled={!podeConfirmar} onClick={confirmar}>
-            {podeConfirmar ? <><Check size={12} className="inline -mt-0.5 mr-1" />Confirmar {modo === "criar" ? "e Criar" : "Mudanças"}</> : `Corrija ${erros.length} erro(s) pra confirmar`}
+            {podeConfirmar ? <><Check size={12} className="inline -mt-0.5 mr-1" />{modo === "criar" ? "Confirmar e Criar" : "Confirmar Especiação"}</> : `Corrija ${erros.length} erro(s) pra confirmar`}
           </BotaoPrimario>
           <button onClick={onCancelar} className="text-[11px] font-mono uppercase text-stone-500 px-3">cancelar</button>
         </div>
@@ -200,6 +259,25 @@ function SpeciesViewer({ node, idx, eras, massaIdx, onFechar, onEditar, onDeleta
   const habitat = useMemo(() => readHabitatNaMassa(node.g, massa), [node, massa]);
   const ancestral = node.pais[0] ? idx.get(node.pais[0]) : null;
   const descendentes = node.filhos.map((id) => idx.get(id)).filter(Boolean);
+  // Fase 4, item 7.3 — busca de trilha de deriva até um DNA-alvo colado
+  const [trilhaAberta, setTrilhaAberta] = useState(false);
+  const [alvoCodigo, setAlvoCodigo] = useState("");
+  const [buscandoTrilha, setBuscandoTrilha] = useState(false);
+  const [progressoTrilha, setProgressoTrilha] = useState(0);
+  const [resultadoTrilha, setResultadoTrilha] = useState(null);
+  const buscarTrilha = async () => {
+    if (!alvoCodigo.trim()) return;
+    setBuscandoTrilha(true); setProgressoTrilha(0); setResultadoTrilha(null);
+    const r = await buscarTrilhaParaAlvo(node, alvoCodigo.trim(), (f) => setProgressoTrilha(f));
+    setResultadoTrilha(r);
+    setBuscandoTrilha(false);
+  };
+  const copiarTrilha = () => {
+    if (!resultadoTrilha?.sucesso) return;
+    const texto = serializarTrilha(node, resultadoTrilha);
+    navigator.clipboard?.writeText(texto);
+    showToast("Trilha copiada — cole no campo de importação ao criar um primordial novo.");
+  };
   // Linhagem completa (caminhoAtePrimordial) e parentesco lateral de
   // primeiro grau (irmaos) — ambos existiam prontos no motor e nunca
   // eram chamados por nenhuma tela.
@@ -216,6 +294,7 @@ function SpeciesViewer({ node, idx, eras, massaIdx, onFechar, onEditar, onDeleta
         <div className="sticky top-0 bg-stone-950 border-b border-stone-800 px-4 py-3 flex items-center justify-between">
           <h2 className="font-mono text-sm text-emerald-400 uppercase tracking-widest flex items-center gap-2">
             <Dna size={16} />{node.clado} {node.isPrimordial && <Badge className="border-amber-800 text-amber-500">primordial</Badge>}
+            {node.extinta && <Badge className="border-red-800 text-red-500">extinta · {fmtAU(node.auExtincao)}</Badge>}
           </h2>
           <button onClick={onFechar} className="text-stone-500 hover:text-stone-200"><X size={18} /></button>
         </div>
@@ -286,6 +365,38 @@ function SpeciesViewer({ node, idx, eras, massaIdx, onFechar, onEditar, onDeleta
           )}
 
           <PromptImagemBox g={node.g} individual={null} showToast={showToast} />
+
+          {/* Fase 4, item 7.3 — árvore reversa: buscar trilha de deriva até um DNA-alvo colado */}
+          {trilhaAberta && (
+            <div className="rounded border border-stone-800 p-2.5 space-y-2">
+              <div className="text-stone-500 text-[10px] uppercase tracking-widest font-mono">Buscar trilha de deriva até um DNA-alvo</div>
+              <textarea
+                value={alvoCodigo}
+                onChange={(e) => setAlvoCodigo(e.target.value)}
+                placeholder="Cole aqui o código DRN2 do DNA-alvo (ex.: DRN2-TAX:An.MAM.Xyz-...)"
+                className="w-full text-[11px] font-mono bg-stone-900 border border-stone-800 rounded px-2 py-1.5 text-stone-300 placeholder-stone-600 focus:border-emerald-700 focus:outline-none"
+                rows={2}
+              />
+              <div className="flex items-center gap-2">
+                <button disabled={buscandoTrilha || !alvoCodigo.trim()} onClick={buscarTrilha} className="text-[11px] font-mono uppercase text-stone-400 hover:text-emerald-400 border border-stone-800 rounded px-3 py-1.5 disabled:opacity-40">
+                  {buscandoTrilha ? `Buscando… ${Math.round(progressoTrilha * 100)}%` : "Buscar"}
+                </button>
+                {resultadoTrilha?.sucesso && (
+                  <button onClick={copiarTrilha} className="text-[11px] font-mono uppercase text-emerald-500 hover:text-emerald-300 border border-emerald-900 rounded px-3 py-1.5">
+                    <Copy size={12} className="inline -mt-0.5 mr-1" />Copiar Trilha ({resultadoTrilha.ciclos} ciclo(s))
+                  </button>
+                )}
+              </div>
+              {resultadoTrilha && !buscandoTrilha && (
+                <div className="text-[11px] text-stone-500">
+                  {resultadoTrilha.motivo === "codigo-invalido" ? "Código DRN2 inválido — confira o formato colado."
+                    : resultadoTrilha.sucesso ? `Bateu 100% no alvo em ${resultadoTrilha.ciclos} ciclo(s) de deriva aceitos.`
+                    : resultadoTrilha.inatingivel ? `Alvo parece inatingível a partir desta espécie (distância residual: ${resultadoTrilha.dlFinal}) — provavelmente reino travado ou combinação de genes incompatível.`
+                    : `Não bateu 100% dentro do limite de tentativas (distância residual: ${resultadoTrilha.dlFinal}).`}
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         <div className="sticky bottom-0 bg-stone-950 border-t border-stone-800 px-4 py-3 flex flex-wrap gap-2">
@@ -294,6 +405,7 @@ function SpeciesViewer({ node, idx, eras, massaIdx, onFechar, onEditar, onDeleta
           <button onClick={onExportarMd} className="text-[11px] font-mono uppercase text-stone-400 hover:text-emerald-400 border border-stone-800 rounded px-3 py-1.5"><Download size={12} className="inline -mt-0.5 mr-1" />Exportar .md</button>
           <button onClick={onDerivar} className="text-[11px] font-mono uppercase text-stone-400 hover:text-emerald-400 border border-stone-800 rounded px-3 py-1.5"><GitBranch size={12} className="inline -mt-0.5 mr-1" />Derivar</button>
           <button onClick={onNovoIndividuo} className="text-[11px] font-mono uppercase text-stone-400 hover:text-emerald-400 border border-stone-800 rounded px-3 py-1.5"><User size={12} className="inline -mt-0.5 mr-1" />Novo Indivíduo</button>
+          <button onClick={() => setTrilhaAberta((v) => !v)} className="text-[11px] font-mono uppercase text-stone-400 hover:text-emerald-400 border border-stone-800 rounded px-3 py-1.5">{trilhaAberta ? "Fechar Busca de Trilha" : "Buscar Trilha até DNA-alvo"}</button>
           <button onClick={onClonar} className="text-[11px] font-mono uppercase text-stone-400 hover:text-emerald-400 border border-stone-800 rounded px-3 py-1.5">Clonar</button>
           <button onClick={onEditar} className="text-[11px] font-mono uppercase text-stone-400 hover:text-emerald-400 border border-stone-800 rounded px-3 py-1.5">Editar</button>
           <button onClick={onDeletar} className="text-[11px] font-mono uppercase text-red-500 hover:text-red-300 border border-red-900 rounded px-3 py-1.5 ml-auto"><Trash size={12} className="inline -mt-0.5 mr-1" />Deletar</button>

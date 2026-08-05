@@ -116,8 +116,7 @@ const REGRAS_COERENCIA = [
     severidade: "aviso",
     aplica: (g) => {
       const dens = DENSIDADE_KGM3[g.densidade] ?? 1000;
-      const eterico = g.reino === "Sp" || g.tegTipo === "Et";
-      return dens < 200 && !eterico; // abaixo de 200 kg/m³ é mais leve que cortiça
+      return dens < 200; // abaixo de 200 kg/m³ é mais leve que cortiça (Fase 2, item 5.3 — exceção "etérea" removida, sem reino que a justifique)
     },
     mensagem: (g) => {
       const dens = DENSIDADE_KGM3[g.densidade] ?? 1000;
@@ -132,6 +131,16 @@ const REGRAS_COERENCIA = [
     aplica: (g) => ["cl", "tt"].includes(g.porte) && g.densidade <= 1,
     mensagem: (g) => `Porte ${g.porte === "tt" ? "titânico" : "colossal"} com densidade muito baixa (${g.densidade}) produz um corpo praticamente etéreo — confirme se é intencional (ex.: espécie feita de gás/energia).`,
     corrigir: (g) => { g.densidade = 4; },
+  },
+  {
+    // Fase 1, item 4.3 — corrige retroativamente mamíferos já existentes/
+    // importados com asa incoerente (a trava em CLASSE_TRAVAS.MAM só
+    // previne casos novos gerados dali pra frente).
+    id: "asa-pele-incoerente-mamifero",
+    severidade: "erro",
+    aplica: (g) => g.classe === "MAM" && Number(g.asaQtd) > 0 && g.asaTipo !== "mb",
+    mensagem: () => "Mamífero com asa deve ter asa membranosa (tipo morcego) — pelo/couro nu não sustenta pena, élitro ou asa etérea/vegetal.",
+    corrigir: (g) => { g.asaTipo = "mb"; },
   },
 ];
 
