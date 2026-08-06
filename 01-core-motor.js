@@ -355,10 +355,12 @@ const CLASSE_TRAVAS = {
   MAM: { // mamífero: quatro membros no máximo, pelo ou pele nua, vivíparo
     locPrimario: { restrict: ["Q", "B", "N", "E", "C", "V", "S"] },
     memSup: { restrict: ["0S", "2S"] },
+    memApendices: { fixed: "0X" }, // v29 — tetrápode não tem apêndice locomotor extra
     memTerm: { restrict: ["pa", "gr", "ca", "mo", "ba"] },
     repModo: { restrict: ["vv", "oz"] },
     tegTipo: { restrict: ["Pe", "Cr"] },
     asaTipo: { restrict: ["mb"] }, // Fase 1, item 4.3 — membranosa, única coerente com pelo/couro (tipo morcego)
+    asaQtd: { restrict: [0, 2] }, // v29 — a asa É o par de membros superiores: no máximo um par
     crnFormato: { exclude: ["0"] },
     facFocinho: { exclude: ["bi", "mn", "tu"] },
     facOrelha: { exclude: ["an", "mb"] },
@@ -367,6 +369,7 @@ const CLASSE_TRAVAS = {
     locPrimario: { restrict: ["V", "B", "N", "P"] },
     memSup: { fixed: "0S" },
     memInf: { fixed: "2I" },
+    memApendices: { fixed: "0X" }, // v29
     memTerm: { restrict: ["gr", "pa", "ba"] },
     repModo: { fixed: "ov" },
     tegTipo: { fixed: "Pn" },
@@ -378,25 +381,32 @@ const CLASSE_TRAVAS = {
     asaTipo: { fixed: "pn" },
     cdaTipo: { restrict: ["pq", "nu"] },
   },
-  REP: { // réptil: escama, ovíparo, sem asa, crânio ossificado
-    locPrimario: { restrict: ["Q", "S", "N", "E", "C", "B"] },
+  REP: { // réptil: escama, ovíparo, crânio ossificado — asa liberada (v29, pedido do usuário: dragão)
+    locPrimario: { restrict: ["Q", "S", "N", "E", "C", "B", "V", "P"] }, // v29 — V/P (voo/planeio) entram para o réptil alado poder ter voo como modo primário
     // sem esta trava, 3,14% dos répteis nasciam sem crânio definido — e daí
     // saíam as combinações contraditórias reportadas (réptil sem crânio com
     // presas). MAM/AVE/PSC/INS/MOL já travavam crnFormato; REP e AMP não.
     crnFormato: { exclude: ["0", "hu"] },
     memSup: { restrict: ["0S", "2S"] },
+    memApendices: { fixed: "0X" }, // v29
     memTerm: { restrict: ["gr", "pa", "ba", "no"] },
     repModo: { restrict: ["ov", "oz"] },
     tegTipo: { restrict: ["Es", "Cr"] },
     facFocinho: { exclude: ["tr", "mn", "an"] },
     facOrelha: { restrict: ["in", "rd"] },
-    asaQtd: { fixed: 0 },
+    /* v29 — liberada a pedido do usuário: o único tipo coerente com escama/
+       couro é membrana (pterossauro, wyvern) — pena e élitro pertencem a
+       plano corporal de ave e inseto. O TETO em si (0 ou 1 par, nunca mais)
+       já vem do orçamento geral de membros (CLASSES_TETRAPODES), que trata
+       a asa como o próprio par de membros superiores modificado. */
+    asaTipo: { restrict: ["mb"] },
     cdaTipo: { restrict: ["es", "nu", "pr", "lm"] },
   },
   AMP: { // anfíbio: pele mucosa, ovíparo, ligado à água, crânio ossificado
     locPrimario: { restrict: ["Q", "S", "N", "B", "E"] },
     crnFormato: { exclude: ["0", "hu"] },
     memSup: { restrict: ["0S", "2S"] },
+    memApendices: { fixed: "0X" }, // v29
     memTerm: { restrict: ["pa", "ve", "ba", "no"] },
     repModo: { fixed: "ov" },
     tegTipo: { restrict: ["Mu", "Cr"] },
@@ -408,6 +418,7 @@ const CLASSE_TRAVAS = {
   PSC: { // peixe: nada, barbatana, escama ou mucosa, sem membro
     locPrimario: { fixed: "N" },
     memSup: { fixed: "0S" },
+    memApendices: { restrict: ["0X", "2X"] }, // v29 — barbilhões, não membros
     memTerm: { fixed: "ba" },
     repModo: { restrict: ["ov", "oz"] },
     tegTipo: { restrict: ["Es", "Mu"] },
@@ -433,6 +444,7 @@ const CLASSE_TRAVAS = {
   MOL: { // molusco: corpo mole, ventosa, sem esqueleto craniano
     locPrimario: { restrict: ["S", "N", "O", "F", "E"] },
     memSup: { fixed: "0S" },
+    memApendices: { restrict: ["0X", "2X", "4X"] }, // v29 — tentáculos têm gene próprio
     memTerm: { restrict: ["ve", "no"] },
     repModo: { restrict: ["ov", "oz"] },
     tegTipo: { restrict: ["Mu", "Cs", "Cn"] },
@@ -441,6 +453,16 @@ const CLASSE_TRAVAS = {
     cdaTipo: { restrict: ["nu", "bq"] },
   },
 };
+
+/* v29 — teto de membros LOCOMOTORES (superiores + inferiores) por classe.
+   Vertebrado tetrápode: quatro, e ponto — se as pernas são quatro, não há
+   par superior; se são duas, cabem dois braços. Ave gasta o par superior
+   nas asas (memSup já é fixo 0S). Peixe não tem membro (só barbatanas, que
+   são terminação, não membro). Artrópode e molusco têm planos corporais com
+   mais membros, daí o teto de oito. Classes fora desta tabela (VEG, FUN,
+   MIC) não têm membro nenhum por trava de reino. */
+const ORCAMENTO_MEMBROS = { MAM: 4, AVE: 4, REP: 4, AMP: 4, PSC: 0, INS: 8, MOL: 8 };
+const CLASSES_TETRAPODES = new Set(["MAM", "AVE", "REP", "AMP"]);
 
 /* Mescla duas restrições: `fixed` prevalece, `restrict` vira interseção,
    `exclude` vira união. Se a interseção esvaziar, mantém a mais específica
@@ -605,7 +627,38 @@ function runSpeciesSteps(cur, isPrimordialIntent) {
     });
     g.memInf = opt;
   }
-  categoricalStep(cur, "memApendices", [{ max: 75, value: "0X" }, { max: 90, value: "2X" }, { max: 96, value: "4X" }, { max: 99, value: "6X" }, { max: 100, value: "8X" }], (g.reino === "Pl" || g.reino === "Fu" || g.reino === "Ba") ? { fixed: "0X" } : g.isPrimordial ? { restrict: ["0X", "2X"] } : {}); // Fase 1, item 4.1
+  /* v29 — ORÇAMENTO TOTAL DE MEMBROS POR PLANO CORPORAL.
+     memSup e memInf eram decididos de forma independente: memInf derivava
+     da locomoção primária (quadrúpede => 4I) e memSup era sorteado dentro
+     da trava da classe (0S ou 2S), sem nenhum teto comum. O resultado
+     medido: répteis quadrúpedes com 4 membros inferiores + 2 superiores
+     (+ apêndices auxiliares) — um tetrápode com oito membros. Não era
+     ambiguidade de redação: o genoma tinha mesmo os oito.
+     Aqui o total passa a ser limitado pelo plano corporal: tetrápode tem
+     QUATRO membros ao todo, e se as pernas já são quatro não sobra par
+     superior. Não consome dígito de seed — é derivação determinística a
+     partir de genes já codificados, e é idempotente (reaplicar sobre o
+     genoma corrigido não muda nada), então a seed continua reconstruindo
+     a mesma espécie. */
+  const numMembros = (v) => Number(String(v).replace(/[SIX]/g, "")) || 0;
+  const orcamentoMembros = ORCAMENTO_MEMBROS[g.classe];
+  if (orcamentoMembros !== undefined) {
+    /* Voo/planeio como locomoção PRIMÁRIA num tetrápode implica o plano
+       corporal alado: par superior virou asa, e sobram no máximo duas
+       pernas. Resolvido aqui (Passo 6) e não no passo da asa, para que a
+       asa possa ser concedida sem reescrever membro depois. */
+    if (CLASSES_TETRAPODES.has(g.classe) && (g.locPrimario === "V" || g.locPrimario === "P")) {
+      g.memSup = "0S";
+      if (numMembros(g.memInf) > 2) g.memInf = "2I";
+    }
+    const inf2 = numMembros(g.memInf), sup2 = numMembros(g.memSup);
+    if (inf2 + sup2 > orcamentoMembros) {
+      const supPermitido = Math.max(0, orcamentoMembros - inf2);
+      g.memSup = supPermitido >= 8 ? "8S" : supPermitido >= 6 ? "6S" : supPermitido >= 4 ? "4S" : supPermitido >= 2 ? "2S" : "0S";
+    }
+  }
+
+  categoricalStep(cur, "memApendices", [{ max: 75, value: "0X" }, { max: 90, value: "2X" }, { max: 96, value: "4X" }, { max: 99, value: "6X" }, { max: 100, value: "8X" }], mergeOpts((g.reino === "Pl" || g.reino === "Fu" || g.reino === "Ba") ? { fixed: "0X" } : g.isPrimordial ? { restrict: ["0X", "2X"] } : {}, classeOpts(g, "memApendices"))); // Fase 1, item 4.1 + v29 (trava por classe)
   categoricalStep(cur, "memTerm", T.memTerm, mergeOpts(g.reino === "Pl" ? { fixed: "ra" } : (g.reino === "Fu" || g.reino === "Ba") ? { fixed: "no" } : g.tolHidrica === "aq" ? { bias: ["ba", "ve"] } : {}, classeOpts(g, "memTerm"))); // Fase 1, item 4.1
   if (g.memSup !== "0S" || g.memInf !== "0I") {
     const memPropOpts = g.locPrimario === "C" ? { bias: ["cu"] } : ["V", "E"].includes(g.locPrimario) ? { bias: ["lo", "ex"] } : {};
@@ -776,6 +829,19 @@ function runSpeciesSteps(cur, isPrimordialIntent) {
      enviesava contra (bias), então 0,5% das espécies nasciam já violando
      uma regra que o app recusaria na criação manual. Vira trava dura. */
   else if (g.tolHidrica === "aq") asaOpts = { fixed: 0 };
+  /* v29 — a ASA entra no orçamento de membros do tetrápode: ela É o par de
+     membros superiores modificado (morcego, pterossauro, ave), não um quinto
+     e sexto membro pendurado no mesmo tronco. Então só há asa se o par
+     superior estiver livre (0S) e as pernas couberem no que sobra do teto de
+     quatro. A trava fica AQUI, na asa (Estrato II), e não no membro (Estrato
+     I): assim um ciclo de deriva barato nunca reescreve o plano corporal de
+     graça — para virar alado, a linhagem primeiro tem que pagar a mudança
+     estrutural nos membros. */
+  if (CLASSES_TETRAPODES.has(g.classe) && g.classe !== "AVE") {
+    const supAtual = Number(String(g.memSup).replace("S", "")) || 0;
+    const infAtual = Number(String(g.memInf).replace("I", "")) || 0;
+    if (supAtual > 0 || infAtual > 2) asaOpts = { fixed: 0 };
+  }
   categoricalStep(cur, "asaQtd", T.asaQtd, mergeOpts(asaOpts, classeOpts(g, "asaQtd")));
   if (g.asaQtd !== 0) {
     categoricalStep(cur, "asaTipo", T.asaTipo, classeOpts(g, "asaTipo")); // Fase 2, item 5.3 — exclude ["et"] removido (valor não existe mais)
@@ -1983,7 +2049,20 @@ function describeCreatureProse(g) {
   } else if (g.reino === "Ba") {
     locFrase = `Locomove-se principalmente por ${labelOf(T.locPrim, g.locPrimario).toLowerCase()}, a uma velocidade ${tier(g.locVelocidade)}, organismo unicelular sem qualquer estrutura corporal diferenciada.`;
   } else {
-    locFrase = `Locomove-se principalmente por ${labelOf(T.locPrim, g.locPrimario).toLowerCase()}${g.locSecundario !== "0" ? `, com ${labelOf(T.locSec, g.locSecundario).toLowerCase()} como modo secundário` : ""}, a uma velocidade ${tier(g.locVelocidade)}. Tem ${labelOf(T.memSup, g.memSup).toLowerCase()} e ${g.memInf.replace("I", "")} membro(s) inferior(es)${g.memApendices !== "0X" ? `, além de ${g.memApendices.replace("X", "")} apêndices auxiliares` : ""}, terminando em ${labelOf(T.memTerm, g.memTerm).toLowerCase()}${g.memProp !== "0" ? `, com membros ${labelOf(T.memProp, g.memProp).toLowerCase()}` : ""}.`;
+    /* v29 — a frase somava três números independentes ("0 superiores",
+       "4 membros inferiores", "2 apêndices auxiliares") e deixava o leitor
+       montar a conta sozinho — daí a leitura de um réptil quadrúpede com
+       oito membros. Agora o TOTAL vem primeiro, e apêndice é dito pelo que
+       ele é: estrutura não-locomotora (antena, barbilhão, tentáculo), fora
+       da contagem de membros. */
+    const nSup = Number(String(g.memSup).replace("S", "")) || 0;
+    const nInf = Number(String(g.memInf).replace("I", "")) || 0;
+    const nApd = Number(String(g.memApendices).replace("X", "")) || 0;
+    const totalMembros = nSup + nInf;
+    const membrosFrase = totalMembros === 0
+      ? "Não tem membros locomotores"
+      : `Tem ${totalMembros} membro(s) locomotor(es) ao todo — ${nSup} superior(es) e ${nInf} inferior(es)`;
+    locFrase = `Locomove-se principalmente por ${labelOf(T.locPrim, g.locPrimario).toLowerCase()}${g.locSecundario !== "0" ? `, com ${labelOf(T.locSec, g.locSecundario).toLowerCase()} como modo secundário` : ""}, a uma velocidade ${tier(g.locVelocidade)}. ${membrosFrase}${totalMembros > 0 ? `, terminando em ${labelOf(T.memTerm, g.memTerm).toLowerCase()}` : ""}${g.memProp !== "0" && totalMembros > 0 ? `, com membros ${labelOf(T.memProp, g.memProp).toLowerCase()}` : ""}${nApd > 0 ? `. Fora dos membros, porta ${nApd} apêndice(s) não-locomotor(es) — antena, barbilhão ou tentáculo, conforme o plano corporal` : ""}.`;
   }
   p.push(locFrase);
 
@@ -2098,8 +2177,28 @@ function sortFontePressao() { return FONTES_PRESSAO[rollD(10) - 1]; }
 
 const CUSTO_ESTRATO = { I: 12, II: 4, III: 1 };
 
-function sortGeneAlvo(estrato) {
-  if (estrato === "I") { let n; do { n = rollD(12); } while (n > 11); return ESTRATO_I[n - 1]; }
+/* v29 — PESO DO SALTO DE REINO NA BACTÉRIA.
+   Medido na v28, numa deriva de 1000 ciclos a partir de um primordial:
+   2649 espécies, das quais 2207 (83%) continuavam bactérias — só 27 das
+   1686 especiações saídas de mãe bactéria (1,6%) atravessaram a barreira
+   de reino. A causa não era a barreira em si (ela permite a travessia),
+   era estatística: `reino` é 1 de 11 genes do Estrato I, e o Estrato I só
+   é sorteado em 12% das tentativas, com orçamento de 12 — dá ~0,34% de
+   chance por ciclo. Pior: para uma bactéria, quase todo o resto do
+   Estrato I está travado por reino (memSup, memInf, crânio, repModo,
+   focinho são fixos), então a maioria dos sorteios de Estrato I gastava
+   orçamento sem mudar nada e ainda assim disparava especiação por outras
+   vias — o mundo ficava cheio de bactérias ligeiramente diferentes.
+   Aqui a bactéria (e só ela, que é quem pode atravessar) sorteia `reino`
+   em 1/3 das tentativas de Estrato I. Não é um atalho: continua sendo
+   deriva, sujeita a orçamento e à normalização. */
+const PESO_SALTO_REINO_BA = 1 / 3;
+
+function sortGeneAlvo(estrato, g) {
+  if (estrato === "I") {
+    if (g && g.reino === "Ba" && Math.random() < PESO_SALTO_REINO_BA) return "reino";
+    let n; do { n = rollD(12); } while (n > 11); return ESTRATO_I[n - 1];
+  }
   if (estrato === "II") { let n; do { n = rollD(14) + (Math.random() < 0.5 ? 0 : 14); } while (n > 26); return ESTRATO_II[n - 1]; }
   let n; do { n = rollD(20); } while (n > 18); return ESTRATO_III[n - 1];
 }
@@ -2494,6 +2593,115 @@ function serializarTrilha(nodeOrigem, resultadoBusca) {
   return "TRILHA1|" + blocos.join("|");
 }
 
+/* ============================================================
+   v29 — MATERIALIZAR TRILHA (gerar a linhagem encontrada)
+   ============================================================
+   Até aqui a trilha de deriva só sabia ser COPIADA: o resultado da busca
+   virava um texto "TRILHA1|..." que o usuário colava, à mão, no campo de
+   importação da criação de primordial. Ou seja: o app encontrava a
+   linhagem inteira e depois entregava um único genoma final, jogando fora
+   os passos intermediários — que são justamente a árvore genealógica que
+   a busca acabou de descobrir.
+
+   Aqui a mesma trilha vira nós de verdade no mundo: o ancestral (quando a
+   busca foi para trás, é um primordial hipotético que ainda não existe), as
+   espécies intermediárias e a espécie final. O critério de onde cortar uma
+   espécie nova é o MESMO da deriva automática (checarEspeciacao): todo
+   ciclo que mexe em gene de Estrato I corta espécie; os demais só
+   acumulam. O último ciclo sempre corta, senão o alvo não existiria.
+
+   `finalExistente` cobre o caso da busca para trás a partir de uma espécie
+   que JÁ está na árvore: em vez de criar uma gêmea de DNA idêntico, a
+   função devolve `anexarA` — o id do nó que deve virar pai da espécie
+   existente (a reparentagem em si é feita por quem tem o estado da árvore
+   em mãos, porque envolve remapear o primordialId da subárvore inteira).
+   ============================================================ */
+function materializarTrilha(resultado, opts = {}) {
+  const { origem = null, massaId = null, auInicial = 0, finalExistente = null } = opts;
+  const blocos = resultado?.trilha || [];
+  if (!blocos.length) return { novos: [], anexarA: null, motivo: "trilha-vazia" };
+
+  const novos = [];
+  let pai;
+  if (origem) {
+    pai = origem;
+  } else {
+    if (!resultado.ancestral) return { novos: [], anexarA: null, motivo: "sem-ancestral" };
+    const gA = clonarGenoma(resultado.ancestral.g);
+    gA.isPrimordial = true;
+    const id = novoId();
+    pai = {
+      id, clado: gA.clado, g: gA, code: serialize(gA), auSurgimento: auInicial,
+      pais: [], filhos: [], primordialId: id, ordem: 0, ciclosDecorridos: 0,
+      orcamento: 0, acumEstratoII: new Set(), historico: [], isPrimordial: true,
+      extinta: false, massaId: massaId || null, origemTrilha: true,
+    };
+    novos.push(pai);
+    emitirEvento({
+      tipo: "primordial", tipoLabel: "PRIMORDIAL SURGE", speciesId: id, clado: pai.clado,
+      primordialId: id, primordialClado: pai.clado, auSurgimento: pai.auSurgimento,
+      texto: `Espécie primordial ${pai.clado} (${REINO_LABEL_LOG[gA.reino] || gA.reino}) surge em ${auTextoLog(pai.auSurgimento)}, reconstruída como ancestral hipotético de uma trilha de deriva.`,
+      code: pai.code,
+    });
+  }
+
+  const g = clonarGenoma(pai.g);
+  g.isPrimordial = false;
+  const gFinal = resultado.gFinal || {};
+  let au = pai.auSurgimento;
+  let ciclosDesdeUltimoCorte = 0;
+  const acumII = new Set();
+
+  blocos.forEach((genesAlterados, i) => {
+    const estruturais = genesAlterados.I || [];
+    const chaves = [...estruturais, ...(genesAlterados.II || []), ...(genesAlterados.III || [])];
+    for (const k of chaves) if (gFinal[k] !== undefined) g[k] = gFinal[k];
+    Object.assign(g, normalizarGenoma(g, false));
+    ciclosDesdeUltimoCorte++;
+    for (const k of (genesAlterados.II || [])) acumII.add(k);
+    const ultimo = i === blocos.length - 1;
+    /* Mesmo critério da deriva automática (checarEspeciacao): corta espécie
+       quando muda gene de Estrato I, ou quando 6 genes de Estrato II já se
+       acumularam desde o último corte. Sem a segunda via, uma trilha de 57
+       ciclos com um único ciclo estrutural virava uma "linhagem" de dois
+       nós — o ancestral e o alvo — e todo o meio do caminho sumia. */
+    if (!checarEspeciacao(estruturais.length, acumII.size, 0) && !ultimo) return;
+
+    au += Math.max(1e-6, ciclosDesdeUltimoCorte * duracaoCicloDeriva(g));
+    if (ultimo && finalExistente) return; // o nó final já existe: quem chama reparenta
+    /* No último nó usamos o genoma que a BUSCA de fato alcançou, não o
+       replay bloco a bloco: o replay só reaplica os genes que mudaram em
+       cada ciclo, e a normalização intermediária pode deslocar em 1 ponto
+       algum escalar derivado (medido: socSenciencia). Como o ponto da
+       trilha é chegar exatamente no alvo, o nó final tem que ser o alvo. */
+    const g2 = ultimo && gFinal && gFinal.reino ? clonarGenoma(gFinal) : clonarGenoma(g);
+    g2.clado = sortClado();
+    g2.isPrimordial = false;
+    const id = novoId();
+    const filho = {
+      id, clado: g2.clado, g: g2, code: serialize(g2), auSurgimento: au,
+      pais: [pai.id], filhos: [], primordialId: pai.primordialId, ordem: 0,
+      ciclosDecorridos: 0, orcamento: 0, acumEstratoII: new Set(), historico: [],
+      isPrimordial: false, extinta: false, massaId: massaId || pai.massaId || null,
+      origemTrilha: true,
+    };
+    pai.filhos.push(id);
+    emitirEvento({
+      tipo: "especiacao", tipoLabel: "ESPECIAÇÃO (TRILHA)", speciesId: id, clado: filho.clado,
+      maeId: pai.id, maeClado: pai.clado, primordialId: filho.primordialId,
+      primordialClado: pai.primordialClado || pai.clado, auSurgimento: filho.auSurgimento,
+      texto: `${filho.clado} especia a partir de ${pai.clado} após ${ciclosDesdeUltimoCorte} ciclo(s) de uma trilha de deriva materializada. Surge em ${auTextoLog(filho.auSurgimento)}.`,
+      code: filho.code, codeAntes: pai.code,
+    });
+    novos.push(filho);
+    pai = filho;
+    ciclosDesdeUltimoCorte = 0;
+    acumII.clear();
+  });
+
+  return { novos, anexarA: finalExistente ? pai.id : null, ultimoId: pai.id };
+}
+
 /* Importa uma trilha serializada (formato acima) e reaplica os valores
    finais de cada gene, ciclo a ciclo, direto no genoma — não resorteia
    nada, só copia os valores exatos que a busca encontrou, então o
@@ -2623,7 +2831,7 @@ function aplicarCicloDeriva(g, orcamentoAtual, fonteFixa) {
     const estrato = r < 0.12 ? "I" : r < 0.55 ? "II" : "III";
     if (orcamento < CUSTO_ESTRATO[estrato]) break; // não cabe: poupa o saldo
 
-    const key = sortGeneAlvo(estrato);
+    const key = sortGeneAlvo(estrato, g);
     if (estrato === "I" && key === "tolHidrica" && !["Bioma aquático", "Bioma árido"].includes(fonte.nome)) {
       orcamento -= CUSTO_ESTRATO.I;
       continue;
@@ -2835,6 +3043,14 @@ function criarPrimordial(manual, auInicial, massaId) {
    escreve nos logs. */
 const REINO_LABEL = { An: "Animal", Pl: "Planta", Fu: "Fungo", Ba: "Bactéria", Ar: "Construto", Sp: "Espiritual" }; // Fase 1, item 4.1
 const REINO_LABEL_LOG = REINO_LABEL;
+/* v29 — a árvore mostra o reino ANTES do clado, para dar pra identificar a
+   espécie sem abrir o card. Em tela de celular o nome inteiro come a linha,
+   então aqui ficam a etiqueta curta e a cor de cada reino. */
+const REINO_CURTO = { An: "ANI", Pl: "PLA", Fu: "FUN", Ba: "BAC", Ar: "CON", Sp: "ESP" };
+const REINO_COR = {
+  An: "text-orange-400/90", Pl: "text-lime-400/90", Fu: "text-violet-400/90",
+  Ba: "text-cyan-400/90", Ar: "text-stone-400", Sp: "text-stone-400",
+};
 function auTextoLog(au) { return au === 0 ? "AU 0 (marco zero)" : `AU ${au.toLocaleString("pt-BR")}`; }
 
 function avancarCicloNaLinhagem(linhagemState) {
@@ -3334,11 +3550,26 @@ const PRESSAO_COMPETICAO = FONTES_PRESSAO.find((f) => f.nome === "Competição c
 function ehPredadorViavel(g) {
   return g.defArma && g.defArma !== "0" && (g.socAgressividade ?? 0) >= 6;
 }
+/* v29 — presa de PREDAÇÃO é bicho. Antes qualquer coisa de blindagem baixa
+   e lenta servia, e como planta, fungo e bactéria são por definição lentos e
+   moles, um carnívoro "predava" um arbusto. Comer planta é herbivoria, e
+   herbívoro nem entra nesta regra (dieBase hb/de já é excluída). */
+function ehPresaAnimal(g) { return g.reino === "An"; }
 function ehPresaVulneravel(g) {
   return (g.defBlindagem ?? 0) <= 3 && (g.locVelocidade ?? 0) <= 4;
 }
+/* v29 — competição é disputa por RECURSO, não por modo de andar. A regra
+   antiga exigia dieta E locomoção primária idênticas; num mundo todo
+   bacteriano (deriva N/F, dieta "de") isso batia quase sempre, mas assim
+   que a v29 abriu a diversidade de reinos a coincidência exata virou rara e
+   ecossistemas inteiros ficaram sem nenhuma interação — medido: em alguns
+   mundos, 2 de 51 espécies tinham par interagível. Agora o que define o
+   nicho é a mesma base alimentar disputada no mesmo meio (aquático,
+   semiaquático ou terrestre): dois herbívoros do mesmo pântano competem,
+   ande um deles saltando e o outro rastejando. */
+function meioDe(g) { return g.tolHidrica === "aq" ? "aq" : (g.tolHidrica === "sa" || g.tolHidrica === "um") ? "sa" : "te"; }
 function compartilhamNicho(gA, gB) {
-  return gA.dieBase === gB.dieBase && gA.locPrimario === gB.locPrimario && gA.dieBase !== "0";
+  return gA.dieBase === gB.dieBase && gA.dieBase !== "0" && meioDe(gA) === meioDe(gB);
 }
 
 /* Compara duas espécies contemporâneas (mesmo AU/massa) e decide se há
@@ -3349,10 +3580,10 @@ function compartilhamNicho(gA, gB) {
 function avaliarInteracao(nodeA, nodeB) {
   const gA = nodeA.g, gB = nodeB.g;
   // predação: A caça B, ou B caça A
-  if (ehPredadorViavel(gA) && ehPresaVulneravel(gB) && gA.dieBase !== "hb" && gA.dieBase !== "de") {
+  if (ehPredadorViavel(gA) && ehPresaVulneravel(gB) && ehPresaAnimal(gB) && gA.dieBase !== "hb" && gA.dieBase !== "de") {
     return { perdedora: nodeB, vencedora: nodeA, tipo: "predacao", motivo: `${nodeA.clado} (armado, agressivo) predaria ${nodeB.clado} (pouco blindada e lenta)` };
   }
-  if (ehPredadorViavel(gB) && ehPresaVulneravel(gA) && gB.dieBase !== "hb" && gB.dieBase !== "de") {
+  if (ehPredadorViavel(gB) && ehPresaVulneravel(gA) && ehPresaAnimal(gA) && gB.dieBase !== "hb" && gB.dieBase !== "de") {
     return { perdedora: nodeA, vencedora: nodeB, tipo: "predacao", motivo: `${nodeB.clado} (armado, agressivo) predaria ${nodeA.clado} (pouco blindada e lenta)` };
   }
   // competição por nicho: mesma dieta, mesma locomoção primária — quem tem

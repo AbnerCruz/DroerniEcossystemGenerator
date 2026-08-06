@@ -154,7 +154,10 @@ function CardEspecie({ node, onClick, individuosCount }) {
   return (
     <button onClick={onClick} className={`w-full text-left rounded border border-stone-800 hover:border-emerald-800 bg-stone-950/50 p-2.5 transition-colors ${node.extinta ? "opacity-50" : ""}`}>
       <div className="flex items-center justify-between">
-        <span className="font-mono text-xs text-stone-200">{node.clado}</span>
+        <span className="flex items-center gap-1.5 min-w-0">
+          <span className={`font-mono text-[9px] tracking-widest ${REINO_COR[node.g.reino] || "text-stone-500"}`}>{REINO_CURTO[node.g.reino] || node.g.reino}</span>
+          <span className="font-mono text-xs text-stone-200 truncate">{node.clado}</span>
+        </span>
         <div className="flex gap-1">
           {node.isPrimordial && <Badge className="border-amber-800 text-amber-500">primordial</Badge>}
           {node.extinta && <Badge className="border-red-800 text-red-500">✝ extinta</Badge>}
@@ -184,9 +187,16 @@ function CardEspecie({ node, onClick, individuosCount }) {
    pode renderizar tudo aberto de uma vez sem travar o celular —
    o usuário expande sob demanda, como uma árvore de arquivos.
    ============================================================ */
-function NodeArvore({ node, idx, profundidade, onAbrir, individuosPorEspecie }) {
+function NodeArvore({ node, idx, profundidade, onAbrir, individuosPorEspecie, visiveis }) {
   const [aberto, setAberto] = useState(profundidade < 2);
-  const filhos = useMemo(() => node.filhos.map((id) => idx.get(id)).filter(Boolean), [node, idx]);
+  /* v29 — `visiveis` (quando presente) é o conjunto de ids que o filtro
+     "ocultar extintas" deixa passar: espécies vivas MAIS os ancestrais
+     extintos que ainda têm descendência viva. Sem essa segunda parte, o
+     filtro cortaria o meio da árvore e órfãos vivos sumiriam junto. */
+  const filhos = useMemo(
+    () => node.filhos.map((id) => idx.get(id)).filter((f) => f && (!visiveis || visiveis.has(f.id))),
+    [node, idx, visiveis]
+  );
   const pesoCal = useMemo(() => calcularPesoCalorias(node.g), [node]);
   const indCount = individuosPorEspecie[node.id] || 0;
   return (
@@ -199,10 +209,11 @@ function NodeArvore({ node, idx, profundidade, onAbrir, individuosPorEspecie }) 
         ) : <span className="w-[11px] shrink-0" />}
         <button onClick={() => onAbrir(node.id)} title={node.code} className={`flex items-center gap-1.5 text-left hover:text-emerald-400 group min-w-0 ${node.extinta ? "opacity-50" : ""}`}>
           <Dna size={10} className="text-stone-700 group-hover:text-emerald-500 shrink-0" />
+          <span className={`font-mono text-[9px] tracking-widest shrink-0 ${REINO_COR[node.g.reino] || "text-stone-500"}`}>{REINO_CURTO[node.g.reino] || node.g.reino}</span>
           <span className="font-mono text-xs text-stone-200 group-hover:text-emerald-400 truncate">{node.clado}</span>
           {node.isPrimordial && <Badge className="border-amber-800 text-amber-500 shrink-0">primordial</Badge>}
           {node.extinta && <Badge className="border-red-800 text-red-500 shrink-0">✝ extinta</Badge>}
-          <span className="text-[10px] text-stone-600 shrink-0 hidden sm:inline">{REINO_LABEL[node.g.reino] || node.g.reino} · {fmtKg(pesoCal.pesoKg)} · {fmtAU(node.auSurgimento)}</span>
+          <span className="text-[10px] text-stone-600 shrink-0 hidden sm:inline">{fmtKg(pesoCal.pesoKg)} · {fmtAU(node.auSurgimento)}</span>
           <span className="text-[9px] font-mono text-stone-700 shrink-0 hidden md:inline truncate max-w-[140px]">{node.code}</span>{/* Fase 4, item 7.1 */}
           {filhos.length > 0 && <span className="text-[10px] text-stone-700 shrink-0">{filhos.length} filho(s)</span>}
           {indCount > 0 && <span className="text-[10px] text-stone-700 shrink-0">· {indCount} indivíduo(s)</span>}
@@ -211,7 +222,7 @@ function NodeArvore({ node, idx, profundidade, onAbrir, individuosPorEspecie }) 
       {aberto && filhos.length > 0 && (
         <div className="border-l border-stone-800 ml-2">
           {filhos.map((f) => (
-            <NodeArvore key={f.id} node={f} idx={idx} profundidade={profundidade + 1} onAbrir={onAbrir} individuosPorEspecie={individuosPorEspecie} />
+            <NodeArvore key={f.id} node={f} idx={idx} profundidade={profundidade + 1} onAbrir={onAbrir} individuosPorEspecie={individuosPorEspecie} visiveis={visiveis} />
           ))}
         </div>
       )}
@@ -219,21 +230,47 @@ function NodeArvore({ node, idx, profundidade, onAbrir, individuosPorEspecie }) 
   );
 }
 
-function ArvoreGenealogicaGlobal({ nodes, idx, individuals, onAbrir }) {
-  const primordiais = nodes.filter((n) => n.isPrimordial);
+/* v29 — conjunto de ids que sobrevivem ao filtro "só espécies vivas":
+   toda espécie não extinta, mais todos os ancestrais dela (mesmo extintos),
+   porque sem os ancestrais a árvore perde os galhos que ligam as vivas à
+   raiz e as vivas somem junto com os mortos. Ancestral extinto mantido
+   aparece esmaecido, como já aparecia. */
+function idsVisiveisSoVivas(nodes, idx) {
+  const visiveis = new Set();
+  for (const n of nodes) {
+    if (n.extinta) continue;
+    let cur = n, guard = 0;
+    while (cur && guard++ < 500) {
+      if (visiveis.has(cur.id)) break;
+      visiveis.add(cur.id);
+      cur = cur.pais && cur.pais[0] ? idx.get(cur.pais[0]) : null;
+    }
+  }
+  return visiveis;
+}
+
+function ArvoreGenealogicaGlobal({ nodes, idx, individuals, onAbrir, ocultarExtintas }) {
   const individuosPorEspecie = useMemo(() => {
     const m = {};
     for (const ind of individuals) m[ind.especieId] = (m[ind.especieId] || 0) + 1;
     return m;
   }, [individuals]);
+  const visiveis = useMemo(() => (ocultarExtintas ? idsVisiveisSoVivas(nodes, idx) : null), [nodes, idx, ocultarExtintas]);
+  const primordiais = nodes.filter((n) => n.isPrimordial && (!visiveis || visiveis.has(n.id)));
+  if (primordiais.length === 0) {
+    return <div className="text-xs text-stone-600 py-6 text-center">Nenhuma linhagem com espécie viva. Desligue o filtro para ver as extintas.</div>;
+  }
   return (
     <div className="space-y-3">
       {primordiais.map((prim) => {
         const linhagem = nodes.filter((n) => n.primordialId === prim.id);
+        const vivas = linhagem.filter((n) => !n.extinta).length;
         return (
           <div key={prim.id} className="rounded border border-stone-800 bg-stone-950/40 p-2">
-            <div className="text-[10px] uppercase tracking-widest text-stone-600 font-mono mb-1.5 px-1">{prim.clado} · {linhagem.length} espécie(s) na linhagem</div>
-            <NodeArvore node={prim} idx={idx} profundidade={0} onAbrir={onAbrir} individuosPorEspecie={individuosPorEspecie} />
+            <div className="text-[10px] uppercase tracking-widest text-stone-600 font-mono mb-1.5 px-1">
+              {prim.clado} · {linhagem.length} espécie(s) na linhagem · <span className="text-emerald-600">{vivas} viva(s)</span> · <span className="text-red-800">{linhagem.length - vivas} extinta(s)</span>
+            </div>
+            <NodeArvore node={prim} idx={idx} profundidade={0} onAbrir={onAbrir} individuosPorEspecie={individuosPorEspecie} visiveis={visiveis} />
           </div>
         );
       })}
@@ -246,6 +283,10 @@ function PainelBiologia({ eras, nodes, setNodes, individuals, setIndividuals, an
   const [modalSelecaoNatural, setModalSelecaoNatural] = useState(false);
   const [visao, setVisao] = useState("arvore"); // "arvore" | "lista" — árvore é o padrão pedido
   const [buscaDna, setBuscaDna] = useState(""); // Fase 4, item 7.2
+  /* v29 — a maioria das espécies de uma simulação longa está extinta, e na
+     árvore isso deixava a espécie viva praticamente impossível de achar no
+     meio dos mortos. O filtro é opt-in e não apaga nada: só esconde. */
+  const [ocultarExtintas, setOcultarExtintas] = useState(false);
   const eraAtual = eras[eras.length - 1];
   const primordiais = nodes.filter((n) => n.isPrimordial);
 
@@ -387,7 +428,7 @@ function PainelBiologia({ eras, nodes, setNodes, individuals, setIndividuals, an
           {buscaDna.trim() ? (
             (() => {
               const termo = buscaDna.trim().toLowerCase();
-              const resultados = nodes.filter((n) => n.code.toLowerCase().includes(termo));
+              const resultados = nodes.filter((n) => n.code.toLowerCase().includes(termo) && (!ocultarExtintas || !n.extinta));
               return resultados.length === 0 ? (
                 <div className="text-xs text-stone-600 py-6 text-center">Nenhuma espécie com esse trecho de DNA.</div>
               ) : (
@@ -400,21 +441,26 @@ function PainelBiologia({ eras, nodes, setNodes, individuals, setIndividuals, an
             })()
           ) : (
           <>
-          <div className="flex items-center gap-1.5 mb-3">
+          <div className="flex items-center gap-1.5 mb-3 flex-wrap">
             <button onClick={() => setVisao("arvore")} className={`text-[10px] font-mono uppercase px-2.5 py-1 rounded border ${visao === "arvore" ? "border-emerald-700 bg-emerald-950/50 text-emerald-400" : "border-stone-800 text-stone-500 hover:text-stone-300"}`}>
               <GitBranch size={11} className="inline -mt-0.5 mr-1" />Árvore Genealógica
             </button>
             <button onClick={() => setVisao("lista")} className={`text-[10px] font-mono uppercase px-2.5 py-1 rounded border ${visao === "lista" ? "border-emerald-700 bg-emerald-950/50 text-emerald-400" : "border-stone-800 text-stone-500 hover:text-stone-300"}`}>
               Lista
             </button>
+            <button onClick={() => setOcultarExtintas((v) => !v)}
+              className={`text-[10px] font-mono uppercase px-2.5 py-1 rounded border ml-auto ${ocultarExtintas ? "border-emerald-700 bg-emerald-950/50 text-emerald-400" : "border-stone-800 text-stone-500 hover:text-stone-300"}`}>
+              {ocultarExtintas ? "Só vivas" : "Mostrando extintas"}
+            </button>
           </div>
 
           {visao === "arvore" ? (
-            <ArvoreGenealogicaGlobal nodes={nodes} idx={idx} individuals={individuals} onAbrir={onAbrirViewer} />
+            <ArvoreGenealogicaGlobal nodes={nodes} idx={idx} individuals={individuals} onAbrir={onAbrirViewer} ocultarExtintas={ocultarExtintas} />
           ) : (
             <div className="space-y-4">
               {primordiais.map((prim) => {
-                const linhagem = nodes.filter((n) => n.primordialId === prim.id);
+                const linhagem = nodes.filter((n) => n.primordialId === prim.id && (!ocultarExtintas || !n.extinta));
+                if (linhagem.length === 0) return null;
                 return (
                   <div key={prim.id}>
                     <div className="text-[10px] uppercase tracking-widest text-stone-600 font-mono mb-1.5">{prim.clado} · {linhagem.length} espécie(s) na linhagem</div>

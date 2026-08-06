@@ -208,6 +208,75 @@ function App() {
     showToast(`${node.clado} adicionada ao mundo a partir da seed, com ${populacao.length} indivíduo(s).`);
   };
 
+  /* ---------- v29: materializar uma trilha de deriva na árvore ----------
+     A busca de trilha (adiante ou para trás) já devolvia a linhagem inteira,
+     mas o app só sabia COPIAR isso como texto pro usuário colar à mão na
+     criação de um primordial — os passos intermediários, que são justamente
+     a árvore descoberta, eram jogados fora. Aqui a trilha vira nós de
+     verdade, com populações, igual a qualquer outra espécie do mundo.
+
+     `origemNode` = trilha adiante (a linhagem pendura na espécie atual).
+     `alvoNode`   = trilha para trás a partir de uma espécie que já existe:
+     em vez de criar uma gêmea de DNA idêntico, a espécie existente é
+     REPARENTADA sob o último nó reconstruído. Isso só é possível se ela for
+     raiz (primordial sem ancestral); se já tiver ancestral, a linhagem entra
+     como ramo paralelo terminando numa espécie de mesmo DNA. */
+  const materializarLinhagem = (resultado, { origemNode = null, alvoNode = null } = {}) => {
+    if (!resultado?.sucesso || !resultado.trilha?.length) { showToast("Não há trilha para gerar — rode a busca primeiro."); return null; }
+    const podeReparentar = !!alvoNode && !origemNode && (!alvoNode.pais || alvoNode.pais.length === 0);
+    const massaId = origemNode?.massaId || alvoNode?.massaId || eraAtual?.massas[0]?.id || null;
+    const auInicial = origemNode ? origemNode.auSurgimento : Math.max(0, (alvoNode?.auSurgimento ?? eraAtual?.auInicio ?? 0) - 1);
+    const { novos, anexarA } = materializarTrilha(resultado, {
+      origem: origemNode || null,
+      massaId,
+      auInicial,
+      finalExistente: podeReparentar ? alvoNode : null,
+    });
+    if (!novos.length) { showToast("A trilha não produziu nenhuma espécie nova."); return null; }
+
+    let populacao = [];
+    for (const n of novos) populacao = populacao.concat(gerarPopulacaoParaEspecie(n, TAMANHO_POPULACAO_INICIAL, DIVISOES_POR_MASSA, massaIdx.get(n.massaId)));
+
+    setNodes((prev) => {
+      let base = prev.map((n) => (origemNode && n.id === origemNode.id ? { ...n, filhos: [...n.filhos] } : n));
+      if (podeReparentar && anexarA) {
+        /* reparentagem: a espécie existente deixa de ser raiz e passa a
+           descender do último nó reconstruído — junto com toda a subárvore
+           dela, que precisa herdar o primordialId novo, senão a árvore
+           mostraria dois primordiais para a mesma linhagem. */
+        const novoPrimordialId = novos[0].primordialId;
+        const filhosPorPai = new Map();
+        for (const n of base) for (const pai of (n.pais || [])) {
+          if (!filhosPorPai.has(pai)) filhosPorPai.set(pai, []);
+          filhosPorPai.get(pai).push(n.id);
+        }
+        const subarvore = new Set([alvoNode.id]);
+        const fila = [alvoNode.id];
+        let guard = 0;
+        while (fila.length && guard++ < 10000) {
+          const atual = fila.shift();
+          for (const f of (filhosPorPai.get(atual) || [])) if (!subarvore.has(f)) { subarvore.add(f); fila.push(f); }
+        }
+        base = base.map((n) => {
+          if (!subarvore.has(n.id)) return n;
+          if (n.id === alvoNode.id) return { ...n, pais: [anexarA], isPrimordial: false, primordialId: novoPrimordialId, g: { ...n.g, isPrimordial: false } };
+          return { ...n, primordialId: novoPrimordialId };
+        });
+        const ultimo = novos.find((n) => n.id === anexarA);
+        if (ultimo && !ultimo.filhos.includes(alvoNode.id)) ultimo.filhos.push(alvoNode.id);
+      }
+      return [...base, ...novos];
+    });
+    setIndividuals((prev) => [...prev, ...populacao]);
+    setAnoAtual((a) => novos.reduce((m, n) => Math.max(m, n.auSurgimento), a));
+    setLogVersion((v) => v + 1);
+    showToast(
+      `Linhagem gerada na árvore: ${novos.length} espécie(s), ${populacao.length} indivíduo(s).` +
+      (podeReparentar ? ` ${alvoNode.clado} deixou de ser primordial e passou a descender de ${novos[0].clado}.` : "")
+    );
+    return novos;
+  };
+
   const selectedNode = selectedSpeciesId ? idx.get(selectedSpeciesId) : null;
 
   return (
@@ -232,7 +301,7 @@ function App() {
           <div className="w-9 h-9 shrink-0 rounded-full border border-emerald-700 flex items-center justify-center text-emerald-500"><GitBranch size={18} /></div>
           <div className="min-w-0">
             <h1 className="font-display text-lg sm:text-xl font-semibold tracking-tight text-stone-100 leading-none">Droerni · Ecossistema DRN2</h1>
-            <p className="font-data text-[10px] text-stone-500 tracking-wider truncate">v28 · escala corporal por reino · offline (PWA)</p>
+            <p className="font-data text-[10px] text-stone-500 tracking-wider truncate">v30 · réptil alado liberado</p>
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
@@ -304,6 +373,7 @@ function App() {
           onNovoIndividuo={() => novoIndividuo(selectedNode)}
           onNavegar={(id) => setSelectedSpeciesId(id)}
           onAbrirIndividuo={(ind) => setIndividualViewer({ individual: ind, especieNode: selectedNode })}
+          onMaterializarTrilha={materializarLinhagem}
           showToast={showToast}
         />
       )}
@@ -330,6 +400,7 @@ function App() {
           textoInicial={seedSearchTexto}
           onFechar={() => setSeedSearchAberto(false)}
           onAdicionarComoPrimordial={adicionarSeedComoPrimordial}
+          onMaterializarTrilha={materializarLinhagem}
           eraAtual={eraAtual}
           showToast={showToast}
         />
@@ -339,7 +410,7 @@ function App() {
 
       {patchnotesAberto && <PainelPatchnotes onFechar={() => setPatchnotesAberto(false)} />}
 
-      <footer className="max-w-4xl mx-auto px-4 sm:px-6 pb-10 pt-4 text-[10px] text-stone-700 font-data">DRN2 v24 · Droerni — populações de indivíduos, seleção natural populacional, seed autossuficiente</footer>
+      <footer className="max-w-4xl mx-auto px-4 sm:px-6 pb-10 pt-4 text-[10px] text-stone-700 font-data">DRN2 v30 · Droerni — réptil pode ter asas (dragão)</footer>
     </div>
   );
 }

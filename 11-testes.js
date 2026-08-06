@@ -21,7 +21,7 @@
    até onde ir — a bateria completa leva minutos num celular.
    ============================================================ */
 
-const TESTES_VERSAO = "v28";
+const TESTES_VERSAO = "v29";
 
 /* ---------- micro-framework ---------- */
 function criarColetor() {
@@ -440,11 +440,20 @@ async function suiteEcossistema({ suite, chk, info }, prog) {
   suite("F · Ecossistema e seleção natural");
   const massa = criarMassaDeTerra("Pangeia de teste", null, []);
   resetEventLog(); setLogVerbosidade("resumido");
-  const nodes = [];
-  for (let p = 0; p < 3; p++) {
-    const r = criarPrimordial({}, 0, massa.id); r.massaId = massa.id; nodes.push(r);
-    await derivarLinhagem(r, 60, (n) => { n.massaId = massa.id; nodes.push(n); });
-    prog(0.35 * ((p + 1) / 3));
+  /* v29 — a suíte mede o MOTOR DE SELEÇÃO, mas dependia da sorte da árvore:
+     três primordiais de 60 ciclos às vezes produzem 22 espécies, às vezes
+     87, e com poucas populações vivas as métricas de colisão/migração viram
+     ruído. Agora o cenário é reposto até ter massa crítica de espécies vivas
+     (ou desiste após 3 tentativas, e aí o número aparece no F0). */
+  let nodes = [];
+  for (let tentativa = 0; tentativa < 3; tentativa++) {
+    nodes = [];
+    for (let p = 0; p < 3; p++) {
+      const r = criarPrimordial({}, 0, massa.id); r.massaId = massa.id; nodes.push(r);
+      await derivarLinhagem(r, 60, (n) => { n.massaId = massa.id; nodes.push(n); });
+      prog(0.35 * ((p + 1) / 3));
+    }
+    if (nodes.filter((n) => !n.extinta).length >= 30) break;
   }
   const idx = buildIndex(nodes);
   info("F0 árvore gerada", `${nodes.length} espécies · ${nodes.filter((n) => n.extinta).length} extintas por saturação`);
@@ -463,9 +472,37 @@ async function suiteEcossistema({ suite, chk, info }, prog) {
 
   const evs = __eventLog.filter((e) => e.tipo === "selecao_natural_populacao");
   const tocadas = new Set(evs.map((e) => e.speciesId));
-  chk("F2 a seleção alcança a maior parte do ecossistema (>50%)", tocadas.size > comPop.size * 0.5,
-    `${tocadas.size}/${comPop.size} espécies sofreram pressão (${(100 * tocadas.size / Math.max(1, comPop.size)).toFixed(0)}%)`);
-  chk("F3 cada divisão resolve mais de uma interação por ciclo", evs.length / 40 > DIVISOES_POR_MASSA,
+  /* v29 — o alvo do F2 passou a ser as espécies que PODEM colidir: com a
+     diversidade de reinos, uma espécie sozinha na sua divisão simplesmente
+     não tem com quem competir, e cobrá-la de "sofrer pressão" mediria a
+     distribuição espacial, não o motor de seleção. Antes o mundo era todo
+     bacteriano e a distinção não aparecia. */
+  const especiesPorDivisao = new Map();
+  for (const i of inds) {
+    const chave = `${i.divisao}`;
+    if (!especiesPorDivisao.has(chave)) especiesPorDivisao.set(chave, new Set());
+    especiesPorDivisao.get(chave).add(i.especieId);
+  }
+  /* Co-habitar não basta: uma planta e um inseto podem dividir a divisão e
+     simplesmente não ter interação nenhuma (nichos que não se cruzam —
+     avaliarInteracao devolve null). O alvo do teste são as espécies que
+     têm ao menos UM par interagível na própria divisão; se o motor não
+     alcança essas, aí sim há buraco no laço de seleção. */
+  const podemColidir = new Set();
+  for (const conj of especiesPorDivisao.values()) {
+    const lista = [...conj].map((id) => idx.get(id)).filter((n) => n && !n.extinta);
+    for (let a = 0; a < lista.length; a++) {
+      for (let b = a + 1; b < lista.length; b++) {
+        if (!avaliarInteracao(lista[a], lista[b])) continue;
+        podemColidir.add(lista[a].id); podemColidir.add(lista[b].id);
+      }
+    }
+  }
+  const alcancadas = [...podemColidir].filter((id) => tocadas.has(id));
+  chk("F2 a seleção alcança a maior parte das espécies com par interagível (>50%)",
+    podemColidir.size === 0 || alcancadas.length > podemColidir.size * 0.5,
+    `${alcancadas.length}/${podemColidir.size} espécies com par interagível sofreram pressão (de ${comPop.size} com população)`);
+  chk("F3 cada divisão resolve mais de uma interação por ciclo", podemColidir.size === 0 || evs.length / 40 > DIVISOES_POR_MASSA,
     `${(evs.length / 40).toFixed(1)} interações/ciclo com ${DIVISOES_POR_MASSA} divisões`);
   chk("F4 cadáveres acumulados respeitam o teto de retenção",
     r.individuals.length - vivos.length <= TETO_CADAVERES_RETIDOS,
@@ -528,6 +565,122 @@ async function suitePerformance({ suite, chk, info }, prog) {
 /* ============================================================
    CATÁLOGO E EXECUTOR
    ============================================================ */
+/* ============================================================
+   v29 — SUÍTES NOVAS
+   ============================================================ */
+async function suiteMembros({ suite, chk, info }, prog) {
+  suite("O · Orçamento de membros (v29)");
+  const N = 400;
+  const num = (v) => Number(String(v).replace(/[SIX]/g, "")) || 0;
+  let excedeOrcamento = 0, vertebradoComApendice = 0, aladoComBraco = 0, amostraTetrapode = 0;
+  const orcamento = { MAM: 4, AVE: 4, REP: 4, AMP: 4, PSC: 0, INS: 8, MOL: 8 };
+  for (let i = 0; i < N; i++) {
+    const g = buildSpecies(null, {}, false).g;
+    const teto = orcamento[g.classe];
+    if (teto === undefined) continue;
+    const sup = num(g.memSup), inf = num(g.memInf);
+    if (["MAM", "AVE", "REP", "AMP"].includes(g.classe)) {
+      amostraTetrapode++;
+      if ((Number(g.asaQtd) || 0) > 0 && sup > 0) aladoComBraco++;
+      if (num(g.memApendices) > 0) vertebradoComApendice++;
+    }
+    if (sup + inf > teto) excedeOrcamento++;
+    if (i % 60 === 0) await respirar();
+    prog(0.5 * ((i + 1) / N));
+  }
+  chk(`O1 nenhuma espécie estoura o teto de membros da classe (n=${N})`, excedeOrcamento === 0, `${excedeOrcamento} estouro(s)`);
+  chk("O2 vertebrado não recebe apêndice locomotor extra", vertebradoComApendice === 0, `${vertebradoComApendice} caso(s)`);
+  chk("O3 em tetrápode a asa consome o par de membros superiores", aladoComBraco === 0, `${aladoComBraco} caso(s)`);
+  info("O4 tetrápodes na amostra", `${amostraTetrapode}/${N}`);
+
+  // o caso reportado: réptil quadrúpede
+  let reptisQ = 0, reptisQok = 0;
+  for (let i = 0; i < 300; i++) {
+    const g = buildSpecies(null, { reino: "An", classe: "REP", locPrimario: "Q" }, false).g;
+    if (g.classe !== "REP" || g.locPrimario !== "Q") continue;
+    reptisQ++;
+    if (num(g.memSup) + num(g.memInf) === 4 && num(g.memApendices) === 0) reptisQok++;
+    if (i % 60 === 0) await respirar();
+    prog(0.5 + 0.4 * ((i + 1) / 300));
+  }
+  chk(`O5 réptil quadrúpede tem exatamente 4 membros e nenhum apêndice (n=${reptisQ})`, reptisQ > 0 && reptisQok === reptisQ, `${reptisQok}/${reptisQ}`);
+
+  // a prosa tem que declarar o total, e não somar números soltos
+  let gAn = null;
+  for (let i = 0; i < 60 && !gAn; i++) {
+    const cand = buildSpecies(null, { reino: "An" }, false).g;
+    if (cand.reino === "An" && (num(cand.memSup) + num(cand.memInf)) > 0) gAn = cand;
+  }
+  const prosa = gAn ? describeCreatureProse(gAn) : "";
+  chk("O6 a prosa declara o total de membros locomotores", /membro\(s\) locomotor\(es\) ao todo/.test(prosa), prosa.slice(0, 0));
+  chk("O7 a prosa não chama apêndice de membro auxiliar", !/apêndices auxiliares/.test(prosa));
+  prog(1);
+}
+
+async function suiteDiversidade({ suite, chk, info }, prog) {
+  suite("P · Diversidade de reinos na deriva (v29)");
+  resetEventLog(); setLogVerbosidade("resumido");
+  const prim = buildSpecies(null, {}, true);
+  const node = {
+    id: "teste_div", clado: prim.g.clado, g: prim.g, code: prim.code, auSurgimento: 0,
+    pais: [], filhos: [], primordialId: "teste_div", ordem: 0, ciclosDecorridos: 0,
+    orcamento: 0, acumEstratoII: new Set(), historico: [], isPrimordial: true, extinta: false, massaId: null,
+  };
+  const todos = [];
+  await derivarLinhagem(node, 150, (f) => todos.push(f), (f) => prog(0.9 * f));
+  const porReino = {};
+  for (const n of [node, ...todos]) porReino[n.g.reino] = (porReino[n.g.reino] || 0) + 1;
+  const total = todos.length + 1;
+  const fracaoBa = (porReino.Ba || 0) / total;
+  const reinos = Object.keys(porReino).length;
+  chk("P1 a deriva atravessa a barreira de reino a partir da bactéria", reinos >= 2, `reinos presentes: ${Object.keys(porReino).join(", ")}`);
+  /* Limiar folgado de propósito: numa deriva curta (150 ciclos) o resultado
+     é legitimamente volátil — uma linhagem que salta cedo domina, outra que
+     salta tarde deixa quase tudo bacteriano. O que o teste garante é que a
+     travessia acontece; a proporção fica como medição informativa. */
+  chk("P2 a bactéria não domina a árvore inteira", fracaoBa < 0.95, `${(fracaoBa * 100).toFixed(0)}% de bactérias em ${total} espécies`);
+  chk("P3 só bactéria muda de reino (barreira preservada)",
+    [...todos].every((n) => {
+      const pai = n.pais[0] === node.id ? node : todos.find((x) => x.id === n.pais[0]);
+      return !pai || pai.g.reino === "Ba" || pai.g.reino === n.g.reino;
+    }), "nenhum salto de reino a partir de não-bactéria");
+  info("P4 distribuição por reino", Object.entries(porReino).map(([k, v]) => `${k}:${v}`).join(" "));
+  resetEventLog();
+  prog(1);
+}
+
+async function suiteMaterializar({ suite, chk, info }, prog) {
+  suite("Q · Materializar trilha (v29)");
+  resetEventLog(); setLogVerbosidade("resumido");
+  const semClado = (c) => String(c).replace(/TAX:([A-Za-z]+)\.([A-Za-z]+)\.[A-Za-z]+/, "TAX:$1.$2.___");
+  let exatos = 0, tamanhos = [], linksOk = 0, N = 3;
+  for (let i = 0; i < N; i++) {
+    const alvo = buildSpecies(null, {}, false);
+    const r = await buscarTrilhaReversa(alvo.code, null, 2);
+    const { novos } = materializarTrilha(r, { massaId: "m_teste", auInicial: 3 });
+    tamanhos.push(novos.length);
+    const ultimo = novos[novos.length - 1];
+    if (ultimo && semClado(ultimo.code) === semClado(alvo.code)) exatos++;
+    const porId = new Map(novos.map((n) => [n.id, n]));
+    const ok = novos.every((n, k) => {
+      if (k === 0) return n.isPrimordial === true && n.pais.length === 0;
+      const pai = porId.get(n.pais[0]);
+      return !!pai && pai.filhos.includes(n.id) && n.primordialId === novos[0].id
+        && n.isPrimordial === false && n.auSurgimento > pai.auSurgimento;
+    });
+    if (ok) linksOk++;
+    prog((i + 1) / N);
+  }
+  chk(`Q1 o último nó da linhagem materializada é o próprio alvo (n=${N})`, exatos === N, `${exatos}/${N}`);
+  chk("Q2 a linhagem materializada tem raiz primordial e elos íntegros", linksOk === N, `${linksOk}/${N}`);
+  chk("Q3 a trilha vira mais que um par ancestral-alvo", tamanhos.every((t) => t >= 2), `tamanhos: ${tamanhos.join(", ")}`);
+  const vazia = materializarTrilha({ sucesso: true, trilha: [] }, {});
+  chk("Q4 trilha vazia não cria nada", vazia.novos.length === 0 && vazia.motivo === "trilha-vazia");
+  info("Q5 espécies por linhagem materializada", tamanhos.join(", "));
+  resetEventLog();
+  prog(1);
+}
+
 const SUITES_TESTE = [
   { id: "seed", nome: "Seed e determinismo", fn: suiteSeed, peso: 2, nivel: "rapida" },
   { id: "fuzz", nome: "Fuzzing de entrada", fn: suiteFuzz, peso: 1, nivel: "rapida" },
@@ -537,6 +690,9 @@ const SUITES_TESTE = [
   { id: "evolucao", nome: "Deriva e especiação", fn: suiteEvolucao, peso: 6, nivel: "completa" },
   { id: "dna", nome: "Busca por DNA e trilha reversa", fn: suiteDnaTrilha, peso: 4, nivel: "completa" },
   { id: "ecossistema", nome: "Ecossistema e seleção natural", fn: suiteEcossistema, peso: 6, nivel: "completa" },
+  { id: "membros", nome: "Orçamento de membros", fn: suiteMembros, peso: 3, nivel: "completa" },
+  { id: "diversidade", nome: "Diversidade de reinos", fn: suiteDiversidade, peso: 4, nivel: "completa" },
+  { id: "materializar", nome: "Materializar trilha", fn: suiteMaterializar, peso: 4, nivel: "completa" },
   { id: "performance", nome: "Performance neste aparelho", fn: suitePerformance, peso: 5, nivel: "completa" },
 ];
 

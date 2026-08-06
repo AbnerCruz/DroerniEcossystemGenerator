@@ -1,5 +1,5 @@
 /* ============================================================
-   SERVICE WORKER — v28
+   SERVICE WORKER — v30
    ============================================================
    O app é servido pelo GitHub Pages, que dá https (requisito do
    service worker) mas não tem backend nenhum. Todo o offline mora aqui.
@@ -22,7 +22,7 @@
    inclusive instalado na tela inicial.
    ============================================================ */
 
-const VERSAO = "drn2-v28";
+const VERSAO = "drn2-v30";
 const CACHE_CASCA = `${VERSAO}-casca`;
 const CACHE_CDN = `${VERSAO}-cdn`;
 
@@ -65,6 +65,8 @@ const CASCA = [
   "./patchnotes-v26.md",
   "./patchnotes-v27.md",
   "./patchnotes-v28.md",
+  "./patchnotes-v29.md",
+  "./patchnotes-v30.md",
 ];
 
 const CDN = [

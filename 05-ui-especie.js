@@ -253,7 +253,7 @@ function SpeciesEditor({ modo, node, eraAtual, onSalvar, onCancelar }) {
 /* ============================================================
    SPECIES VIEWER — modal ao clicar numa espécie na lista
    ============================================================ */
-function SpeciesViewer({ node, idx, eras, massaIdx, onFechar, onEditar, onDeletar, onClonar, onExportarMd, onDerivar, onNovoIndividuo, onNavegar, onAbrirIndividuo, individuosDaEspecie, showToast }) {
+function SpeciesViewer({ node, idx, eras, massaIdx, onFechar, onEditar, onDeletar, onClonar, onExportarMd, onDerivar, onNovoIndividuo, onNavegar, onAbrirIndividuo, individuosDaEspecie, onMaterializarTrilha, showToast }) {
   const pesoCal = useMemo(() => calcularPesoCalorias(node.g), [node]);
   const massa = massaIdx.get(node.massaId);
   const habitat = useMemo(() => readHabitatNaMassa(node.g, massa), [node, massa]);
@@ -289,6 +289,14 @@ function SpeciesViewer({ node, idx, eras, massaIdx, onFechar, onEditar, onDeleta
     const texto = serializarTrilha(origem, resultadoTrilha);
     navigator.clipboard?.writeText(texto);
     showToast("Trilha copiada — cole no campo de importação ao criar um primordial novo.");
+  };
+  /* v29 — gerar a linhagem encontrada como espécies de verdade na árvore.
+     Antes o único destino de uma trilha era o texto copiado; agora ela
+     vira nós, com os passos intermediários que a busca descobriu. */
+  const gerarDaTrilha = () => {
+    if (!resultadoTrilha?.sucesso || !onMaterializarTrilha) return;
+    const criados = onMaterializarTrilha(resultadoTrilha, sentidoTrilha === "atras" ? { alvoNode: node } : { origemNode: node });
+    if (criados) { setResultadoTrilha(null); onFechar(); }
   };
   const copiarAncestral = () => {
     if (!resultadoTrilha?.ancestral) return;
@@ -417,6 +425,11 @@ function SpeciesViewer({ node, idx, eras, massaIdx, onFechar, onEditar, onDeleta
                     : sentidoTrilha === "atras" ? (resultadoTrilha ? "Sortear outra" : "Reconstruir linhagem") : "Buscar"}
                 </button>
                 {resultadoTrilha?.sucesso && (
+                  <button onClick={gerarDaTrilha} className="text-[11px] font-mono uppercase text-emerald-400 hover:text-emerald-200 border border-emerald-800 bg-emerald-950/30 rounded px-3 py-1.5">
+                    <GitBranch size={12} className="inline -mt-0.5 mr-1" />Gerar linhagem na árvore
+                  </button>
+                )}
+                {resultadoTrilha?.sucesso && (
                   <button onClick={copiarTrilha} className="text-[11px] font-mono uppercase text-emerald-500 hover:text-emerald-300 border border-emerald-900 rounded px-3 py-1.5">
                     <Copy size={12} className="inline -mt-0.5 mr-1" />Copiar Trilha ({resultadoTrilha.ciclos} ciclo(s))
                   </button>
@@ -434,6 +447,14 @@ function SpeciesViewer({ node, idx, eras, massaIdx, onFechar, onEditar, onDeleta
                       : resultadoTrilha.motivoTexto
                         || `Não bateu 100% dentro do limite de tentativas (distância residual: ${resultadoTrilha.dlFinal}).`}
                   </div>
+                  {resultadoTrilha.sucesso && (
+                    <p className="text-[10px] text-stone-600 leading-relaxed">
+                      "Gerar linhagem na árvore" materializa esses ciclos como espécies de verdade
+                      {sentidoTrilha === "atras"
+                        ? `: o ancestral primordial, as espécies intermediárias e — se ${node.clado} for hoje uma raiz sem ancestral — ${node.clado} passa a descender delas em vez de virar uma cópia.`
+                        : `, penduradas em ${node.clado}, terminando numa espécie com o DNA-alvo.`}
+                    </p>
+                  )}
                   {sentidoTrilha === "atras" && resultadoTrilha.ancestral && (
                     <div className="rounded border border-stone-800 bg-stone-900/40 p-2 space-y-1">
                       <div className="text-[10px] uppercase tracking-widest text-stone-500 font-mono">Ancestral primordial hipotético</div>

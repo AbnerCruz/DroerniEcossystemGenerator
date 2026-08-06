@@ -136,13 +136,23 @@ function IndividualViewer({ individual, especieNode, onFechar, onNavegarEspecie,
    que ele já exista na árvore atual (o espaço de espécimes
    possíveis é muito maior que qualquer mundo gerado).
    ============================================================ */
-function SeedSearchModal({ onFechar, onAdicionarComoPrimordial, eraAtual, showToast, textoInicial }) {
+function SeedSearchModal({ onFechar, onAdicionarComoPrimordial, onMaterializarTrilha, eraAtual, showToast, textoInicial }) {
   const [texto, setTexto] = useState(textoInicial || "");
   const [resultado, setResultado] = useState(null);
   const [erro, setErro] = useState("");
+  /* v29 — a busca por seed decodificava o espécime e parava ali: um endereço
+     no espaço de possibilidades, sem passado nenhum. Faltava a pergunta
+     óbvia — de onde ele viria? Aqui a mesma trilha reversa do visor de
+     espécie fica disponível na busca, e o resultado pode ser materializado
+     no mundo: ancestral primordial, intermediárias e o próprio espécime.
+     É também o único caminho para trazer ao mundo um espécime DERIVADO
+     achado por seed (antes o app só sabia adicionar primordiais). */
+  const [trilha, setTrilha] = useState(null);
+  const [buscandoTrilha, setBuscandoTrilha] = useState(false);
+  const [progressoTrilha, setProgressoTrilha] = useState(0);
 
   const buscar = () => {
-    setErro(""); setResultado(null);
+    setErro(""); setResultado(null); setTrilha(null);
     const bruto = (texto || "").trim();
     if (!bruto) { setErro("Cole uma seed (números), um código DNA (DRN2-…), ou digite um texto/nome livre."); return; }
     // heurística: se sobrar algum dígito depois de tirar tudo que não é número,
@@ -283,6 +293,56 @@ function SeedSearchModal({ onFechar, onAdicionarComoPrimordial, eraAtual, showTo
 
               <PromptImagemBox g={resultado.g} individual={resultado.individual} showToast={showToast} />
 
+              {/* v29 — trilha até a primordial a partir do espécime encontrado */}
+              <div className="rounded border border-stone-800 p-2.5 space-y-2">
+                <div className="text-stone-500 text-[10px] uppercase tracking-widest font-mono">Linhagem até a primordial</div>
+                <p className="text-[10px] text-stone-500 leading-relaxed">
+                  Reconstrói uma trilha de deriva que chega neste espécime a partir de um ancestral
+                  primordial (bactéria) sorteado. Não existe "a" trilha certa — a deriva descarta
+                  informação, então vários caminhos chegam ao mesmo genoma. Esta é uma das possíveis.
+                </p>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <button
+                    disabled={buscandoTrilha}
+                    onClick={async () => {
+                      setBuscandoTrilha(true); setProgressoTrilha(0); setTrilha(null);
+                      const r = await buscarTrilhaReversa(resultado.code, (f) => setProgressoTrilha(f));
+                      setTrilha(r); setBuscandoTrilha(false);
+                    }}
+                    className="text-[11px] font-mono uppercase text-stone-400 hover:text-emerald-400 border border-stone-800 rounded px-3 py-1.5 disabled:opacity-40">
+                    {buscandoTrilha ? `Reconstruindo… ${Math.round(progressoTrilha * 100)}%` : trilha ? "Sortear outra" : "Reconstruir linhagem"}
+                  </button>
+                  {trilha?.sucesso && (
+                    <>
+                      <button
+                        onClick={() => { navigator.clipboard?.writeText(serializarTrilha(trilha.ancestral, trilha)); showToast("Trilha copiada."); }}
+                        className="text-[11px] font-mono uppercase text-stone-400 hover:text-emerald-400 border border-stone-800 rounded px-3 py-1.5">
+                        <Copy size={12} className="inline -mt-0.5 mr-1" />Copiar Trilha
+                      </button>
+                      {eraAtual && onMaterializarTrilha && (
+                        <button
+                          onClick={() => { const criados = onMaterializarTrilha(trilha, {}); if (criados) onFechar(); }}
+                          className="text-[11px] font-mono uppercase text-emerald-400 hover:text-emerald-200 border border-emerald-800 bg-emerald-950/30 rounded px-3 py-1.5">
+                          Gerar linhagem no mundo
+                        </button>
+                      )}
+                    </>
+                  )}
+                </div>
+                {trilha && !buscandoTrilha && (
+                  <div className="space-y-1">
+                    <div className="text-[11px] text-stone-500">
+                      {trilha.sucesso
+                        ? `${trilha.ciclos} ciclo(s) de deriva do ancestral ${trilha.ancestral?.clado} até este espécime.`
+                        : trilha.motivoTexto || "Não foi possível fechar uma trilha exata desta vez — tente sortear outra."}
+                    </div>
+                    {trilha.ancestral && (
+                      <div className="text-[10px] font-mono text-stone-600 break-all">{trilha.ancestral.code}</div>
+                    )}
+                  </div>
+                )}
+              </div>
+
               <div className="flex flex-wrap gap-2">
                 <button onClick={copiarDNA} className="text-[11px] font-mono uppercase text-stone-400 hover:text-emerald-400 border border-stone-800 rounded px-3 py-1.5"><Copy size={12} className="inline -mt-0.5 mr-1" />Copiar DNA</button>
                 <button onClick={copiarSeed} className="text-[11px] font-mono uppercase text-stone-400 hover:text-emerald-400 border border-stone-800 rounded px-3 py-1.5"><Copy size={12} className="inline -mt-0.5 mr-1" />Copiar Seed</button>
@@ -293,7 +353,7 @@ function SeedSearchModal({ onFechar, onAdicionarComoPrimordial, eraAtual, showTo
                 )}
               </div>
               {!resultado.isPrimordial && (
-                <p className="text-[10px] text-stone-600">Essa seed foi decodificada como espécie derivada — não pode ser adicionada diretamente ao mundo sem uma espécie-mãe (use "Derivar" numa espécie existente pra gerar descendentes de verdade).</p>
+                <p className="text-[10px] text-stone-600">Essa seed foi decodificada como espécie derivada — não entra no mundo solta, sem ancestral. Use "Reconstruir linhagem" acima e depois "Gerar linhagem no mundo": ela chega junto com a linhagem inteira que a produziu.</p>
               )}
             </div>
           )}
