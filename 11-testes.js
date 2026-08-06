@@ -574,6 +574,7 @@ async function suiteMembros({ suite, chk, info }, prog) {
   const num = (v) => Number(String(v).replace(/[SIX]/g, "")) || 0;
   let excedeOrcamento = 0, vertebradoComApendice = 0, aladoComBraco = 0, amostraTetrapode = 0;
   const orcamento = { MAM: 4, AVE: 4, REP: 4, AMP: 4, PSC: 0, INS: 8, MOL: 8 };
+  const asaIndependente = new Set(["REP"]); // v31 — dragão ocidental: asa não consome braço nesta classe
   for (let i = 0; i < N; i++) {
     const g = buildSpecies(null, {}, false).g;
     const teto = orcamento[g.classe];
@@ -581,16 +582,16 @@ async function suiteMembros({ suite, chk, info }, prog) {
     const sup = num(g.memSup), inf = num(g.memInf);
     if (["MAM", "AVE", "REP", "AMP"].includes(g.classe)) {
       amostraTetrapode++;
-      if ((Number(g.asaQtd) || 0) > 0 && sup > 0) aladoComBraco++;
+      if ((Number(g.asaQtd) || 0) > 0 && sup > 0 && !asaIndependente.has(g.classe)) aladoComBraco++;
       if (num(g.memApendices) > 0) vertebradoComApendice++;
     }
     if (sup + inf > teto) excedeOrcamento++;
     if (i % 60 === 0) await respirar();
     prog(0.5 * ((i + 1) / N));
   }
-  chk(`O1 nenhuma espécie estoura o teto de membros da classe (n=${N})`, excedeOrcamento === 0, `${excedeOrcamento} estouro(s)`);
+  chk(`O1 nenhuma espécie estoura o teto de pernas/braços da classe, mesmo com asa (n=${N})`, excedeOrcamento === 0, `${excedeOrcamento} estouro(s)`);
   chk("O2 vertebrado não recebe apêndice locomotor extra", vertebradoComApendice === 0, `${vertebradoComApendice} caso(s)`);
-  chk("O3 em tetrápode a asa consome o par de membros superiores", aladoComBraco === 0, `${aladoComBraco} caso(s)`);
+  chk("O3 em mamífero/ave/anfíbio a asa consome o par de membros superiores (réptil é exceção deliberada)", aladoComBraco === 0, `${aladoComBraco} caso(s)`);
   info("O4 tetrápodes na amostra", `${amostraTetrapode}/${N}`);
 
   // o caso reportado: réptil quadrúpede
@@ -614,6 +615,30 @@ async function suiteMembros({ suite, chk, info }, prog) {
   const prosa = gAn ? describeCreatureProse(gAn) : "";
   chk("O6 a prosa declara o total de membros locomotores", /membro\(s\) locomotor\(es\) ao todo/.test(prosa), prosa.slice(0, 0));
   chk("O7 a prosa não chama apêndice de membro auxiliar", !/apêndices auxiliares/.test(prosa));
+
+  /* v31 — dragão ocidental: réptil quadrúpede (4 pernas) COM asas, 6 membros
+     ao todo. É a exceção mitológica pedida pelo usuário — nenhum vertebrado
+     real tem esse plano corporal, mas o sistema agora representa isso de
+     propósito, só para REP. Confirma que dá pra forçar e que o total gerado
+     é exatamente 6 (4 pernas + 1 par de asas), nunca mais que isso. */
+  let dragoesOk = 0, DN = 40;
+  for (let i = 0; i < DN; i++) {
+    const g = buildSpecies(null, { reino: "An", classe: "REP", locPrimario: "Q", asaQtd: 2 }, false).g;
+    if (g.classe !== "REP" || g.locPrimario !== "Q" || (Number(g.asaQtd) || 0) === 0) continue;
+    if (num(g.memInf) === 4 && (Number(g.asaQtd) || 0) === 2 && g.asaTipo === "mb") dragoesOk++;
+  }
+  chk(`O8 dragão ocidental (4 pernas + par de asas, 6 membros) é montável em REP (n=${DN})`, dragoesOk > 0, `${dragoesOk}/${DN}`);
+  // e o teto continua em 1 par — não dá pra pedir 4 ou 6 asas
+  const gTeto = buildSpecies(null, { reino: "An", classe: "REP", locPrimario: "Q", asaQtd: 4 }, false).g;
+  chk("O9 mesmo forçado, o pedido de 4+ asas cai para o teto de 1 par", (Number(gTeto.asaQtd) || 0) <= 2, `asaQtd=${gTeto.asaQtd}`);
+  // e a classe MAM (morcego etc.) segue proibida do plano hexápode
+  let mamiferoQuebrado = 0;
+  for (let i = 0; i < 200; i++) {
+    const g = buildSpecies(null, {}, false).g;
+    if (g.classe !== "MAM") continue;
+    if ((Number(g.asaQtd) || 0) > 0 && num(g.memSup) + num(g.memInf) > 2) mamiferoQuebrado++;
+  }
+  chk("O10 mamífero alado continua limitado a 4 membros (sem hexápode)", mamiferoQuebrado === 0, `${mamiferoQuebrado} caso(s)`);
   prog(1);
 }
 

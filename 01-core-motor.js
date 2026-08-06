@@ -396,10 +396,18 @@ const CLASSE_TRAVAS = {
     facOrelha: { restrict: ["in", "rd"] },
     /* v29 — liberada a pedido do usuário: o único tipo coerente com escama/
        couro é membrana (pterossauro, wyvern) — pena e élitro pertencem a
-       plano corporal de ave e inseto. O TETO em si (0 ou 1 par, nunca mais)
-       já vem do orçamento geral de membros (CLASSES_TETRAPODES), que trata
-       a asa como o próprio par de membros superiores modificado. */
+       plano corporal de ave e inseto.
+       v31 — REP é a única classe com asa INDEPENDENTE do orçamento de
+       pernas/braços (ver CLASSES_ASA_INDEPENDENTE): pode sair wyvern (asa
+       no lugar do braço, 4 membros) ou dragão ocidental (4 pernas + par de
+       asas, 6 membros) — exceção mitológica deliberada, pedida pelo
+       usuário. O teto de 1 par de asas continua valendo (asaQtd via
+       T.asaQtd, sem restrict extra aqui — a classe não limita quantidade,
+       só tipo). Cap de 1 par aqui mesmo, pelo mesmo motivo do mamífero:
+       sem isso a tabela permite 4/6/8 asas (uma hidra alada), que não é o
+       que foi pedido. */
     asaTipo: { restrict: ["mb"] },
+    asaQtd: { restrict: [0, 2] },
     cdaTipo: { restrict: ["es", "nu", "pr", "lm"] },
   },
   AMP: { // anfíbio: pele mucosa, ovíparo, ligado à água, crânio ossificado
@@ -463,6 +471,21 @@ const CLASSE_TRAVAS = {
    MIC) não têm membro nenhum por trava de reino. */
 const ORCAMENTO_MEMBROS = { MAM: 4, AVE: 4, REP: 4, AMP: 4, PSC: 0, INS: 8, MOL: 8 };
 const CLASSES_TETRAPODES = new Set(["MAM", "AVE", "REP", "AMP"]);
+/* v31 — pedido explícito do usuário: dragão OCIDENTAL, 4 pernas + 2 asas
+   (hexápode). Nenhum vertebrado real tem esse plano corporal — toda asa de
+   vertebrado é o par de membros superiores modificado, por isso o teto de
+   4 membros "ao todo" da v29. O dragão ocidental é justamente a exceção
+   mitológica clássica a essa regra (é o argumento biológico mais comum
+   contra a existência de dragões "de verdade"), e só ele: a asa deixa de
+   consumir o orçamento de pernas/braços exclusivamente para a classe REP,
+   virando um SEXTO membro à parte. Isso não afeta MAM/AVE/AMP — para eles
+   a asa continua sendo o braço modificado. Dentro de REP, os dois planos
+   corporais coexistem: locPrimario V/S + memInf 2I ainda sai wyvern (asa
+   substituindo o braço, 4 membros no total); locPrimario Q + memInf 4I com
+   asa dá o dragão ocidental (6 membros no total). Qual dos dois sai depende
+   do sorteio — quem quer garantir um ou outro define locPrimario e asaQtd
+   manualmente. */
+const CLASSES_ASA_INDEPENDENTE = new Set(["REP"]);
 
 /* Mescla duas restrições: `fixed` prevalece, `restrict` vira interseção,
    `exclude` vira união. Se a interseção esvaziar, mantém a mais específica
@@ -647,7 +670,7 @@ function runSpeciesSteps(cur, isPrimordialIntent) {
        corporal alado: par superior virou asa, e sobram no máximo duas
        pernas. Resolvido aqui (Passo 6) e não no passo da asa, para que a
        asa possa ser concedida sem reescrever membro depois. */
-    if (CLASSES_TETRAPODES.has(g.classe) && (g.locPrimario === "V" || g.locPrimario === "P")) {
+    if (CLASSES_TETRAPODES.has(g.classe) && !CLASSES_ASA_INDEPENDENTE.has(g.classe) && (g.locPrimario === "V" || g.locPrimario === "P")) {
       g.memSup = "0S";
       if (numMembros(g.memInf) > 2) g.memInf = "2I";
     }
@@ -837,7 +860,7 @@ function runSpeciesSteps(cur, isPrimordialIntent) {
      I): assim um ciclo de deriva barato nunca reescreve o plano corporal de
      graça — para virar alado, a linhagem primeiro tem que pagar a mudança
      estrutural nos membros. */
-  if (CLASSES_TETRAPODES.has(g.classe) && g.classe !== "AVE") {
+  if (CLASSES_TETRAPODES.has(g.classe) && g.classe !== "AVE" && !CLASSES_ASA_INDEPENDENTE.has(g.classe)) {
     const supAtual = Number(String(g.memSup).replace("S", "")) || 0;
     const infAtual = Number(String(g.memInf).replace("I", "")) || 0;
     if (supAtual > 0 || infAtual > 2) asaOpts = { fixed: 0 };
