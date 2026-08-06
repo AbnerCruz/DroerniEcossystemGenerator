@@ -21,7 +21,7 @@
    até onde ir — a bateria completa leva minutos num celular.
    ============================================================ */
 
-const TESTES_VERSAO = "v29";
+const TESTES_VERSAO = "v32";
 
 /* ---------- micro-framework ---------- */
 function criarColetor() {
@@ -706,6 +706,241 @@ async function suiteMaterializar({ suite, chk, info }, prog) {
   prog(1);
 }
 
+/* ---------- suítes v32 ---------- */
+
+async function suiteBacteriaDieta({ suite, chk, info }, prog) {
+  suite("R · Bactéria: dieta e metabolismo (v32)");
+  let semDieta = 0, incoerente = 0;
+  const dietas = {};
+  const N = 1500;
+  for (let i = 0; i < N; i++) {
+    const g = buildSpecies(null, {}, true).g;
+    if (!g.dieBase || g.dieBase === "0") semDieta++;
+    if (g.metabolismoTipo !== g.dieBase) incoerente++;
+    dietas[g.dieBase] = (dietas[g.dieBase] || 0) + 1;
+    if (i % 300 === 0) prog(0.5 * (i / N));
+  }
+  chk("R1 nenhuma bactéria sai sem tipo de alimentação", semDieta === 0, `${semDieta} de ${N}`);
+  chk("R2 metabolismo declarado bate com a dieta declarada", incoerente === 0,
+    `${incoerente} de ${N} com metabolismo contradizendo dieBase`);
+  info("R3 dietas bacterianas sorteadas", Object.entries(dietas).map(([k, v]) => `${k}:${v}`).join(" "));
+
+  // a trava também precisa valer DEPOIS da deriva, não só na construção
+  let foraDaTrava = 0, amostras = 0;
+  for (let i = 0; i < 200; i++) {
+    const g = clonarGenoma(buildSpecies(null, {}, true).g);
+    g.isPrimordial = false;
+    let orc = 0;
+    for (let c = 0; c < 60; c++) { const r = aplicarCicloDeriva(g, orc, null); orc = r.orcamentoRestante; }
+    if (g.reino === "Ba") { amostras++; if (!["de", "qm", "ft"].includes(g.dieBase)) foraDaTrava++; }
+    if (i % 40 === 0) prog(0.5 + 0.5 * (i / 200));
+  }
+  chk("R4 a deriva não devolve dieta impossível à bactéria", foraDaTrava === 0,
+    `${foraDaTrava} fora da trava em ${amostras} bactérias derivadas`);
+  prog(1);
+}
+
+async function suiteEscala32({ suite, chk, info }, prog) {
+  suite("S · Peso e escala contínua (v32)");
+  /* O sintoma relatado era quantização: na v31 o porte mapeava para UM valor
+     de altura, então um porte inteiro produzia um punhado de pesos. */
+  const distintos = new Set();
+  for (let i = 0; i < 500; i++) distintos.add(calcularPesoCalorias(buildSpecies(null, { reino: "An", porte: "md" }, false).g).pesoKg.toPrecision(5));
+  chk("S1 altura deixou de ser quantizada por porte", distintos.size > 150,
+    `${distintos.size} pesos distintos em 500 animais de porte médio`);
+  prog(0.3);
+
+  let maxAn = 0, minBa = Infinity, maxPl = 0;
+  for (let i = 0; i < 3000; i++) {
+    const p = calcularPesoCalorias(buildSpecies(null, { reino: "An" }, false).g).pesoKg;
+    if (p > maxAn) maxAn = p;
+  }
+  for (let i = 0; i < 800; i++) {
+    const p = calcularPesoCalorias(buildSpecies(null, { reino: "Ba" }, true).g).pesoKg;
+    if (p < minBa) minBa = p;
+  }
+  for (let i = 0; i < 800; i++) {
+    const p = calcularPesoCalorias(buildSpecies(null, { reino: "Pl" }, false).g).pesoKg;
+    if (p > maxPl) maxPl = p;
+  }
+  prog(0.7);
+  chk("S2 nenhum animal passa da baleia-azul (190 t)", maxAn < 190000, `máximo ${fmtKg(maxAn)}`);
+  chk("S3 bactéria continua na casa do picograma", minBa < 1e-9, `mínimo ${fmtKg(minBa)}`);
+  info("S4 maior vegetal gerado", fmtKg(maxPl));
+
+  const base = { reino: "An", classe: "AVE", porte: "md", densidade: 5, tolHidrica: "me", tegTipo: "Pe", defBlindagem: 2 };
+  const semVoo = densidadeEfetiva({ ...base, locPrimario: "Q", asaQtd: 0 });
+  const comVoo = densidadeEfetiva({ ...base, locPrimario: "V", asaQtd: 2, asaFuncionalidade: 8 });
+  chk("S5 voador é menos denso que o mesmo corpo sem voo", comVoo < semVoo,
+    `${Math.round(comVoo)} vs ${Math.round(semVoo)} kg/m³`);
+  const aquatico = densidadeEfetiva({ ...base, locPrimario: "N", tolHidrica: "aq" });
+  chk("S6 aquático tende à flutuabilidade neutra", Math.abs(aquatico - 1030) < Math.abs(semVoo - 1030),
+    `${Math.round(aquatico)} kg/m³ (água = 1030)`);
+  prog(1);
+}
+
+async function suiteEscalonador({ suite, chk, info }, prog) {
+  suite("T · Escalonador de linhagens (v32)");
+  resetEventLog(); setLogVerbosidade("resumido");
+  const anterior = getConcorrenciaDeriva();
+  /* Concorrência baixada de propósito: é o que torna o teste do MECANISMO
+     possível. Se o número ainda fosse um teto populacional, o pool pararia
+     exatamente em 8 e o excedente seria extinto. */
+  setConcorrenciaDeriva(8);
+  const prim = buildSpecies(null, {}, true);
+  const node = {
+    id: "teste_sched", clado: prim.g.clado, g: prim.g, code: prim.code, auSurgimento: 0,
+    pais: [], filhos: [], primordialId: "teste_sched", ordem: 0, ciclosDecorridos: 0,
+    orcamento: 0, acumEstratoII: new Set(), historico: [], isPrimordial: true, extinta: false, massaId: null,
+  };
+  const filhas = await derivarLinhagem(node, 400, () => {}, (f) => prog(0.85 * f));
+  setConcorrenciaDeriva(anterior);
+
+  chk("T1 o pool de linhagens ultrapassa a concorrência", (filhas.linhagensAoFinal || 0) > 8,
+    `${filhas.linhagensAoFinal} linhagens com concorrência 8`);
+  chk("T2 nenhuma extinção por saturação de linhagens", (filhas.extintasPorSaturacao || 0) === 0);
+  chk("T3 a deriva não extingue ninguém por conta própria",
+    filhas.every((n) => !n.extinta), "extinção agora só vem da seleção natural populacional");
+  chk("T4 a concorrência é configurável e volta ao valor anterior",
+    setConcorrenciaDeriva(128) === 128 && getConcorrenciaDeriva() === 128 && setConcorrenciaDeriva(anterior) === anterior);
+  const est = estimarTempoDeriva(100, 1);
+  chk("T5 a estimativa de tempo é o orçamento real, não um chute",
+    Math.abs(est.segundos - (100 * getConcorrenciaDeriva() * calibrarCustoDeriva() / 1000)) < 1e-6, est.texto);
+  info("T6 espécies geradas em 400 ciclos com concorrência 8", String(filhas.length));
+  resetEventLog();
+  prog(1);
+}
+
+async function suiteBifurcacao({ suite, chk, info }, prog) {
+  suite("U · Trilha bifurcando e multi-alvo (v32)");
+  resetEventLog(); setLogVerbosidade("resumido");
+  const semClado = (c) => String(c).replace(/TAX:([A-Za-z]+)\.([A-Za-z]+)\.[A-Za-z]+/, "TAX:$1.$2.___");
+
+  // (1) a trilha de alvo único agora deixa linhagens-irmãs pelo caminho
+  let bifurcacoes = 0, laterais = 0, exatos = 0, N = 3;
+  for (let i = 0; i < N; i++) {
+    const alvo = buildSpecies(null, {}, false);
+    const r = await buscarTrilhaReversa(alvo.code, null, 2);
+    const { novos } = materializarTrilha(r, { auInicial: 0 });
+    const contagem = {};
+    for (const n of novos) for (const p of (n.pais || [])) contagem[p] = (contagem[p] || 0) + 1;
+    bifurcacoes += Object.values(contagem).filter((v) => v >= 2).length;
+    laterais += novos.filter((n) => n.ramoLateral).length;
+    const ultimo = novos[novos.length - 1];
+    if (ultimo && semClado(ultimo.code) === semClado(alvo.code)) exatos++;
+    prog(0.5 * ((i + 1) / N));
+  }
+  chk("U1 a trilha materializada bifurca (não é mais uma escada)", bifurcacoes > 0,
+    `${bifurcacoes} ponto(s) de bifurcação, ${laterais} ramo(s) lateral(is)`);
+  chk("U2 o ramo lateral não rouba o lugar do alvo no fim da trilha", exatos === N, `${exatos}/${N}`);
+
+  // (2) o motor multi-alvo
+  const alvos = [
+    serialize(buildSpecies(null, { reino: "An", classe: "REP" }, false).g),
+    serialize(buildSpecies(null, { reino: "An", classe: "REP" }, false).g),
+    serialize(buildSpecies(null, { reino: "Pl" }, false).g),
+  ];
+  const r = await gerarLinhagemMultiAlvo(alvos, { auInicial: 0, onProgress: (f) => prog(0.5 + 0.45 * f) });
+  chk("U3 vários DNAs-alvo produzem uma árvore só, ramificada", r.bifurcacoes >= 1,
+    `${r.novos.length} nós, ${r.bifurcacoes} bifurcação(ões) para ${r.alvos} alvos`);
+  chk("U4 todo alvo é atingido exatamente", r.relatorio.filter((x) => x.sucesso).length === r.alvos,
+    `${r.relatorio.filter((x) => x.sucesso).length}/${r.alvos}`);
+  chk("U5 os ramos seguintes ancoram num nó já existente", r.relatorio.slice(1).every((x) => x.ancoraClado),
+    r.relatorio.map((x) => x.ancoraClado || "tronco").join(" → "));
+  const porId = new Map(r.novos.map((n) => [n.id, n]));
+  chk("U6 elos íntegros em toda a linhagem ramificada",
+    r.novos.every((n) => {
+      if (!n.pais.length) return true;
+      const pai = porId.get(n.pais[0]);
+      return !pai || (pai.filhos.includes(n.id) && n.auSurgimento > pai.auSurgimento);
+    }));
+  resetEventLog();
+  prog(1);
+}
+
+async function suiteGeografia32({ suite, chk, info }, prog) {
+  suite("V · Geografia sorteada e editável (v32)");
+  const sorteios = gerarGeografiaAleatoria(12);
+  chk("V1 nenhuma massa sorteada sai sem domínio", sorteios.every((m) => m.dominios.length > 0));
+  chk("V2 nenhuma massa sorteada fica sem bioma habitável",
+    sorteios.every((r) => biomasDaMassa(criarMassaDeTerra(r.nome, r.dominios, r.biomasExcluidos)).length > 0));
+  prog(0.4);
+
+  /* A regra que justifica sortear FAIXA em vez de sortear domínios soltos:
+     uma massa polar não pode oferecer deserto quente. */
+  let incoerentes = 0;
+  for (let i = 0; i < 200; i++) {
+    for (const m of gerarGeografiaAleatoria(6)) {
+      if (m.faixa === "Polar" && m.dominios.includes("Quentes e Áridos")) incoerentes++;
+      if (m.faixa === "Equatorial" && m.dominios.includes("Frio e Gelo")) incoerentes++;
+    }
+  }
+  chk("V3 o sorteio nunca junta clima polar com clima quente na mesma massa", incoerentes === 0,
+    `${incoerentes} combinação(ões) incoerente(s) em 1200 massas`);
+  prog(0.7);
+
+  const m = criarMassaDeTerra("Teste", ["Temperados", "Aquáticos"], []);
+  const idOriginal = m.id;
+  const biomasAntes = m.divisoesBiomas.map((d) => d.biomaNome).join("|");
+  editarMassa(m, { nome: "Renomeada" });
+  chk("V4 editar preserva o id da massa (espécies não ficam órfãs)", m.id === idOriginal && m.nome === "Renomeada");
+  chk("V5 renomear não embaralha os biomas por divisão", m.divisoesBiomas.map((d) => d.biomaNome).join("|") === biomasAntes);
+
+  const polar = criarMassaDeTerra("Polar", ["Frio e Gelo"], []);
+  const quente = HABITAT_CODEX.find((b) => b.dominio === "Quentes e Áridos");
+  chk("V6 divisão recusa bioma fora dos domínios da massa",
+    quente ? definirBiomaDaDivisao(polar, 0, quente.nome) === false : true,
+    quente ? `tentou pôr "${quente.nome}" numa massa polar` : "sem bioma quente no códice");
+  chk("V7 divisão aceita bioma que a massa oferece",
+    definirBiomaDaDivisao(polar, 0, biomasDaMassa(polar)[0].nome) === true);
+  prog(1);
+}
+
+async function suiteFiltros({ suite, chk, info }, prog) {
+  suite("W · Filtros e linha do tempo (v32)");
+  chk("W1 há filtros declarados nos cinco grupos", FILTROS_ESPECIE.length >= 30 && new Set(FILTROS_ESPECIE.map((f) => f.grupo)).size === 5,
+    `${FILTROS_ESPECIE.length} filtros`);
+  chk("W2 todo filtro tem leitor, rótulo e tipo", FILTROS_ESPECIE.every((f) => typeof f.ler === "function" && f.label && f.tipo));
+  const ctxVazio = { idx: new Map(), massas: [], massaIdx: new Map() };
+  chk("W3 todo filtro de escolha múltipla devolve opções",
+    FILTROS_ESPECIE.filter((f) => f.tipo === "multi").every((f) => Array.isArray(f.opcoes(ctxVazio))));
+  prog(0.3);
+
+  const mk = (manual, extra = {}) => {
+    const g = buildSpecies(null, manual, manual.reino === "Ba").g;
+    return { id: "n" + Math.random(), clado: g.clado, g, code: serialize(g), auSurgimento: 0, pais: [], filhos: [], extinta: false, massaId: null, ...extra };
+  };
+  const amostra = [mk({ reino: "An" }), mk({ reino: "Pl" }), mk({ reino: "Ba" })];
+  chk("W4 sem filtro ativo nada é filtrado", filtrarEspecies(amostra, { campos: {}, texto: "" }, ctxVazio).length === 3);
+  chk("W5 filtro multi combina por OU dentro do campo",
+    filtrarEspecies(amostra, { campos: { reino: ["An", "Pl"] } }, ctxVazio).length === 2);
+  chk("W6 bool sem valor não filtra (três estados, não checkbox)",
+    filtrarEspecies(amostra, { campos: { temAsa: undefined } }, ctxVazio).length === 3);
+  prog(0.6);
+
+  const futura = mk({ reino: "An" }, { auSurgimento: 100 });
+  const morta = mk({ reino: "An" }, { auSurgimento: 10, extinta: true, auExtincao: 20 });
+  const viva = mk({ reino: "An" }, { auSurgimento: 10, filhos: ["x"] });
+  chk("W7 o corte temporal exclui quem ainda não surgiu",
+    filtrarEspecies([futura], { au: 50 }, ctxVazio).length === 0);
+  chk("W8 o corte temporal exclui quem já se extinguiu",
+    filtrarEspecies([morta], { au: 50 }, ctxVazio).length === 0);
+  /* Mudança de semântica da v32: a espécie-mãe deixou de "morrer" ao ter
+     filhos, porque o escalonador agora a mantém derivando como linhagem
+     irmã em ~60% das especiações. */
+  chk("W9 espécie com descendência e sem extinção continua viva",
+    auFimDeVida(viva, new Map()) === Infinity && filtrarEspecies([viva], { au: 50 }, ctxVazio).length === 1);
+
+  const pai = mk({ reino: "Ba" }, { id: "pa", filhos: ["fi"] });
+  const filho = mk({ reino: "An" }, { id: "fi", pais: ["pa"], auSurgimento: 1 });
+  const idx = buildIndex([pai, filho]);
+  const vis = idsVisiveisComFiltro([pai, filho], idx, { campos: { reino: ["An"] } }, { idx });
+  chk("W10 a árvore filtrada preserva os ancestrais do resultado",
+    vis.casam.size === 1 && vis.visiveis.has("pa") && vis.visiveis.has("fi"),
+    "sem os ancestrais, o galho que liga o resultado à raiz sumiria e o resultado sumiria junto");
+  prog(1);
+}
+
 const SUITES_TESTE = [
   { id: "seed", nome: "Seed e determinismo", fn: suiteSeed, peso: 2, nivel: "rapida" },
   { id: "fuzz", nome: "Fuzzing de entrada", fn: suiteFuzz, peso: 1, nivel: "rapida" },
@@ -718,6 +953,12 @@ const SUITES_TESTE = [
   { id: "membros", nome: "Orçamento de membros", fn: suiteMembros, peso: 3, nivel: "completa" },
   { id: "diversidade", nome: "Diversidade de reinos", fn: suiteDiversidade, peso: 4, nivel: "completa" },
   { id: "materializar", nome: "Materializar trilha", fn: suiteMaterializar, peso: 4, nivel: "completa" },
+  { id: "bacteria", nome: "Bactéria: dieta e metabolismo", fn: suiteBacteriaDieta, peso: 3, nivel: "completa" },
+  { id: "escala32", nome: "Peso e escala contínua", fn: suiteEscala32, peso: 4, nivel: "completa" },
+  { id: "escalonador", nome: "Escalonador de linhagens", fn: suiteEscalonador, peso: 5, nivel: "completa" },
+  { id: "bifurcacao", nome: "Trilha bifurcando e multi-alvo", fn: suiteBifurcacao, peso: 5, nivel: "completa" },
+  { id: "geo32", nome: "Geografia sorteada e editável", fn: suiteGeografia32, peso: 2, nivel: "rapida" },
+  { id: "filtros", nome: "Filtros e linha do tempo", fn: suiteFiltros, peso: 2, nivel: "rapida" },
   { id: "performance", nome: "Performance neste aparelho", fn: suitePerformance, peso: 5, nivel: "completa" },
 ];
 

@@ -38,6 +38,34 @@ function App() {
   };
   const onRemoverDominio = (nome) => { removerDominioCustom(nome); setDominiosVersion((v) => v + 1); showToast(`Domínio "${nome}" removido.`); };
 
+  /* v32 — edição da geografia depois de confirmada. As três funções abaixo
+     mutam a massa NO LUGAR (o motor preserva o `id`, do qual dependem todas
+     as espécies e populações daquela massa) e depois trocam as referências
+     de `eras` para o React enxergar a mudança — mesmo padrão já usado quando
+     a seleção natural muta genomas. */
+  const aoEditarMassa = (massaId, mudancas) => {
+    const massa = massaIdx.get(massaId);
+    if (!massa) return;
+    editarMassa(massa, mudancas);
+    setEras((prev) => prev.map((e) => ({ ...e, massas: e.massas.map((m) => ({ ...m })) })));
+  };
+  const aoResortearBiomas = (massaId) => {
+    const massa = massaIdx.get(massaId);
+    if (!massa) return;
+    resortearBiomasDaMassa(massa);
+    setEras((prev) => prev.map((e) => ({ ...e, massas: e.massas.map((m) => ({ ...m })) })));
+    showToast(`Biomas de "${massa.nome}" resorteados.`);
+  };
+  const aoDefinirBiomaDivisao = (massaId, indice, biomaNome) => {
+    const massa = massaIdx.get(massaId);
+    if (!massa) return;
+    if (!definirBiomaDaDivisao(massa, indice, biomaNome)) {
+      showToast("Esse bioma não existe nos domínios climáticos desta massa.");
+      return;
+    }
+    setEras((prev) => prev.map((e) => ({ ...e, massas: e.massas.map((m) => ({ ...m })) })));
+  };
+
   const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(""), 2600); };
   const eventLog = useMemo(() => __eventLog, [logVersion]);
   const idx = useMemo(() => buildIndex(nodes), [nodes]);
@@ -168,7 +196,13 @@ function App() {
     setDerivando(false);
     showToast(
       `${novos.length} nova(s) espécie(s) derivada(s) de ${node.clado}, ${novaPopulacao.length} indivíduo(s) espalhados.` +
-      (filhas.extintasPorSaturacao > 0 ? ` ${filhas.extintasPorSaturacao} linhagem(ns) perdida(s) por concorrência (teto de ${MAX_LINHAGENS_ATIVAS} ramificações simultâneas).` : "")
+      /* v32 — não existe mais extinção por saturação de linhagens; o que
+         pode acontecer agora é o orçamento global de ciclos acabar antes de
+         todas as linhagens terminarem, e isso é informação útil (dá pra
+         rodar mais ciclos), não uma perda. */
+      (filhas.orcamentoEsgotado && filhas.linhagensComCiclosSobrando > 0
+        ? ` ${filhas.linhagensComCiclosSobrando} linhagem(ns) ficaram estáveis por falta de orçamento de ciclos — rode a deriva de novo pra continuar de onde parou.`
+        : "")
     );
   };
   /* v23 — gerar um indivíduo abre imediatamente o painel dedicado dele
@@ -301,7 +335,7 @@ function App() {
           <div className="w-9 h-9 shrink-0 rounded-full border border-emerald-700 flex items-center justify-center text-emerald-500"><GitBranch size={18} /></div>
           <div className="min-w-0">
             <h1 className="font-display text-lg sm:text-xl font-semibold tracking-tight text-stone-100 leading-none">Droerni · Ecossistema DRN2</h1>
-            <p className="font-data text-[10px] text-stone-500 tracking-wider truncate">v31 · dragão ocidental (hexápode) liberado em réptil</p>
+            <p className="font-data text-[10px] text-stone-500 tracking-wider truncate">v32 · trilha bifurca, filtros, linha do tempo, sem teto de linhagens</p>
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
@@ -320,7 +354,7 @@ function App() {
             o que tornava o resumo da geografia código morto — depois de
             confirmar, o usuário perdia a visão das massas de terra do mundo. */}
         {(faseAtual === 1 || eras.length > 0) && (
-          <FaseGeografia onConfirmar={confirmarGeografia} jaConfirmada={faseGeoConfirmada} eras={eras} dominiosDisponiveis={dominiosDisponiveis} dominiosCustom={DOMINIOS_CUSTOM} onAdicionarDominio={onAdicionarDominio} onRemoverDominio={onRemoverDominio} />
+          <FaseGeografia onConfirmar={confirmarGeografia} jaConfirmada={faseGeoConfirmada} eras={eras} dominiosDisponiveis={dominiosDisponiveis} dominiosCustom={DOMINIOS_CUSTOM} onAdicionarDominio={onAdicionarDominio} onRemoverDominio={onRemoverDominio} onEditarMassa={aoEditarMassa} onResortearBiomas={aoResortearBiomas} onDefinirBiomaDivisao={aoDefinirBiomaDivisao} />
         )}
 
         {faseGeoConfirmada && (
@@ -410,7 +444,7 @@ function App() {
 
       {patchnotesAberto && <PainelPatchnotes onFechar={() => setPatchnotesAberto(false)} />}
 
-      <footer className="max-w-4xl mx-auto px-4 sm:px-6 pb-10 pt-4 text-[10px] text-stone-700 font-data">DRN2 v31 · Droerni — réptil pode ter 4 pernas + asas (dragão ocidental)</footer>
+      <footer className="max-w-4xl mx-auto px-4 sm:px-6 pb-10 pt-4 text-[10px] text-stone-700 font-data">DRN2 v32 · Droerni — trilha multi-alvo, geografia editável, 33 filtros</footer>
     </div>
   );
 }

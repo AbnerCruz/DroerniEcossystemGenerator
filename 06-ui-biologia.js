@@ -31,8 +31,19 @@ function BarraProgresso({ fracao, label }) {
 
 function ModalGerarEcossistema({ eraAtual, onGerar, onFechar, gerando, progresso, progressoLabel }) {
   const [qtd, setQtd] = useState("5");
-  const [ciclosMin, setCiclosMin] = useState("15");
-  const [ciclosMax, setCiclosMax] = useState("35");
+  /* v32 — os padrões subiram de 15-35 para 120-200 ciclos. Medido nesta
+     versão: com 35 ciclos a árvore para com ~11 nós, todos bactéria, porque
+     a linhagem não teve tempo de atravessar a barreira de reino; com 150
+     ciclos saem ~780 espécies e a proporção de bactéria cai para ~23%, que é
+     o mundo povoado que se quer. O que tornava esse padrão inviável antes
+     era não saber quanto ia demorar — e a estimativa desta versão passou a
+     ser exata (ver estimarTempoDeriva). */
+  const [ciclosMin, setCiclosMin] = useState("120");
+  const [ciclosMax, setCiclosMax] = useState("200");
+  const [concorrencia, setConcorrencia] = useState(String(getConcorrenciaDeriva()));
+  /* v32 — trilhas dirigidas geradas JUNTO com os primordiais, em vez de
+     precisarem de uma segunda operação isolada. Um DNA-alvo por linha. */
+  const [alvosTexto, setAlvosTexto] = useState("");
 
   /* Ciclos deixaram de ter um teto artificial. Ele existia só pra evitar
      travar a aba — mas limitar ciclos limita quantas chances de
@@ -46,7 +57,12 @@ function ModalGerarEcossistema({ eraAtual, onGerar, onFechar, gerando, progresso
   const cMin = Math.max(0, Number(ciclosMin) || 0);
   const cMax = Math.max(cMin, Number(ciclosMax) || cMin);
 
-  const gerar = () => onGerar(n, cMin, cMax);
+  const alvos = alvosTexto.split("\n").map((x) => x.trim()).filter(Boolean);
+  const alvosValidos = alvos.filter((a) => ehCodigoDRN2(a));
+  const gerar = () => {
+    setConcorrenciaDeriva(Number(concorrencia) || 64);
+    onGerar(n, cMin, cMax, alvosValidos);
+  };
 
   return (
     <div className="fixed inset-0 z-40 bg-black/70 flex items-center justify-center p-4">
@@ -68,6 +84,29 @@ function ModalGerarEcossistema({ eraAtual, onGerar, onFechar, gerando, progresso
               <div><label className="text-[10px] uppercase text-stone-500 font-mono">Ciclos de deriva (mín)</label><CampoNumero value={ciclosMin} onChange={setCiclosMin} /></div>
               <div><label className="text-[10px] uppercase text-stone-500 font-mono">Ciclos de deriva (máx)</label><CampoNumero value={ciclosMax} onChange={setCiclosMax} /></div>
             </div>
+            <div>
+              <label className="text-[10px] uppercase text-stone-500 font-mono">Linhagens simultâneas (concorrência)</label>
+              <input type="range" min="8" max="256" step="8" value={concorrencia}
+                onChange={(e) => setConcorrencia(e.target.value)} className="w-full accent-emerald-600" />
+              <div className="text-[10px] text-stone-500 font-data text-center">{concorrencia} linhagens por rodada</div>
+              <p className="text-[10px] text-stone-600 mt-0.5">
+                Quantas linhagens avançam por rodada — não é mais um teto de população: nenhuma
+                linhagem é extinta para caber. Mais concorrência = árvore maior e mais ramificada,
+                e proporcionalmente mais tempo de processamento.
+              </p>
+            </div>
+
+            <div>
+              <label className="text-[10px] uppercase text-stone-500 font-mono">DNAs-alvo para gerar junto (opcional, 1 por linha)</label>
+              <textarea value={alvosTexto} onChange={(e) => setAlvosTexto(e.target.value)} rows={2}
+                placeholder={"DRN2-TAX:An.REP.Xyz-MOR:...\nDRN2-TAX:An.AVE.Abc-MOR:..."}
+                className="w-full text-[10px] font-mono bg-stone-950 border border-stone-800 rounded px-2 py-1.5 text-stone-300 placeholder-stone-600 focus:border-emerald-700 focus:outline-none" />
+              <p className="text-[10px] text-stone-600 mt-0.5">
+                Cada alvo vira um ramo de uma linhagem própria, gerada na mesma leva dos
+                primordiais. {alvos.length > 0 && `${alvosValidos.length} de ${alvos.length} linha(s) são códigos DRN2 válidos.`}
+              </p>
+            </div>
+
             <p className="text-[10px] text-stone-600">Cada primordial nasce em uma massa aleatória da era atual e deriva um nº aleatório de ciclos dentro da faixa acima. Contradições de coerência são corrigidas automaticamente, tanto na criação quanto a cada ciclo de deriva. Sem teto de ciclos — a geração roda em segundo plano com barra de progresso.</p>
             {/* v26 — estimativa de tempo antes de rodar. A deriva longa é
                 pesada no celular (600 ciclos ≈ 20s mesmo depois da otimização
@@ -249,16 +288,28 @@ function idsVisiveisSoVivas(nodes, idx) {
   return visiveis;
 }
 
-function ArvoreGenealogicaGlobal({ nodes, idx, individuals, onAbrir, ocultarExtintas }) {
+function ArvoreGenealogicaGlobal({ nodes, idx, individuals, onAbrir, ocultarExtintas, filtroEstado, ctxFiltro }) {
   const individuosPorEspecie = useMemo(() => {
     const m = {};
     for (const ind of individuals) m[ind.especieId] = (m[ind.especieId] || 0) + 1;
     return m;
   }, [individuals]);
-  const visiveis = useMemo(() => (ocultarExtintas ? idsVisiveisSoVivas(nodes, idx) : null), [nodes, idx, ocultarExtintas]);
+  /* v32 — o conjunto visível agora é a INTERSEÇÃO de duas regras que seguem
+     o mesmo princípio: mostrar quem casa mais os ancestrais que ligam esses
+     nós à raiz. "Só vivas" (v29) continua igual; o filtro geral usa
+     idsVisiveisComFiltro. Quando os dois estão ligados, um nó precisa passar
+     nos dois conjuntos. */
+  const visiveis = useMemo(() => {
+    const porVida = ocultarExtintas ? idsVisiveisSoVivas(nodes, idx) : null;
+    const resultadoFiltro = filtroEstado ? idsVisiveisComFiltro(nodes, idx, filtroEstado, ctxFiltro) : null;
+    const porFiltro = resultadoFiltro ? resultadoFiltro.visiveis : null;
+    if (!porVida) return porFiltro;
+    if (!porFiltro) return porVida;
+    return new Set([...porVida].filter((id) => porFiltro.has(id)));
+  }, [nodes, idx, ocultarExtintas, filtroEstado, ctxFiltro]);
   const primordiais = nodes.filter((n) => n.isPrimordial && (!visiveis || visiveis.has(n.id)));
   if (primordiais.length === 0) {
-    return <div className="text-xs text-stone-600 py-6 text-center">Nenhuma linhagem com espécie viva. Desligue o filtro para ver as extintas.</div>;
+    return <div className="text-xs text-stone-600 py-6 text-center">Nenhuma linhagem passa nos filtros atuais. Afrouxe os filtros ou desligue o corte da linha do tempo.</div>;
   }
   return (
     <div className="space-y-3">
@@ -282,7 +333,14 @@ function PainelBiologia({ eras, nodes, setNodes, individuals, setIndividuals, an
   const [modalEcossistema, setModalEcossistema] = useState(false);
   const [modalSelecaoNatural, setModalSelecaoNatural] = useState(false);
   const [visao, setVisao] = useState("arvore"); // "arvore" | "lista" — árvore é o padrão pedido
-  const [buscaDna, setBuscaDna] = useState(""); // Fase 4, item 7.2
+  /* v32 — a busca por trecho de DNA (v29) virou UM campo dentro do sistema
+     de filtros: mesmo comportamento, agora combinável com todo o resto. */
+  const [filtros, setFiltros] = useState({ texto: "", campos: {} });
+  const [auCorte, setAuCorte] = useState(null); // slider de eras; null = sem corte
+  const [modalTrilha, setModalTrilha] = useState(false);
+  const [rodandoTrilha, setRodandoTrilha] = useState(false);
+  const [progressoTrilha, setProgressoTrilha] = useState(0);
+  const [relatorioTrilha, setRelatorioTrilha] = useState(null);
   /* v29 — a maioria das espécies de uma simulação longa está extinta, e na
      árvore isso deixava a espécie viva praticamente impossível de achar no
      meio dos mortos. O filtro é opt-in e não apaga nada: só esconde. */
@@ -310,11 +368,11 @@ function PainelBiologia({ eras, nodes, setNodes, individuals, setIndividuals, an
      populacional roda um lote de ciclos automaticamente sobre o
      ecossistema recém-criado — "gerar espécies" deixa de ser um passo
      isolado da simulação de indivíduos/seleção natural. */
-  const gerarEcossistema = async (n, cMin, cMax) => {
+  const gerarEcossistema = async (n, cMin, cMax, alvosTrilha = []) => {
     setGerando(true); setProgresso(0);
     const novos = [];
     let tetoAtingido = false;
-    let extintasPorSaturacao = 0;
+    let linhagensEstaveis = 0;
     for (let i = 0; i < n; i++) {
       setProgressoLabel(`Primordial ${i + 1} de ${n}…`);
       const massa = eraAtual.massas[Math.floor(Math.random() * eraAtual.massas.length)];
@@ -332,10 +390,27 @@ function PainelBiologia({ eras, nodes, setNodes, individuals, setIndividuals, an
           setProgresso((i + fracaoLocal) / n);
         });
         if (filhas.tetoAtingido) tetoAtingido = true;
-        extintasPorSaturacao += filhas.extintasPorSaturacao || 0;
+        linhagensEstaveis += (filhas.orcamentoEsgotado ? (filhas.linhagensComCiclosSobrando || 0) : 0);
       }
       setProgresso((i + 1) / n);
     }
+    /* v32 — TRILHAS DIRIGIDAS NA MESMA LEVA. Antes, uma trilha só podia
+       entrar no mundo por uma operação separada, depois de o ecossistema já
+       existir; agora os DNAs-alvo colados no modal viram linhagens
+       ramificadas geradas junto com os primordiais, e entram no mesmo lote
+       de população e de seleção natural que todo o resto. */
+    if (alvosTrilha && alvosTrilha.length) {
+      setProgressoLabel(`Gerando ${alvosTrilha.length} linhagem(ns) dirigida(s) por DNA-alvo…`);
+      const massaTrilha = eraAtual.massas[Math.floor(Math.random() * eraAtual.massas.length)];
+      const rt = await gerarLinhagemMultiAlvo(alvosTrilha, {
+        origem: null,
+        massaId: massaTrilha?.id || null,
+        auInicial: eraAtual.auInicio,
+        onProgress: (f) => setProgresso(f),
+      });
+      for (const no of rt.novos) novos.push(no);
+    }
+
     setNodes((prev) => [...prev, ...novos]);
 
     // população automática pra cada espécie nova
@@ -365,7 +440,8 @@ function PainelBiologia({ eras, nodes, setNodes, individuals, setIndividuals, an
     showToast(
       `Ecossistema gerado: ${n} primordial(is), ${novos.length} espécie(s) no total, ${novosIndividuos.length} indivíduo(s) espalhados pelo mundo.` +
       (tetoAtingido ? " Teto de espécies por linhagem atingido — a deriva parou antes do fim." : "") +
-      (extintasPorSaturacao > 0 ? ` ${extintasPorSaturacao} linhagem(ns) perdida(s) por concorrência (teto de ${MAX_LINHAGENS_ATIVAS} ramificações simultâneas).` : "") +
+      (linhagensEstaveis > 0 ? ` ${linhagensEstaveis} linhagem(ns) ficaram estáveis por falta de orçamento de ciclos (nenhuma foi extinta por isso).` : "") +
+
       ` Seleção natural: ${resumo.colisoes} colisão(ões) de população, ${resumo.mortes} morte(s), ${resumo.nascimentos} nascimento(s), ${resumo.migracoes} migração(ões).`
     );
   };
@@ -397,11 +473,62 @@ function PainelBiologia({ eras, nodes, setNodes, individuals, setIndividuals, an
     );
   };
 
+  /* v32 — MOTOR DE TRILHA MULTI-ALVO.
+     Roda gerarLinhagemMultiAlvo e injeta os nós no mundo. Quando a origem é
+     um nó já existente, o motor devolve os filhos já com `pais` apontando
+     pra ele — mas o `filhos` do nó de origem é mutado dentro do motor, e o
+     React só vê isso se as referências forem trocadas; daí o map de cópia
+     rasa no fim, mesmo padrão já usado pela seleção natural. */
+  const gerarTrilhaMultiAlvo = async ({ alvos, origemId, massaId, auInicial }) => {
+    setRodandoTrilha(true); setProgressoTrilha(0); setRelatorioTrilha(null);
+    const origem = origemId ? nodes.find((n) => n.id === origemId) : null;
+    const r = await gerarLinhagemMultiAlvo(alvos, {
+      origem, massaId, auInicial,
+      onProgress: (f) => setProgressoTrilha(f),
+    });
+    if (r.novos.length) {
+      setNodes((prev) => [...prev.map((n) => ({ ...n })), ...r.novos]);
+      setAnoAtual((a) => Math.max(a, ...r.novos.map((n) => n.auSurgimento)));
+    }
+    setRelatorioTrilha(r.relatorio);
+    setRodandoTrilha(false);
+    onLog();
+    const exatos = r.relatorio.filter((x) => x.sucesso).length;
+    showToast(
+      r.novos.length
+        ? `Linhagem gerada: ${r.novos.length} espécie(s), ${r.bifurcacoes} ponto(s) de bifurcação, ${exatos} de ${r.alvos} alvo(s) batendo 100%.`
+        : "Nenhuma trilha pôde ser materializada — veja o relatório no painel."
+    );
+  };
+
+  /* Contexto que os filtros usam para ler geografia (massa, domínio, bioma
+     viável) sem precisar receber isso campo a campo. */
+  const ctxFiltro = useMemo(() => ({
+    idx,
+    massas: eraAtual?.massas || [],
+    massaIdx: new Map((eraAtual?.massas || []).map((m) => [m.id, m])),
+  }), [idx, eraAtual]);
+
+  /* O corte temporal do slider entra no MESMO estado de filtro que o resto —
+     assim "réptil alado vivo em AU 4.200 na massa X" é uma pergunta só. */
+  const estadoFiltroCompleto = useMemo(
+    () => ({ ...filtros, au: Number.isFinite(auCorte) ? auCorte : undefined }),
+    [filtros, auCorte]
+  );
+  const nodesFiltrados = useMemo(
+    () => filtrarEspecies(nodes, estadoFiltroCompleto, ctxFiltro),
+    [nodes, estadoFiltroCompleto, ctxFiltro]
+  );
+  const temFiltro = contarFiltrosAtivos(estadoFiltroCompleto) > 0;
+
   return (
     <Section title="Fase 3 · Biologia" accent="text-emerald-500" right={<span className="text-[10px] font-mono text-stone-500 uppercase tracking-wider">Ano atual: <span className="text-emerald-500">{fmtAU(anoAtual)}</span></span>}>
       <div className="flex flex-wrap gap-2 mb-4">
         <BotaoPrimario onClick={() => setModalEcossistema(true)}><Sparkles size={12} className="inline -mt-0.5 mr-1" />Gerar Ecossistema</BotaoPrimario>
         <button onClick={onCriarPrimordial} className="text-[11px] font-mono uppercase text-stone-400 hover:text-emerald-400 border border-stone-800 rounded px-3 py-2"><Dices size={12} className="inline -mt-0.5 mr-1" />Criar Primordial Manualmente</button>
+        <button onClick={() => { setRelatorioTrilha(null); setModalTrilha(true); }} className="text-[11px] font-mono uppercase text-stone-400 hover:text-emerald-400 border border-stone-800 rounded px-3 py-2">
+          <GitBranch size={12} className="inline -mt-0.5 mr-1" />Motor de Trilha (multi-DNA)
+        </button>
         {nodes.length > 1 && (
           <button onClick={() => setModalSelecaoNatural(true)} className="text-[11px] font-mono uppercase text-stone-400 hover:text-emerald-400 border border-stone-800 rounded px-3 py-2"><GitBranch size={12} className="inline -mt-0.5 mr-1" />Rodar Seleção Natural</button>
         )}
@@ -411,36 +538,16 @@ function PainelBiologia({ eras, nodes, setNodes, individuals, setIndividuals, an
 
       {primordiais.length > 0 && (
         <>
-          {/* Fase 4, item 7.2 — busca por substring do código DNA (case-insensitive),
-              filtro simples sobre node.code, sem decodificar nada (diferente da busca
-              por seed). Com termo digitado, mostra uma lista plana dos resultados em
-              vez da árvore/lista agrupada por primordial. */}
-          <div className="mb-3">
-            <input
-              type="text"
-              value={buscaDna}
-              onChange={(e) => setBuscaDna(e.target.value)}
-              placeholder="Buscar por trecho do DNA (ex.: TAX:An.MAM...)"
-              className="w-full text-[11px] font-mono bg-stone-900 border border-stone-800 rounded px-2.5 py-1.5 text-stone-300 placeholder-stone-600 focus:border-emerald-700 focus:outline-none"
-            />
-          </div>
+          <SliderEras nodes={nodes} eras={eras} anoAtual={anoAtual} au={auCorte} setAu={setAuCorte} />
 
-          {buscaDna.trim() ? (
-            (() => {
-              const termo = buscaDna.trim().toLowerCase();
-              const resultados = nodes.filter((n) => n.code.toLowerCase().includes(termo) && (!ocultarExtintas || !n.extinta));
-              return resultados.length === 0 ? (
-                <div className="text-xs text-stone-600 py-6 text-center">Nenhuma espécie com esse trecho de DNA.</div>
-              ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  {resultados.map((n) => (
-                    <CardEspecie key={n.id} node={n} onClick={() => onAbrirViewer(n.id)} individuosCount={individuals.filter((i) => i.especieId === n.id).length} />
-                  ))}
-                </div>
-              );
-            })()
-          ) : (
-          <>
+          <PainelFiltros
+            estado={filtros}
+            setEstado={setFiltros}
+            ctx={ctxFiltro}
+            totalNodes={nodes.length}
+            totalVisiveis={nodesFiltrados.length}
+          />
+
           <div className="flex items-center gap-1.5 mb-3 flex-wrap">
             <button onClick={() => setVisao("arvore")} className={`text-[10px] font-mono uppercase px-2.5 py-1 rounded border ${visao === "arvore" ? "border-emerald-700 bg-emerald-950/50 text-emerald-400" : "border-stone-800 text-stone-500 hover:text-stone-300"}`}>
               <GitBranch size={11} className="inline -mt-0.5 mr-1" />Árvore Genealógica
@@ -454,33 +561,54 @@ function PainelBiologia({ eras, nodes, setNodes, individuals, setIndividuals, an
             </button>
           </div>
 
-          {visao === "arvore" ? (
-            <ArvoreGenealogicaGlobal nodes={nodes} idx={idx} individuals={individuals} onAbrir={onAbrirViewer} ocultarExtintas={ocultarExtintas} />
+          {nodesFiltrados.length === 0 ? (
+            <div className="text-xs text-stone-600 py-6 text-center">Nenhuma espécie passa nos filtros atuais.</div>
+          ) : visao === "arvore" ? (
+            /* Com filtro ativo, a árvore mostra os aprovados MAIS os
+               ancestrais deles (senão os galhos que ligam o resultado à raiz
+               somem e o resultado some junto) — mesma regra que o filtro
+               "só vivas" da v29 já usava, agora generalizada em
+               idsVisiveisComFiltro. */
+            <ArvoreGenealogicaGlobal
+              nodes={nodes}
+              idx={idx}
+              individuals={individuals}
+              onAbrir={onAbrirViewer}
+              ocultarExtintas={ocultarExtintas}
+              filtroEstado={temFiltro ? estadoFiltroCompleto : null}
+              ctxFiltro={ctxFiltro}
+            />
           ) : (
-            <div className="space-y-4">
-              {primordiais.map((prim) => {
-                const linhagem = nodes.filter((n) => n.primordialId === prim.id && (!ocultarExtintas || !n.extinta));
-                if (linhagem.length === 0) return null;
-                return (
-                  <div key={prim.id}>
-                    <div className="text-[10px] uppercase tracking-widest text-stone-600 font-mono mb-1.5">{prim.clado} · {linhagem.length} espécie(s) na linhagem</div>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                      {linhagem.map((n) => (
-                        <CardEspecie key={n.id} node={n} onClick={() => onAbrirViewer(n.id)} individuosCount={individuals.filter((i) => i.especieId === n.id).length} />
-                      ))}
-                    </div>
-                  </div>
-                );
-              })}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {nodesFiltrados
+                .filter((n) => !ocultarExtintas || !n.extinta)
+                .slice(0, 400)
+                .map((n) => (
+                  <CardEspecie key={n.id} node={n} onClick={() => onAbrirViewer(n.id)} individuosCount={individuals.filter((i) => i.especieId === n.id).length} />
+                ))}
+              {nodesFiltrados.length > 400 && (
+                <div className="col-span-full text-[10px] text-stone-600 text-center py-2">
+                  Mostrando as 400 primeiras de {nodesFiltrados.length}. Aperte mais os filtros para chegar ao que procura.
+                </div>
+              )}
             </div>
-          )}
-          </>
           )}
         </>
       )}
 
       {modalEcossistema && <ModalGerarEcossistema eraAtual={eraAtual} onGerar={gerarEcossistema} onFechar={() => setModalEcossistema(false)} gerando={gerando} progresso={progresso} progressoLabel={progressoLabel} />}
       {modalSelecaoNatural && <ModalSelecaoNatural onRodar={rodarSelecaoNatural} onFechar={() => setModalSelecaoNatural(false)} rodando={rodandoSelecao} progresso={progressoSelecao} />}
+      {modalTrilha && (
+        <ModalTrilhaMultiAlvo
+          eraAtual={eraAtual}
+          nodesDisponiveis={nodes}
+          onGerar={gerarTrilhaMultiAlvo}
+          onFechar={() => setModalTrilha(false)}
+          rodando={rodandoTrilha}
+          progresso={progressoTrilha}
+          relatorio={relatorioTrilha}
+        />
+      )}
     </Section>
   );
 }

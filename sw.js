@@ -22,7 +22,7 @@
    inclusive instalado na tela inicial.
    ============================================================ */
 
-const VERSAO = "drn2-v31";
+const VERSAO = "drn2-v32";
 const CACHE_CASCA = `${VERSAO}-casca`;
 const CACHE_CDN = `${VERSAO}-cdn`;
 
@@ -46,6 +46,7 @@ const CASCA = [
   "./09-populacao-seed.js",
   "./10-app.js",
   "./11-testes.js",
+  "./12-filtros-ui.js",
   "./patchnotes-manifest.json",
   /* v28 — os .md dos patchnotes precisam entrar aqui explicitamente. O
      fetch deles é rede-primeiro-com-cache, então eles só ficariam guardados

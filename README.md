@@ -18,7 +18,7 @@ index.html               shell — carrega tudo via <script src>, em ordem
 08-patchnotes.js         painel de patchnotes (lê patchnotes-manifest.json)
 09-populacao-seed.js     IndividualViewer, prompt de imagem, busca por seed
 10-app.js                App() principal — junta tudo
-11-testes.js             bateria de testes embutida (ícone de frasco no cabeçalho)
+11-testes.js, 12-filtros-ui.js             bateria de testes embutida (ícone de frasco no cabeçalho)
 manifest.webmanifest     manifesto PWA (instalável, offline)
 sw.js                    service worker — casca rede-primeiro, CDN cache-primeiro
 icon-192.png             ícones do PWA (192, 512 e 512-maskable)

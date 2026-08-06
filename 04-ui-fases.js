@@ -114,7 +114,7 @@ function BarraFases({ faseAtual, geoOk, erasOk }) {
    climáticos). Ao confirmar, vira a Era 1 e desbloqueia a Fase 2.
    Bloqueio: não há como avançar com 0 massas.
    ============================================================ */
-function FaseGeografia({ onConfirmar, jaConfirmada, eras, dominiosDisponiveis, dominiosCustom, onAdicionarDominio, onRemoverDominio }) {
+function FaseGeografia({ onConfirmar, jaConfirmada, eras, dominiosDisponiveis, dominiosCustom, onAdicionarDominio, onRemoverDominio, onEditarMassa, onResortearBiomas, onDefinirBiomaDivisao }) {
   const [massas, setMassas] = useState([{ tempId: 1, nome: "Pangeia Primordial", dominios: [...(dominiosDisponiveis || DOMINIOS_CLIMATICOS)], biomasExcluidos: [] }]);
   const [nextId, setNextId] = useState(2);
   const [dominioExpandido, setDominioExpandido] = useState({}); // Fase 5, item 9.3 — `${tempId}:${dom}` -> bool
@@ -122,6 +122,8 @@ function FaseGeografia({ onConfirmar, jaConfirmada, eras, dominiosDisponiveis, d
   const [novoDominioAberto, setNovoDominioAberto] = useState(false);
   const [novoDominioNome, setNovoDominioNome] = useState("");
   const [novoDominioBiomas, setNovoDominioBiomas] = useState([]);
+  const [qtdSorteio, setQtdSorteio] = useState("4"); // v32 — geração aleatória
+  const [massaEmEdicao, setMassaEmEdicao] = useState(null); // v32 — edição pós-confirmação
   const listaDominios = dominiosDisponiveis || DOMINIOS_CLIMATICOS;
   const toggleBiomaNovoDominio = (nome) => setNovoDominioBiomas((b) => (b.includes(nome) ? b.filter((x) => x !== nome) : [...b, nome]));
   const criarDominio = () => {
@@ -150,16 +152,109 @@ function FaseGeografia({ onConfirmar, jaConfirmada, eras, dominiosDisponiveis, d
 
   const podeConfirmar = massas.length > 0 && massas.every((m) => m.nome.trim() && m.dominios.length > 0);
 
+  /* v32 — GEOGRAFIA EDITÁVEL DEPOIS DE CONFIRMADA.
+     Antes, confirmar era irreversível: uma massa mal configurada ou um
+     domínio esquecido só se resolviam recomeçando o mundo inteiro. Agora a
+     visão confirmada é também um editor. A edição é NO LUGAR (editarMassa
+     preserva o `id`) porque as espécies e as populações guardam o massaId —
+     recriar a massa seria excluí-la e deixar tudo que vive nela órfão.
+     Os biomas por divisão que continuam válidos são preservados; só os que
+     deixaram de existir na massa são resorteados. */
   if (jaConfirmada) {
     const era1 = eras[0];
+    const emEdicao = massaEmEdicao ? era1.massas.find((m) => m.id === massaEmEdicao) : null;
     return (
-      <Section title="Fase 1 · Geografia" accent="text-emerald-500" right={<Badge className="border-emerald-800 text-emerald-500"><Check size={10} className="inline -mt-0.5 mr-1" />confirmada</Badge>}>
-        <div className="text-sm text-stone-400 mb-2">{era1.massas.length} massa(s) de terra definida(s) na Era Inicial:</div>
-        <div className="flex flex-wrap gap-2">
+      <Section title="Fase 1 · Geografia" accent="text-emerald-500" right={<Badge className="border-emerald-800 text-emerald-500"><Check size={10} className="inline -mt-0.5 mr-1" />confirmada · editável</Badge>}>
+        <div className="text-sm text-stone-400 mb-2">{era1.massas.length} massa(s) de terra na Era Inicial. Toque numa para editar domínios, biomas e nome.</div>
+        <div className="flex flex-wrap gap-2 mb-3">
           {era1.massas.map((m) => (
-            <Badge key={m.id} className="border-stone-700 text-stone-300">{m.nome} · {m.dominios.length} domínios</Badge>
+            <button key={m.id} onClick={() => setMassaEmEdicao(m.id === massaEmEdicao ? null : m.id)}
+              className={`text-[10px] font-data px-2 py-1 rounded border ${m.id === massaEmEdicao ? "border-emerald-700 bg-emerald-950/50 text-emerald-400" : "border-stone-700 text-stone-300 hover:border-emerald-800"}`}>
+              {m.nome} · {m.dominios.length} domínios
+            </button>
           ))}
         </div>
+
+        {emEdicao && (
+          <div className="rounded border border-stone-800 bg-stone-950/60 p-3 space-y-3">
+            <div className="flex items-center gap-2">
+              <CampoTexto value={emEdicao.nome} onChange={(v) => onEditarMassa(emEdicao.id, { nome: v })} placeholder="Nome da massa" />
+              <button onClick={() => setMassaEmEdicao(null)} className="text-stone-500 hover:text-stone-200 shrink-0"><X size={16} /></button>
+            </div>
+
+            <div>
+              <div className="text-[10px] uppercase tracking-widest text-stone-500 font-mono mb-1.5">Domínios climáticos desta massa</div>
+              <div className="flex flex-wrap gap-1.5">
+                {listaDominios.map((dom) => {
+                  const habilitado = emEdicao.dominios.includes(dom);
+                  return (
+                    <button key={dom}
+                      onClick={() => {
+                        const novos = habilitado ? emEdicao.dominios.filter((d) => d !== dom) : [...emEdicao.dominios, dom];
+                        if (!novos.length) return; // uma massa sem domínio nenhum não é configuração, é estado inválido
+                        onEditarMassa(emEdicao.id, { dominios: novos });
+                      }}
+                      className={`text-[10px] font-data px-2 py-1 rounded border ${habilitado ? "border-emerald-700 bg-emerald-950/50 text-emerald-400" : "border-stone-800 text-stone-600"}`}>
+                      {dom}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div>
+              <div className="text-[10px] uppercase tracking-widest text-stone-500 font-mono mb-1.5">Biomas ligados (toque para excluir da massa)</div>
+              <div className="flex flex-wrap gap-1 max-h-32 overflow-y-auto">
+                {HABITAT_CODEX
+                  .filter((b) => emEdicao.dominios.includes(b.dominio) || (dominiosCustom || []).some((d) => emEdicao.dominios.includes(d.nome) && d.biomas.includes(b.nome)))
+                  .map((b) => {
+                    const excluido = (emEdicao.biomasExcluidos || []).includes(b.nome);
+                    return (
+                      <button key={b.nome}
+                        onClick={() => {
+                          const atuais = emEdicao.biomasExcluidos || [];
+                          const novos = excluido ? atuais.filter((x) => x !== b.nome) : [...atuais, b.nome];
+                          onEditarMassa(emEdicao.id, { biomasExcluidos: novos });
+                        }}
+                        className={`text-[9px] font-data px-1.5 py-0.5 rounded border ${excluido ? "border-stone-800 text-stone-700 line-through" : "border-stone-700 text-stone-400"}`}>
+                        {b.nome}
+                      </button>
+                    );
+                  })}
+              </div>
+            </div>
+
+            <div>
+              <div className="flex items-center justify-between mb-1.5">
+                <span className="text-[10px] uppercase tracking-widest text-stone-500 font-mono">Bioma por divisão (onde as populações vivem e migram)</span>
+                <button onClick={() => onResortearBiomas(emEdicao.id)} className="text-[10px] font-mono uppercase text-stone-500 hover:text-emerald-400">
+                  <Dices size={11} className="inline -mt-0.5 mr-1" />resortear
+                </button>
+              </div>
+              <div className="space-y-1">
+                {(emEdicao.divisoesBiomas || []).map((d, i) => (
+                  <div key={i} className="flex items-center gap-1.5">
+                    <span className="text-[10px] font-mono text-stone-600 w-6 shrink-0">#{i}</span>
+                    <select
+                      value={d.biomaNome || ""}
+                      onChange={(e) => onDefinirBiomaDivisao(emEdicao.id, i, e.target.value)}
+                      className="bg-stone-950 border border-stone-800 rounded px-2 py-1 text-[11px] text-stone-300 w-full">
+                      {/* Só os biomas que a massa realmente oferece — é a trava
+                          que impede um vulcão de aparecer onde só há domínio polar. */}
+                      {biomasDaMassa(emEdicao).map((b) => <option key={b.nome} value={b.nome}>{b.nome}</option>)}
+                    </select>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {(emEdicao.avisos || []).length > 0 && (
+              <div className="text-[10px] text-amber-500 space-y-0.5">
+                {emEdicao.avisos.map((a, i) => <div key={i}><AlertTriangle size={10} className="inline -mt-0.5 mr-1" />{a}</div>)}
+              </div>
+            )}
+          </div>
+        )}
       </Section>
     );
   }
@@ -252,9 +347,31 @@ function FaseGeografia({ onConfirmar, jaConfirmada, eras, dominiosDisponiveis, d
           </div>
         ))}
       </div>
-      <div className="flex items-center gap-2 mt-3">
+      <div className="flex items-center gap-2 mt-3 flex-wrap">
         <button onClick={addMassa} className="text-[11px] font-mono uppercase text-stone-400 hover:text-emerald-400 border border-stone-800 rounded px-3 py-1.5">+ Massa de terra</button>
+        {/* v32 — geração aleatória COERENTE. O sorteio é da faixa latitudinal
+            da massa, não dos domínios soltos: é isso que impede uma massa
+            polar de oferecer deserto quente. Sortear e confirmar continuam
+            separados — o resultado entra como rascunho editável. */}
+        <div className="flex items-center gap-1.5">
+          <input type="number" min="1" max="12" value={qtdSorteio} onChange={(e) => setQtdSorteio(e.target.value)}
+            className="w-14 text-[11px] font-data bg-stone-950 border border-stone-800 rounded px-2 py-1.5 text-stone-300 focus:border-emerald-700 focus:outline-none" />
+          <button
+            onClick={() => {
+              const r = gerarGeografiaAleatoria(Number(qtdSorteio) || 4);
+              setMassas(r);
+              setNextId(r.length + 1);
+            }}
+            className="text-[11px] font-mono uppercase text-stone-400 hover:text-emerald-400 border border-stone-800 rounded px-3 py-1.5">
+            <Dices size={12} className="inline -mt-0.5 mr-1" />Sortear geografia
+          </button>
+        </div>
       </div>
+      <p className="text-[10px] text-stone-600 mt-1.5">
+        O sorteio escolhe uma faixa latitudinal por massa (polar, subpolar, temperada, subtropical,
+        equatorial ou oceânica) e deriva dela os domínios plausíveis — nunca uma combinação
+        incoerente. Tudo o que sair continua editável antes de confirmar.
+      </p>
       <div className="mt-4 pt-3 border-t border-stone-800">
         {!podeConfirmar && <div className="text-[11px] text-amber-600 mb-2 flex items-center gap-1"><AlertTriangle size={12} />Toda massa precisa de nome e ao menos 1 domínio climático.</div>}
         <BotaoPrimario disabled={!podeConfirmar} onClick={() => onConfirmar(massas)}>Confirmar Geografia →</BotaoPrimario>
