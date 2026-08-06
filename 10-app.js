@@ -18,6 +18,7 @@ function App() {
   const [patchnotesAberto, setPatchnotesAberto] = useState(false);
   const [individualViewer, setIndividualViewer] = useState(null); // { individual, especieNode|null } | null
   const [seedSearchAberto, setSeedSearchAberto] = useState(false);
+  const [testesAberto, setTestesAberto] = useState(false); // v28 — bateria embutida
   // v27 — a busca pode ser aberta já preenchida (ex.: pelo botão "Abrir na
   // busca" dentro do painel do indivíduo, que joga o DNA dele no campo)
   const [seedSearchTexto, setSeedSearchTexto] = useState("");
@@ -231,17 +232,19 @@ function App() {
           <div className="w-9 h-9 shrink-0 rounded-full border border-emerald-700 flex items-center justify-center text-emerald-500"><GitBranch size={18} /></div>
           <div className="min-w-0">
             <h1 className="font-display text-lg sm:text-xl font-semibold tracking-tight text-stone-100 leading-none">Droerni · Ecossistema DRN2</h1>
-            <p className="font-data text-[10px] text-stone-500 tracking-wider truncate">v24 · seed autossuficiente (primordial/derivada embutido)</p>
+            <p className="font-data text-[10px] text-stone-500 tracking-wider truncate">v28 · escala corporal por reino · offline (PWA)</p>
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
           <button onClick={() => abrirBusca()} title="Buscar por seed, DNA ou texto" className="p-2 rounded border border-stone-800 text-stone-400 hover:text-stone-200 hover:border-stone-600"><Search size={14} /></button>
+          <button onClick={() => setTestesAberto(true)} title="Bateria de testes" className="p-2 rounded border border-stone-800 text-stone-400 hover:text-stone-200 hover:border-stone-600"><FlaskConical size={14} /></button>
           <button onClick={() => setPatchnotesAberto(true)} title="Patchnotes" className="p-2 rounded border border-stone-800 text-stone-400 hover:text-stone-200 hover:border-stone-600"><FileText size={14} /></button>
           <PersistenceBar eras={eras} nodes={nodes} individuals={individuals} anoAtual={anoAtual} faseGeoConfirmada={faseGeoConfirmada} faseErasConfirmada={faseErasConfirmada} onImportar={onImportarProjeto} showToast={showToast} />
         </div>
       </header>
 
       <main className="max-w-4xl mx-auto px-4 sm:px-6 py-6 space-y-5">
+        <BarraPWA />
         <BarraFases faseAtual={faseAtual} geoOk={faseGeoConfirmada} erasOk={faseErasConfirmada} />
 
         {/* Antes: renderizada só na fase 1 e sempre com jaConfirmada={false},
@@ -319,6 +322,8 @@ function App() {
           showToast={showToast}
         />
       )}
+
+      {testesAberto && <PainelTestes onFechar={() => setTestesAberto(false)} showToast={showToast} />}
 
       {seedSearchAberto && (
         <SeedSearchModal

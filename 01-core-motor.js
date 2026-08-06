@@ -23,50 +23,58 @@ function tableId(table) {
   if (id === undefined) { id = ++__tableIdSeq; __tableIds.set(table, id); }
   return id;
 }
-const __validNumbersCache = new Map();
-function validNumbers(table, opts = {}) {
-  const r = opts.restrict ? opts.restrict.slice().sort().join(",") : "";
-  const e = opts.exclude ? opts.exclude.slice().sort().join(",") : "";
-  const chave = tableId(table) + "|" + r + "|" + e;
-  const hit = __validNumbersCache.get(chave);
+/* v28, otimização — recorte único por (tabela × restrições).
+
+   Antes existiam DOIS caches paralelos, `validNumbers` e `validIndex`, e
+   `categoricalStep` consultava os dois a cada gene. Cada consulta remontava
+   a chave do zero com `slice().sort().join()` sobre restrict e exclude —
+   três alocações de string por consulta, duas consultas por gene, ~90 genes
+   por chamada de runSpeciesSteps, duas chamadas por buildSpecies. Eram
+   ~1.000 strings descartadas por espécie gerada, só pra localizar dados que
+   já estavam em memória.
+
+   Agora é um recorte só, com a lista de números e o índice valor→posição no
+   mesmo objeto, e uma única construção de chave. O caso mais comum (nenhuma
+   restrição) tem atalho: a chave é só o id da tabela, sem concatenar nada.
+
+   A lógica de recorte em si não mudou — só a contabilidade em volta. */
+const __recorteCache = new Map();
+
+function chaveRecorte(table, opts) {
+  const id = tableId(table);
+  if (!opts) return id;
+  const r = opts.restrict, e = opts.exclude;
+  if (!r && !e) return id;
+  const rs = r ? (r.length > 1 ? r.slice().sort().join(",") : r[0]) : "";
+  const es = e ? (e.length > 1 ? e.slice().sort().join(",") : e[0]) : "";
+  return id + "|" + rs + "|" + es;
+}
+
+function recorteTabela(table, opts) {
+  const chave = chaveRecorte(table, opts);
+  let hit = __recorteCache.get(chave);
   if (hit) return hit;
   const nums = [];
   for (let n = 1; n <= 100; n++) {
     const label = pick(table, n).value;
-    if (opts.restrict && !opts.restrict.includes(label)) continue;
-    if (opts.exclude && opts.exclude.includes(label)) continue;
+    if (opts && opts.restrict && !opts.restrict.includes(label)) continue;
+    if (opts && opts.exclude && opts.exclude.includes(label)) continue;
     nums.push(n);
   }
   Object.freeze(nums);
-  __validNumbersCache.set(chave, nums);
-  return nums;
-}
-
-/* v26, otimização — índice valor→posição para o MESMO recorte que
-   validNumbers já cacheia. Sem ele, categoricalStep resolvia "este valor é
-   permitido aqui?" com `nums.some((n) => pick(table, n).value === v)`: uma
-   varredura de até 100 números, cada uma com um `pick` que é varredura
-   linear da tabela — O(|nums| × |tabela|) por gene, ~90 genes por chamada de
-   runSpeciesSteps. Como normalizarGenoma É uma chamada de runSpeciesSteps e
-   responde por ~0,72ms dos ~0,44ms/ciclo de deriva (é a chamada mais cara do
-   motor inteiro), trocar isso por um Map é a otimização de maior retorno
-   disponível sem mexer em nenhuma regra. */
-const __validIndexCache = new Map();
-function validIndex(table, opts = {}) {
-  const r = opts.restrict ? opts.restrict.slice().sort().join(",") : "";
-  const e = opts.exclude ? opts.exclude.slice().sort().join(",") : "";
-  const chave = tableId(table) + "|" + r + "|" + e;
-  let hit = __validIndexCache.get(chave);
-  if (hit) return hit;
-  const nums = validNumbers(table, opts);
-  hit = new Map();
+  const idx = new Map();
   for (let i = 0; i < nums.length; i++) {
     const v = pick(table, nums[i]).value;
-    if (!hit.has(v)) hit.set(v, { n: nums[i], i });
+    if (!idx.has(v)) idx.set(v, { n: nums[i], i });
   }
-  __validIndexCache.set(chave, hit);
+  hit = { nums, idx };
+  __recorteCache.set(chave, hit);
   return hit;
 }
+
+/* Fachadas — chamadas de vários pontos do motor e de fora dele. */
+function validNumbers(table, opts) { return recorteTabela(table, opts).nums; }
+function validIndex(table, opts) { return recorteTabela(table, opts).idx; }
 
 // 3d4-3: enumera as 64 triplas de dados possíveis; TRIPLES[i] = soma (0..9)
 const TRIPLES = (() => { const a = []; for (let x = 0; x < 4; x++) for (let y = 0; y < 4; y++) for (let z = 0; z < 4; z++) a.push(x + y + z); return a; })();
@@ -145,12 +153,15 @@ function parseAnySeed(str) {
 /* ---------- passos de gene categórico (d100) ---------- */
 function categoricalStep(cur, key, table, opts = {}) {
   if (opts.fixed !== undefined) { cur.ctx[key] = opts.fixed; return opts.fixed; }
-  let nums = validNumbers(table, opts);
-  if (nums.length === 0 && opts.restrict) nums = validNumbers(table, { restrict: opts.restrict }); // exclusão engoliu tudo: a restrição vence
-  if (nums.length === 0 && opts.exclude) nums = validNumbers(table, { exclude: opts.exclude });
+  /* v28 — um único recorte cacheado carrega a lista de números E o índice
+     valor→posição; antes eram duas consultas com duas chaves reconstruídas. */
+  let recorte = recorteTabela(table, opts);
+  if (recorte.nums.length === 0 && opts.restrict) recorte = recorteTabela(table, { restrict: opts.restrict }); // exclusão engoliu tudo: a restrição vence
+  if (recorte.nums.length === 0 && opts.exclude) recorte = recorteTabela(table, { exclude: opts.exclude });
+  const nums = recorte.nums;
   if (nums.length === 0) { cur.ctx[key] = table[0].value; return table[0].value; }
   const base = BigInt(nums.length);
-  const idxValores = validIndex(table, opts);
+  const idxValores = recorte.idx;
   let value;
   if (cur.mode === "randomize") {
     if (cur.manual[key] !== undefined && idxValores.has(cur.manual[key])) {
@@ -496,11 +507,51 @@ function runSpeciesSteps(cur, isPrimordialIntent) {
   categoricalStep(cur, "mag", T.mag, g.isPrimordial ? { restrict: ["A0", "A1", "A2", "A3"] } : {}); // Fase 2, item 5.3 — removida cláusula de reino Sp
 
   // Passo 4 — MOR
-  categoricalStep(cur, "simetria", T.simetria);
+  /* v28 — simetria por reino. Bilateral saía em 78% de TUDO, inclusive
+     bactéria e planta: um cocobacilo bilateral e uma árvore bilateral são
+     leituras erradas do próprio conceito. Bactéria é radial/esférica ou
+     amorfa; planta e fungo crescem em torno de um eixo (radial), com espiral
+     e amorfo possíveis. Bilateral fica com o reino animal, que é onde ela
+     descreve alguma coisa. */
+  categoricalStep(cur, "simetria", T.simetria, opcoesCategoricas(g, "simetria"));
+
+  /* v28 — PORTE POR REINO. Antes a tabela de porte era única e o reino não
+     entrava na conta: bactéria sorteava "titânico" em 3% dos casos, e o
+     modelo de peso traduzia isso em 45 metros de altura e 31.894 TONELADAS.
+     A mediana de uma bactéria era 175 kg. Uma bactéria é um organismo
+     unicelular: o porte dela varre micrômetros, não metros.
+     A escala real (ALTURA_POR_PORTE_REINO, em 02-coerencia.js) passou a ser
+     por reino, e aqui restringimos quais degraus cada reino alcança:
+     - Ba: só os dois degraus menores (na escala microbiana, "mn" a "pq" já
+       cobre de 0,2µm a 20µm, que é a faixa real inteira mais folga fantástica)
+     - Pl/Fu: excluído "tt" — a escala vegetal já leva "cl" a ~90m, altura de
+       sequoia; um degrau acima disso não descreve mais uma planta */
+  const portePorReino = opcoesCategoricas(g, "porte");
   const porteBias = g.tolTermica === "fr" ? ["gr", "cl", "tt"] : g.tolTermica === "qt" ? ["mn", "pq"] : undefined;
-  categoricalStep(cur, "porte", T.porte, { bias: porteBias });
+  categoricalStep(cur, "porte", T.porte, mergeOpts({ bias: porteBias }, portePorReino));
   const porteRow = T.porte.find((r) => r.value === g.porte);
-  scalarStep(cur, "densidade"); // Fase 2, item 5.3 — removido teto de densidade de reino Sp (não existe mais)
+
+  /* v28 — DENSIDADE POR REINO. O escalar 0-9 mapeava para 50 a 7000 kg/m³:
+     o topo é densidade de FERRO, e o piso é mais leve que cortiça. Nenhum
+     tecido vivo chega perto de nenhum dos dois. A tabela nova (02-coerencia)
+     ficou realista, e aqui limitamos a faixa que cada reino alcança:
+     - Ba: célula é essencialmente água (5-6 na escala nova)
+     - Pl: de madeira balsa a madeira densa, sem chegar a osso/mineral
+     - Fu: corpo de frutificação é 85-90% água, sempre leve
+     - An: faixa inteira (gordura/pulmão até osso e concha mineralizada) */
+  scalarStep(cur, "densidade", limitesEscalar(g, "densidade"));
+  /* v28 — forma de crescimento coerente com o porte. Uma roseta/suculenta é
+     compacta por definição, e a compacidade entra no cálculo de volume: uma
+     "roseta" de porte colossal (90 m) saía com 23.182 toneladas, dez vezes
+     uma sequoia. Acima de porte médio, uma planta só se sustenta com forma
+     arbórea, arbustiva, de talo ou trepadeira. */
+  /* v28 — tentei travar morForma pelo porte (uma "rosácea" de 90 m saía com
+     30.909 toneladas). Mas `morForma` é Estrato I e `porte` não é: a deriva
+     mudava o porte e a normalização era obrigada a mexer num gene de Estrato
+     I, quebrando a regra de que Estrato I só muda por especiação. A restrição
+     foi movida para o MODELO DE MASSA (fatorForma, em 02-coerencia.js), que
+     limita a fração de volume ocupada quando a altura é grande — é uma
+     afirmação sobre geometria, não uma trava genética, e não toca no genoma. */
   if (g.reino === "Pl") categoricalStep(cur, "morForma", T.morFormaPl);
   else if (g.reino === "Fu") categoricalStep(cur, "morForma", T.morFormaFu);
   else if (g.reino === "Ba") categoricalStep(cur, "morForma", T.morFormaBa); // Fase 1, item 4.1
@@ -534,7 +585,10 @@ function runSpeciesSteps(cur, isPrimordialIntent) {
     ? { ...locSecClasse, restrict: [...locSecClasse.restrict, "0"] }
     : locSecClasse;
   categoricalStep(cur, "locSecundario", T.locSec, mergeOpts(locSecOpts, locSecClasseAjustada));
-  scalarStep(cur, "locVelocidade", g.locPrimario === "F" ? { min: 0, max: 0 } : {});
+  /* v28 — bactéria natante ganhava velocidade até 9, mesmo escalar de um
+     felino. A escala é relativa ao porte, mas o valor alto sugeria
+     capacidade de deslocamento que uma célula flagelada não tem. */
+  scalarStep(cur, "locVelocidade", g.locPrimario === "F" ? { min: 0, max: 0 } : limitesEscalar(g, "locVelocidade"));
 
   // Passo 6 — MEM
   categoricalStep(cur, "memSup", T.memSup, mergeOpts((g.reino === "Pl" || g.reino === "Fu" || g.reino === "Ba") ? { fixed: "0S" } : g.isPrimordial ? { restrict: ["0S", "2S"] } : {}, classeOpts(g, "memSup"))); // Fase 1, item 4.1
@@ -640,7 +694,13 @@ function runSpeciesSteps(cur, isPrimordialIntent) {
      (0,36% da amostra). Restringido aos modos que uma planta de fato usa. */
   else if (g.reino === "Pl") repOpts = { restrict: ["sp", "gm", "fs", "ax", "ov"] };
   // Fase 2, item 5.3 — reinos Ar/Sp removidos (repOpts fixo "an" e restrito respectivamente saíram)
-  categoricalStep(cur, "repModo", T.repModo, mergeOpts(repOpts, classeOpts(g, "repModo")));
+  /* v28 — MODO DE REPRODUÇÃO POR REINO. Medido na v27: 54% das PLANTAS
+     saíam ovíparas e 13% por gemação-de-animal — uma árvore botando ovo.
+     Ovíparo, vivíparo e ovovivíparo descrevem exclusivamente o reino animal;
+     planta, fungo e bactéria se reproduzem por esporo, gemação, fissão ou
+     assexuadamente. A trava sai da mesma tabela que a deriva consulta, senão
+     a deriva reintroduz o problema logo no primeiro ciclo. */
+  categoricalStep(cur, "repModo", T.repModo, mergeOpts(mergeOpts(repOpts, classeOpts(g, "repModo")), opcoesCategoricas(g, "repModo")));
   scalarStep(cur, "repProle", porteRow.n >= 4 ? { max: 3 } : porteRow.n === 0 ? { min: 5 } : {});
   scalarStep(cur, "repMaturacao", porteRow.n >= 4 ? { min: 5 } : {});
   scalarStep(cur, "repLongevidade", (g.mag && Number(g.mag.slice(1)) >= 8) ? { min: 7 } : porteRow.n === 0 ? { max: 3 } : {});
@@ -738,9 +798,19 @@ function runSpeciesSteps(cur, isPrimordialIntent) {
   if (g.cdaComp !== "0") { categoricalStep(cur, "cdaTipo", T.cdaTipo, mergeOpts(g.isPrimordial ? { exclude: ["lq"] } : {}, classeOpts(g, "cdaTipo"))); scalarStep(cur, "cdaFuncao"); } else { g.cdaTipo = undefined; g.cdaFuncao = undefined; }
 
   // Passo 14 — SEN
-  scalarStep(cur, "senVisao");
+  /* v28 — SENTIDOS POR REINO. Planta, fungo e bactéria vinham com audição e
+     olfato sorteados de 0 a 9 igual a um mamífero: saía planta com audição 7
+     e bactéria com olfato 6. Nenhum dos três tem órgão auditivo — audição
+     vai a zero. Quimiorrecepção, essa sim existe nos três (uma raiz "sente"
+     nutriente, uma bactéria faz quimiotaxia, um micélio segue gradiente
+     químico), então `senOlfato` sobrevive numa faixa baixa em vez de virar
+     zero. Tato/mecanorrecepção idem: tigmotropismo é real. Visão já era
+     limitada a 1 pela ausência de olhos; fica explícito. */
+  scalarStep(cur, "senVisao", limitesEscalar(g, "senVisao"));
   if (g.facOlhosQtd === 0 || g.facOlhosTipo === "cg") g.senVisao = Math.min(g.senVisao, 1);
-  scalarStep(cur, "senOlfato"); scalarStep(cur, "senAudicao"); scalarStep(cur, "senTato");
+  scalarStep(cur, "senOlfato", limitesEscalar(g, "senOlfato"));
+  scalarStep(cur, "senAudicao", limitesEscalar(g, "senAudicao"));
+  scalarStep(cur, "senTato", limitesEscalar(g, "senTato"));
   let senEspOpts = {};
   if (g.reino === "Ba") senEspOpts = { restrict: ["0", "vb"] }; // Fase 1, item 4.1 — sem sistema nervoso, só quimio/vibrotaxia rasa
   else if (g.mag && Number(g.mag.slice(1)) >= 7) senEspOpts = { fixed: "au" };
@@ -751,7 +821,12 @@ function runSpeciesSteps(cur, isPrimordialIntent) {
   if (g.senEspecial !== "0") scalarStep(cur, "senEspecialIntensidade", (g.mag && Number(g.mag.slice(1)) >= 7) ? { min: 5 } : {}); else g.senEspecialIntensidade = undefined;
 
   // Passo 15 — SOC
-  categoricalStep(cur, "socEstrutura", T.socEstrutura, g.isPrimordial ? { exclude: ["me"] } : {});
+  /* v28 — ESTRUTURA SOCIAL POR REINO. Saía bactéria em "matilha" e planta em
+     "bando"/"par vitalício" — categorias que descrevem coordenação
+     comportamental entre indivíduos móveis. O que planta, fungo e bactéria
+     de fato formam é indivíduo isolado ou colônia (biofilme, micélio,
+     bosque clonal); enxame cabe na bactéria, que se move em massa. */
+  categoricalStep(cur, "socEstrutura", T.socEstrutura, mergeOpts(g.isPrimordial ? { exclude: ["me"] } : {}, opcoesCategoricas(g, "socEstrutura")));
   scalarStep(cur, "socAgressividade", ["hb", "fr"].includes(g.dieBase) ? { max: 5 } : {});
   scalarStep(cur, "socSencienciaBruta");
   const penalizado = g.crnFormato !== "hu";
@@ -787,7 +862,14 @@ function runSpeciesSteps(cur, isPrimordialIntent) {
     : (defArmaExclude.length ? { exclude: defArmaExclude } : {});
   categoricalStep(cur, "defArma", T.defArma, defArmaOpts);
   scalarStep(cur, "defBlindagem");
-  categoricalStep(cur, "defEstrategia", T.defEstrategia, g.locPrimario === "F" ? { restrict: ["ri", "to", "ca", "re"] } : {});
+  /* v28 — bactéria saía com "luta", "fuga" e "defesa em grupo". O que uma
+     célula faz é esporular/enquistar (rigidez), produzir toxina, ou se
+     esconder quimicamente. Séssil já era tratado; a bactéria agora também. */
+  const defEstrOpts = mergeOpts(
+    g.locPrimario === "F" ? { restrict: ["ri", "to", "ca", "re"] } : {},
+    opcoesCategoricas(g, "defEstrategia")
+  );
+  categoricalStep(cur, "defEstrategia", T.defEstrategia, defEstrOpts);
 
   // Passo 16.5 — GENES POR TÁXON (Fase 3) — condicionados a g.classe/g.reino,
   // aprovados na proposta de expansão de DNA por táxon. Cada gene segue o
@@ -1479,10 +1561,21 @@ function seedParaGenoma(g, isPrimordial) {
   const seed = mixInverse(encCur.outValue, SPECIES_HALF);
   // decodifica de volta para checar fidelidade real (o que a Estação DRN2 vai mostrar)
   const rebuilt = buildSpecies(seed, {}, isPrimordial);
+  /* v28, otimização — a comparação usava JSON.stringify nos DOIS lados de
+     cada uma das ~107 chaves: 214 serializações por chamada, para comparar
+     quase sempre um número ou uma string curta. `seedParaGenoma` é chamada
+     toda vez que o app exibe a seed de uma espécie, e era a função mais cara
+     do motor (1,15 ms). A comparação direta cobre escalar e string; só o que
+     for objeto/array (na prática, `anomalias`) cai no caminho lento. */
   const camposDivergentes = [];
   for (const k of Object.keys(g)) {
     if (GENES_SEMPRE_DERIVADOS.has(k)) continue;
-    if (JSON.stringify(g[k]) !== JSON.stringify(rebuilt.g[k])) camposDivergentes.push(k);
+    const a = g[k], b = rebuilt.g[k];
+    if (a === b) continue;
+    if (a !== null && b !== null && typeof a === "object" && typeof b === "object") {
+      if (JSON.stringify(a) === JSON.stringify(b)) continue;
+    }
+    camposDivergentes.push(k);
   }
   return { seed, fiel: camposDivergentes.length === 0, camposDivergentes, codeRebuilt: rebuilt.code };
 }
@@ -1550,6 +1643,56 @@ const ESCALAR_KEYS = new Set(["densidade", "locVelocidade", "repProle", "repMatu
    comparação no pipeline, mesmo indiretamente (limites min/max de escalares,
    travas de classe, viés de bioma). Errar para mais custa desempenho;
    errar para menos reintroduz genomas incoerentes, que é bem pior. */
+/* v28 — tetos de escalar por reino, numa tabela única consultada TANTO pelo
+   passo de construção quanto pela deriva. Quando a restrição existia só na
+   construção, a deriva empurrava o valor para fora da faixa (um +1 em
+   senAudicao de uma planta), a normalização depois o trazia de volta, e a
+   reconstrução pela seed divergia — 8 genomas em 1200, medido. Uma trava só
+   é confiável se os dois caminhos que escrevem o gene a respeitarem. */
+const TETO_ESCALAR_POR_REINO = {
+  Ba: { senVisao: { max: 1 }, senOlfato: { max: 3 }, senAudicao: { min: 0, max: 0 }, senTato: { max: 2 }, locVelocidade: { max: 2 }, densidade: { min: 5, max: 6 } },
+  Pl: { senVisao: { max: 1 }, senOlfato: { max: 4 }, senAudicao: { min: 0, max: 0 }, senTato: { max: 4 }, densidade: { min: 1, max: 6 } },
+  Fu: { senVisao: { max: 1 }, senOlfato: { max: 4 }, senAudicao: { min: 0, max: 0 }, senTato: { max: 3 }, densidade: { min: 0, max: 4 } },
+};
+function limitesEscalar(g, key) { return TETO_ESCALAR_POR_REINO[g.reino]?.[key] || {}; }
+
+/* v28 — o mesmo princípio para genes CATEGÓRICOS. As restrições por reino
+   introduzidas nesta versão (simetria, porte, estrutura social, modo de
+   reprodução, estratégia de defesa) viviam só nos passos de construção; a
+   deriva rerrolava o gene na tabela inteira, sem saber delas. O resultado
+   passava despercebido porque a maior parte dos sorteios cai numa opção
+   válida por acaso — mas quando não caía, ficava um fungo bilateral no
+   genoma, e a reconstrução pela seed normalizava para radial e divergia.
+   Uma trava só é confiável quando os dois caminhos que escrevem o gene a
+   respeitam: aqui é o par de `limitesEscalar` para o lado categórico. */
+const OPCOES_CATEGORICAS_POR_REINO = {
+  Ba: {
+    simetria: ["rd", "am", "as"],
+    porte: ["mn", "pq"],
+    socEstrutura: ["so", "co", "en"],
+    repModo: ["fs", "gm", "ax", "sp"],
+    defEstrategia: ["ca", "to", "ri", "re"],
+  },
+  Pl: {
+    simetria: ["rd", "es", "am", "as"],
+    porte: ["mn", "pq", "md", "gr", "cl"],
+    socEstrutura: ["so", "co"],
+    repModo: ["sp", "gm", "ax", "fs"],
+    defEstrategia: ["ca", "to", "ri", "re"],
+  },
+  Fu: {
+    simetria: ["rd", "am", "as", "es"],
+    porte: ["mn", "pq", "md", "gr", "cl"],
+    socEstrutura: ["so", "co"],
+    repModo: ["sp", "gm", "ax", "fs"],
+    defEstrategia: ["ca", "to", "ri", "re"],
+  },
+};
+function opcoesCategoricas(g, key) {
+  const lista = OPCOES_CATEGORICAS_POR_REINO[g.reino]?.[key];
+  return lista ? { restrict: lista } : {};
+}
+
 const GENES_CONDICIONANTES = new Set([
   // estrutura corporal e locomoção
   "reino", "classe", "morForma", "morTorso", "porte", "densidade",
@@ -1965,8 +2108,10 @@ function rerollGeneCategorico(g, key, fonte) {
   const table = GENE_TABLE_MAP[key];
   if (!table) return false;
   const bias = fonte?.vies?.[key];
-  const nums = [];
-  for (let n = 1; n <= 100; n++) nums.push(n);
+  // v28 — a deriva sorteia dentro do MESMO recorte por reino que a
+  // construção usa, e não na tabela inteira
+  const nums = validNumbers(table, opcoesCategoricas(g, key));
+  if (!nums.length) return false;
   let novoValor;
   if (Array.isArray(bias) && bias.length) {
     const n1 = nums[Math.floor(Math.random() * nums.length)];
@@ -1988,7 +2133,9 @@ function deslocarGeneEscalar(g, key, fonte) {
   else if (bias === "baixo") delta = -1;
   else delta = rollD(2) === 1 ? -1 : 1;
   const atual = Number(g[key] ?? 0);
-  const novo = Math.max(0, Math.min(9, atual + delta));
+  const lim = limitesEscalar(g, key); // v28 — a deriva respeita a mesma trava da construção
+  const piso = Math.max(0, lim.min ?? 0), teto = Math.min(9, lim.max ?? 9);
+  const novo = Math.max(piso, Math.min(teto, atual + delta));
   if (novo === atual) return false;
   g[key] = novo;
   return true;
@@ -2681,7 +2828,13 @@ function criarPrimordial(manual, auInicial, massaId) {
   });
   return node;
 }
-const REINO_LABEL_LOG = { An: "Animal", Pl: "Planta", Fu: "Fungo", Ba: "Bactéria", Ar: "Construto", Sp: "Espiritual" }; // Fase 1, item 4.1
+/* v28 — mapa único de rótulo de reino. Antes existia uma cópia aqui e outra
+   em 04-ui-fases.js; a camada de teste (11-testes.js) precisava do nome da
+   UI e quebrava quando rodava sem ela. `REINO_LABEL` é o nome que a UI e os
+   exports já usam; `REINO_LABEL_LOG` continua como alias pro que o motor
+   escreve nos logs. */
+const REINO_LABEL = { An: "Animal", Pl: "Planta", Fu: "Fungo", Ba: "Bactéria", Ar: "Construto", Sp: "Espiritual" }; // Fase 1, item 4.1
+const REINO_LABEL_LOG = REINO_LABEL;
 function auTextoLog(au) { return au === 0 ? "AU 0 (marco zero)" : `AU ${au.toLocaleString("pt-BR")}`; }
 
 function avancarCicloNaLinhagem(linhagemState) {

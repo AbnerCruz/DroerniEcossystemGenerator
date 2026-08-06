@@ -2,8 +2,16 @@
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Droerni · Ecossistema DRN2 v27</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<meta name="theme-color" content="#0c0a09" />
+<meta name="description" content="Motor de DNA procedural, deriva evolutiva, árvore genealógica e ecossistemas para o universo Droerni." />
+<link rel="manifest" href="manifest.webmanifest" />
+<link rel="icon" href="icon-192.png" />
+<link rel="apple-touch-icon" href="icon-192.png" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="Ecossistema DRN2" />
+<title>Droerni · Ecossistema DRN2 v28</title>
 <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
 <script src="https://unpkg.com/@babel/standalone@7/babel.min.js" crossorigin></script>
@@ -46,5 +54,53 @@ const { useState, useMemo, useCallback, useRef, useEffect } = React;
 <script type="text/babel" data-presets="react" src="08-patchnotes.js"></script>
 <script type="text/babel" data-presets="react" src="09-populacao-seed.js"></script>
 <script type="text/babel" data-presets="react" src="10-app.js"></script>
+<script type="text/babel" data-presets="react" src="11-testes.js"></script>
+
+<!--
+  PWA — registro do service worker.
+
+  Fica DEPOIS dos scripts do app e fora do Babel de propósito: é JS puro,
+  não depende de nada do app, e não deve atrasar a primeira pintura.
+
+  O registro é silencioso quando dá certo. Quando falha (navegador antigo,
+  servido por http sem TLS, modo anônimo), o app segue funcionando normal
+  — só não fica offline. Service worker é melhoria, nunca requisito.
+
+  `sw.js` fica na raiz junto de tudo, então o escopo é a pasta do app —
+  o que é exatamente o certo pro GitHub Pages, onde o app vive em
+  usuario.github.io/repositorio/ e não pode reivindicar a raiz do domínio.
+-->
+<script>
+(function () {
+  if (!("serviceWorker" in navigator)) return;
+  window.addEventListener("load", function () {
+    navigator.serviceWorker.register("sw.js").then(function (reg) {
+      window.__swRegistro = reg;
+      // avisa a aba quando houver uma versão nova esperando pra assumir
+      reg.addEventListener("updatefound", function () {
+        var novo = reg.installing;
+        if (!novo) return;
+        novo.addEventListener("statechange", function () {
+          if (novo.state === "installed" && navigator.serviceWorker.controller) {
+            window.dispatchEvent(new CustomEvent("drn2:atualizacao-disponivel"));
+          }
+        });
+      });
+    }).catch(function () { /* sem offline; o app continua funcionando online */ });
+
+    var recarregou = false;
+    navigator.serviceWorker.addEventListener("controllerchange", function () {
+      if (recarregou) return; recarregou = true; window.location.reload();
+    });
+  });
+
+  // guarda o evento de instalação pra oferecer o botão "Instalar" na hora certa
+  window.addEventListener("beforeinstallprompt", function (e) {
+    e.preventDefault();
+    window.__promptInstalacao = e;
+    window.dispatchEvent(new CustomEvent("drn2:instalavel"));
+  });
+})();
+</script>
 </body>
 </html>

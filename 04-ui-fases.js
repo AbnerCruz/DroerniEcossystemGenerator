@@ -26,7 +26,10 @@ function FileText(props) { return <Icon {...props}><path d="M14 2H6a2 2 0 0 0-2 
 /* ============================================================
    HELPERS DE UI (portado verbatim do v16)
    ============================================================ */
-const REINO_LABEL = { An: "Animal", Pl: "Planta", Fu: "Fungo", Ba: "Bactéria", Ar: "Construto", Sp: "Espiritual" }; // Fase 1, item 4.1
+/* v28 — REINO_LABEL era declarado aqui E, com outro nome (REINO_LABEL_LOG),
+   dentro do motor: dois mapas idênticos, um por camada, que podiam divergir
+   na próxima edição. Ficou um só, no motor, com este nome como alias — que é
+   o que a UI e os exports já usavam. */
 /* v26, correção #9 — sortNomeIndividuo() morava aqui, na camada de UI, mas
    quem a chamava era o MOTOR (01-core-motor.js, em decodificarSeedColada e
    gerarPopulacaoParaEspecie). Funcionava só porque os scripts compartilham o
@@ -63,8 +66,11 @@ function CampoNumero({ value, onChange, placeholder, step, className }) {
   return <input type="number" step={step || "any"} value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder}
     className={`bg-stone-950 border border-stone-800 rounded px-2 py-1.5 text-sm text-stone-200 placeholder-stone-600 focus:outline-none focus:border-emerald-700 w-full ${className || ""}`} />;
 }
-function fmtNum(n) { return (n ?? 0).toLocaleString("pt-BR", { maximumFractionDigits: 1 }); }
-function fmtKg(kg) { return kg >= 1000 ? `${fmtNum(kg / 1000)} t` : `${fmtNum(kg)} kg`; }
+/* v28 — fmtNum/fmtKg/fmtComprimento moram agora em 02-coerencia.js, junto do
+   modelo de massa que eles formatam: a regra de coerência de densidade
+   precisava de fmtKg e a camada de UI carrega depois, então o motor estaria
+   dependendo da UI outra vez (mesma classe do bug #9 da v26). Continuam
+   globais, então nada muda para quem as chama aqui. */
 /* 1 AU = 1 milhão de anos (AU_EM_ANOS no motor). Isto rotulava "bi anos",
    inflando toda a cronologia em 1000x. Abaixo de 1000 AU mostra em
    milhões; acima, converte para bilhões, que é como o usuário pensa a
