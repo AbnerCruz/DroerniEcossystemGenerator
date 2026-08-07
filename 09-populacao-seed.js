@@ -18,9 +18,9 @@ function Search(props) { return <Icon {...props}><circle cx="11" cy="11" r="8" /
 /* ============================================================
    PROMPT DE IMAGEM — caixa de texto + copiar
    ============================================================ */
-function PromptImagemBox({ g, individual, showToast }) {
+function PromptImagemBox({ g, individual, linhagemId, showToast }) {
   const [aberto, setAberto] = useState(false);
-  const prompt = useMemo(() => (aberto ? gerarPromptImagem(g, individual || null) : ""), [aberto, g, individual]);
+  const prompt = useMemo(() => (aberto ? gerarPromptImagem(g, individual || null, linhagemId) : ""), [aberto, g, individual, linhagemId]);
   const copiar = () => { navigator.clipboard?.writeText(prompt); showToast("Prompt de imagem copiado."); };
   if (!aberto) {
     return (
@@ -87,14 +87,14 @@ function IndividualViewer({ individual, especieNode, onFechar, onNavegarEspecie,
           <div className="text-xs text-stone-400">
             Indivíduo de{" "}
             {especieNode ? (
-              <button onClick={() => onNavegarEspecie(especieNode.id)} className="text-emerald-400 hover:underline font-mono">{especieNode.clado}</button>
+              <button onClick={() => onNavegarEspecie(especieNode.id)} className="text-emerald-400 hover:underline font-mono">{especieNode.linhagemId}</button>
             ) : (
               <span className="font-mono text-stone-300">espécime decodificado por seed (não está na árvore atual)</span>
             )}
             {individual.divisao !== null && individual.divisao !== undefined && <span className="text-stone-600"> · divisão simulada {individual.divisao}</span>}
           </div>
 
-          <div className="grid grid-cols-3 gap-2 text-xs">
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs">
             {Object.keys(ATTR_LABEL).map((k) => (
               <div key={k} className="rounded border border-stone-800 p-2 text-center">
                 <div className="text-stone-500 text-[10px] uppercase">{ATTR_LABEL[k]}</div>
@@ -117,7 +117,7 @@ function IndividualViewer({ individual, especieNode, onFechar, onNavegarEspecie,
 
           <div className="text-[10px] font-mono text-stone-500 break-all bg-stone-900/40 rounded p-2">{individual.code}</div>
 
-          <PromptImagemBox g={g} individual={individual} showToast={showToast} />
+          <PromptImagemBox g={g} individual={individual} linhagemId={especieNode?.linhagemId} showToast={showToast} />
         </div>
 
         <div className="sticky bottom-0 bg-stone-950 border-t border-stone-800 px-4 py-3 flex flex-wrap gap-2">
@@ -150,6 +150,27 @@ function SeedSearchModal({ onFechar, onAdicionarComoPrimordial, onMaterializarTr
   const [trilha, setTrilha] = useState(null);
   const [buscandoTrilha, setBuscandoTrilha] = useState(false);
   const [progressoTrilha, setProgressoTrilha] = useState(0);
+  /* v34 — a busca ganhou duas abas. "Colar" é o que sempre existiu; "Montar"
+     abre o montador manual de DNA. Ele não cria espécie: devolve um genoma
+     arbitrário que entra aqui pelo MESMO caminho de um DNA colado, e daí em
+     diante a trilha reversa e o "Gerar linhagem no mundo" já resolvem o
+     resto. Ver o cabeçalho de 14-montador.js para o porquê de o lugar disso
+     ser a busca, e não o motor de primordial. */
+  const [aba, setAba] = useState("colar");
+
+  const usarGenomaMontado = (g) => {
+    const code = serialize(g);
+    const { seed, fiel, camposDivergentes } = seedParaGenoma(g, false);
+    setErro("");
+    setTrilha(null);
+    setResultado({
+      g, code, speciesSeed: seed, individual: null, isPrimordial: false,
+      deDNA: code, deMontador: true, fiel, camposDivergentes: camposDivergentes || [],
+    });
+    setTexto(code);
+    setAba("colar");
+    showToast("DNA montado. Use a trilha abaixo para trazê-lo ao mundo.");
+  };
 
   const buscar = () => {
     setErro(""); setResultado(null); setTrilha(null);
@@ -213,6 +234,22 @@ function SeedSearchModal({ onFechar, onAdicionarComoPrimordial, onMaterializarTr
         </div>
 
         <div className="p-4 space-y-3">
+          <div className="flex gap-1.5">
+            {[["colar", "Colar seed / DNA / texto"], ["montar", "Montar DNA"]].map(([id, rot]) => (
+              <button key={id} onClick={() => setAba(id)}
+                className={`flex-1 px-3 py-2 rounded border text-[11px] ${aba === id
+                  ? "border-emerald-700 bg-emerald-950/30 text-emerald-200"
+                  : "border-stone-800 text-stone-400 hover:border-stone-600"}`}>
+                {id === "montar" && <Hammer size={12} className="inline -mt-0.5 mr-1" />}{rot}
+              </button>
+            ))}
+          </div>
+
+          {aba === "montar" && (
+            <MontadorDNA onUsar={usarGenomaMontado} onCancelar={() => setAba("colar")} showToast={showToast} />
+          )}
+
+          {aba === "colar" && (<>
           <p className="text-[11px] text-stone-500">
             Três formatos, reconhecidos automaticamente:
           </p>
@@ -226,6 +263,7 @@ function SeedSearchModal({ onFechar, onAdicionarComoPrimordial, onMaterializarTr
             className="w-full bg-stone-950 border border-stone-800 rounded p-2 text-[11px] font-data text-stone-300 resize-y"
           />
           <BotaoPrimario onClick={buscar}><Search size={12} className="inline -mt-0.5 mr-1" />Decodificar</BotaoPrimario>
+          </>)}
           {erro && <div className="text-xs text-red-400">{erro}</div>}
 
           {resultado && (
@@ -237,10 +275,18 @@ function SeedSearchModal({ onFechar, onAdicionarComoPrimordial, onMaterializarTr
                   <span className="font-mono">{resultado.camposDivergentes.join(", ")}</span>.
                 </p>
               )}
-              {resultado.deDNA && resultado.fiel && (
+              {resultado.deDNA && resultado.fiel && !resultado.deMontador && (
                 <p className="text-[10px] text-emerald-500/70">
                   Reconstruído a partir do DNA colado, sem nenhuma divergência. A seed abaixo endereça
                   exatamente este espécime.
+                </p>
+              )}
+              {resultado.deMontador && (
+                <p className="text-[10px] text-emerald-500/70">
+                  Montado gene a gene. Ele ainda não existe no mundo — é um destino. Use
+                  “Reconstruir linhagem” logo abaixo para descobrir por qual caminho de deriva uma
+                  bactéria primordial chegaria até ele, e depois “Gerar linhagem no mundo” para que
+                  esse caminho vire espécies de verdade na árvore.
                 </p>
               )}
               {resultado.deDNA && (
@@ -267,7 +313,7 @@ function SeedSearchModal({ onFechar, onAdicionarComoPrimordial, onMaterializarTr
               )}
               <div>
                 <h3 className="font-mono text-xs text-emerald-400 uppercase tracking-widest mb-1 flex items-center gap-2">
-                  {resultado.g.clado}{resultado.individual ? ` · ${resultado.individual.nome}` : ""}
+                  {resultado.linhagemId || (resultado.isPrimordial ? "Forma primordial" : "Espécime avulso")}{resultado.individual ? ` · ${resultado.individual.nome}` : ""}
                   <Badge className={resultado.isPrimordial ? "border-amber-800 text-amber-500" : "border-stone-700 text-stone-400"}>{resultado.isPrimordial ? "primordial" : "derivada"}</Badge>
                 </h3>
                 <p className="text-xs text-stone-400 leading-relaxed">{describeCreatureProse(resultado.g)}</p>
@@ -279,7 +325,7 @@ function SeedSearchModal({ onFechar, onAdicionarComoPrimordial, onMaterializarTr
               </div>
 
               {resultado.individual && (
-                <div className="grid grid-cols-3 gap-2 text-xs">
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs">
                   {Object.entries(resultado.individual.attrVaried).map(([k, v]) => (
                     <div key={k} className="rounded border border-stone-800 p-2 text-center">
                       <div className="text-stone-500 text-[10px] uppercase">{k}</div>
@@ -291,7 +337,7 @@ function SeedSearchModal({ onFechar, onAdicionarComoPrimordial, onMaterializarTr
 
               <div className="text-[10px] font-mono text-stone-500 break-all bg-stone-900/40 rounded p-2">{resultado.code}</div>
 
-              <PromptImagemBox g={resultado.g} individual={resultado.individual} showToast={showToast} />
+              <PromptImagemBox g={resultado.g} individual={resultado.individual} linhagemId={resultado.linhagemId} showToast={showToast} />
 
               {/* v29 — trilha até a primordial a partir do espécime encontrado */}
               <div className="rounded border border-stone-800 p-2.5 space-y-2">
@@ -333,7 +379,7 @@ function SeedSearchModal({ onFechar, onAdicionarComoPrimordial, onMaterializarTr
                   <div className="space-y-1">
                     <div className="text-[11px] text-stone-500">
                       {trilha.sucesso
-                        ? `${trilha.ciclos} ciclo(s) de deriva do ancestral ${trilha.ancestral?.clado} até este espécime.`
+                        ? `${trilha.ciclos} ciclo(s) de deriva do ancestral ${trilha.ancestral?.linhagemId} até este espécime.`
                         : trilha.motivoTexto || "Não foi possível fechar uma trilha exata desta vez — tente sortear outra."}
                     </div>
                     {trilha.ancestral && (

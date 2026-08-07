@@ -203,7 +203,7 @@ function categoricalStep(cur, key, table, opts = {}) {
   if (recorte.nums.length === 0 && opts.exclude) recorte = recorteTabela(table, { exclude: opts.exclude });
   const nums = recorte.nums;
   if (nums.length === 0) { cur.ctx[key] = table[0].value; return table[0].value; }
-  const base = BigInt(nums.length);
+  // v34, performance — ver scalarStep: BigInt só onde é consumido
   const idxValores = recorte.idx;
   let value;
   if (cur.mode === "randomize") {
@@ -221,11 +221,13 @@ function categoricalStep(cur, key, table, opts = {}) {
     if (cur.manual[key] !== undefined && idxValores.has(cur.manual[key])) {
       value = cur.manual[key];
     } else {
+      const base = BigInt(nums.length);
       const idx = Number(cur.seed % base); cur.seed /= base;
       value = pick(table, nums[idx]).value;
     }
   } else { // encode
     value = cur.ctx[key];
+    const base = BigInt(nums.length);
     const achado = idxValores.get(value);
     const idx = BigInt(achado ? achado.i : 0);
     cur.outValue += idx * cur.outMult; cur.outMult *= base;
@@ -238,7 +240,13 @@ function categoricalStep(cur, key, table, opts = {}) {
 function scalarStep(cur, key, opts = {}) {
   const info = scalarDomainInfo(opts.min ?? 0, opts.max ?? 9);
   const domain = info.idxs;
-  const base = BigInt(domain.length);
+  /* v34, performance — `base` é BigInt e só é usada no modo `decode`. Era
+     construída em TODA chamada, inclusive nos modos randomize/encode, que
+     são os dois que rodam em laço quente (normalizarGenoma chama
+     runSpeciesSteps inteiro, ~90 passos, e é chamada a cada ciclo de deriva
+     e a cada rodada de trilha). Construir BigInt é caro e o valor era
+     descartado. Movida para dentro do ramo que a usa — nenhum resultado
+     muda, é a mesma expressão no mesmo lugar lógico. */
   let value;
   if (cur.mode === "randomize") {
     // um valor manual fora do domínio atual (ex.: a deriva deixou locVelocidade=7
@@ -253,9 +261,10 @@ function scalarStep(cur, key, opts = {}) {
     else value = TRIPLES[domain[Math.floor(Math.random() * domain.length)]];
   } else if (cur.mode === "decode") {
     if (cur.manual[key] !== undefined) value = Number(cur.manual[key]);
-    else { const idx = Number(cur.seed % base); cur.seed /= base; value = TRIPLES[domain[idx]]; }
+    else { const base = BigInt(domain.length); const idx = Number(cur.seed % base); cur.seed /= base; value = TRIPLES[domain[idx]]; }
   } else {
     value = cur.ctx[key];
+    const base = BigInt(domain.length);
     const idx = BigInt(info.posPorValor.get(value) ?? 0);
     cur.outValue += idx * cur.outMult; cur.outMult *= base;
   }
@@ -263,15 +272,16 @@ function scalarStep(cur, key, opts = {}) {
   return value;
 }
 
-/* ---------- dígito genérico (clado, variação d6, checagens d100) ---------- */
+/* ---------- dígito genérico (variação d6, checagens d100) ---------- */
 function rawStep(cur, key, base, { decodeFn, encodeFn, randomizeFn }) {
   let value;
-  const b = BigInt(base);
+  // v34, performance — ver scalarStep: BigInt só onde é consumido
   if (cur.mode === "randomize") value = cur.manual?.[key] !== undefined ? cur.manual[key] : randomizeFn();
   else if (cur.mode === "decode") {
     if (cur.manual?.[key] !== undefined) value = cur.manual[key];
-    else { const raw = Number(cur.seed % b); cur.seed /= b; value = decodeFn(raw); }
+    else { const b = BigInt(base); const raw = Number(cur.seed % b); cur.seed /= b; value = decodeFn(raw); }
   } else {
+    const b = BigInt(base);
     value = cur.ctx[key];
     const raw = encodeFn(value);
     cur.outValue += BigInt(raw) * cur.outMult; cur.outMult *= b;
@@ -491,6 +501,13 @@ const CLASSE_TRAVAS = {
     facOrelha: { restrict: ["an", "in"] },
     facDenticao: { restrict: ["0", "mx", "pr"] },
     asaTipo: { restrict: ["qt", "el", "mb"] },
+    /* v34 — teto de DOIS pares de asas. A tabela geral permite até 8, e o
+       artrópode era a única classe sem restrict: saíam insetos de 6 patas
+       com 8 asas (16 apêndices num tronco). Dois pares é o limite do que a
+       anatomia de inseto real comporta (élitro + asa membranosa, ou dois
+       pares membranosos) e continua deixando o inseto ser a classe mais
+       alada do sistema. */
+    asaQtd: { restrict: [0, 2, 4] },
     cdaTipo: { restrict: ["nu", "fr", "lm"] },
   },
   MOL: { // molusco: corpo mole, ventosa, sem esqueleto craniano
@@ -718,6 +735,16 @@ function runSpeciesSteps(cur, isPrimordialIntent) {
       g.memSup = "0S";
       if (numMembros(g.memInf) > 2) g.memInf = "2I";
     }
+    /* v34 — nas classes de asa independente (REP), voo/planeio primário
+       também zera o par superior, mas NÃO reduz as pernas: é o que mantém os
+       dois planos alados vivos (wyvern de 2 pernas, dragão de 4) sem nunca
+       produzir braço e asa no mesmo tronco. Sem esta regra, um réptil voador
+       podia sair com `2S`, e a trava de asa logo adiante — que exige par
+       superior livre — lhe tirava as asas: voador sem asa nenhuma, medido em
+       19% dos répteis voadores. */
+    if (CLASSES_ASA_INDEPENDENTE.has(g.classe) && (g.locPrimario === "V" || g.locPrimario === "P")) {
+      g.memSup = "0S";
+    }
     const inf2 = numMembros(g.memInf), sup2 = numMembros(g.memSup);
     if (inf2 + sup2 > orcamentoMembros) {
       const supPermitido = Math.max(0, orcamentoMembros - inf2);
@@ -908,10 +935,31 @@ function runSpeciesSteps(cur, isPrimordialIntent) {
     const infAtual = Number(String(g.memInf).replace("I", "")) || 0;
     if (supAtual > 0 || infAtual > 2) asaOpts = { fixed: 0 };
   }
+  /* v34 — mesmo nas classes de ASA INDEPENDENTE (hoje só REP), o par
+     SUPERIOR tem que estar livre para haver asa. Os dois planos corporais
+     que a v31 liberou têm ambos `0S`:
+        wyvern  = 2 pernas + asa no lugar do braço  → 4 membros
+        dragão  = 4 pernas + asa independente       → 6 membros
+     Sem esta trava, um réptil com `2S` e `4I` ganhava asa por cima e saía
+     com OITO membros — o mesmo defeito que o orçamento da v29 corrigiu
+     para os não-alados, e que voltava por esta porta. */
+  else if (CLASSES_ASA_INDEPENDENTE.has(g.classe)) {
+    const supAtual = Number(String(g.memSup).replace("S", "")) || 0;
+    if (supAtual > 0) asaOpts = { fixed: 0 };
+  }
   categoricalStep(cur, "asaQtd", T.asaQtd, mergeOpts(asaOpts, classeOpts(g, "asaQtd")));
   if (g.asaQtd !== 0) {
     categoricalStep(cur, "asaTipo", T.asaTipo, classeOpts(g, "asaTipo")); // Fase 2, item 5.3 — exclude ["et"] removido (valor não existe mais)
-    scalarStep(cur, "asaFuncionalidade", g.densidade >= 6 ? { max: 4 } : {});
+    /* v34 — asa de quem VOA como modo primário tem que funcionar. O teto por
+       densidade (corpo denso, asa fraca) valia inclusive para voadores
+       primários, e o resultado medido foi 23% dos voadores com funcionalidade
+       0 ou 1: bichos cuja locomoção principal é o voo e cujas asas não
+       sustentam voo nenhum. Para o voador primário o piso vence o teto — a
+       incoerência ali não é a asa forte, é a densidade alta, e densidade é
+       gene de Estrato II que a deriva pode corrigir depois. Planeio primário
+       exige menos. */
+    const pisoAsa = g.locPrimario === "V" ? { min: 5 } : g.locPrimario === "P" ? { min: 3 } : null;
+    scalarStep(cur, "asaFuncionalidade", pisoAsa || (g.densidade >= 6 ? { max: 4 } : {}));
   } else { g.asaTipo = undefined; g.asaFuncionalidade = undefined; }
 
   /* Voo ou planeio como modo SECUNDÁRIO exige asas — ou poder ambiental
@@ -1132,18 +1180,30 @@ function runSpeciesSteps(cur, isPrimordialIntent) {
     g.anomalias.push(second);
   } else g.ano2 = undefined; // idem: sem o segundo gatilho, nada de segunda anomalia
 
-  // Passo 18 — Clado
-  const c1 = rawStep(cur, "cladoC1", CONS.length, { decodeFn: (i) => CONS[i], encodeFn: (ch) => CONS.indexOf(ch), randomizeFn: () => CONS[Math.floor(Math.random() * CONS.length)] });
-  const v1 = rawStep(cur, "cladoV", VOG.length, { decodeFn: (i) => VOG[i], encodeFn: (ch) => VOG.indexOf(ch), randomizeFn: () => VOG[Math.floor(Math.random() * VOG.length)] });
-  const c2 = rawStep(cur, "cladoC2", CONS.length, { decodeFn: (i) => CONS[i], encodeFn: (ch) => CONS.indexOf(ch), randomizeFn: () => CONS[Math.floor(Math.random() * CONS.length)] });
-  g.clado = (c1 + v1 + c2).charAt(0).toUpperCase() + (c1 + v1 + c2).slice(1).toLowerCase();
+  /* Passo 18 — REMOVIDO na v34.
+     Aqui ficava o clado: três dígitos de seed (consoante-vogal-consoante)
+     que produziam um nome próprio aleatório — "Tum", "Xek". Ele nunca foi
+     um gene: o próprio sistema já o ignorava em toda comparação genômica
+     (`semTax` nos testes, `codigoIdentico` na busca de trilha,
+     GENES_SEMPRE_DERIVADOS na checagem de fidelidade da seed). Era um rótulo
+     ocupando espaço no endereço combinatório.
 
+     No lugar dele, a espécie passa a ser identificada pela POSIÇÃO na
+     árvore (ver segsDoFilho / fmtLinhagem, adiante): um id que descreve
+     exatamente a descendência. Isso não pode viver no genoma nem na seed —
+     é propriedade da árvore, não do organismo. Dois espécimes de genoma
+     idêntico em galhos diferentes têm ids diferentes, e isso é o correto.
+
+     Consequência assumida: a seed encurtou três dígitos, então uma seed
+     anotada em v33 ou antes decodifica para outra espécie. Códigos DRN2
+     antigos continuam válidos — o parser aceita o terceiro campo do TAX e
+     o descarta. */
   return g;
 }
 
 function serialize(g) {
   const parts = [];
-  parts.push(`TAX:${g.reino}.${g.classe}.${g.clado}`);
+  parts.push(`TAX:${g.reino}.${g.classe}`);
   parts.push(`MOR:${g.porte}.${g.densidade}.${g.simetria}.${g.morForma}.${g.morTorso}`);
   parts.push(`LOC:${g.locPrimario}.${g.locSecundario}.${g.locVelocidade}`);
   parts.push(`MEM:${g.memSup}.${g.memInf}.${g.memApendices}.${g.memTerm}.${g.memProp}`);
@@ -1880,7 +1940,7 @@ function fixarEspelhoRaw(g, chave, valor) {
   if (espelho) g[espelho] = valor;
 }
 
-const GENES_SEMPRE_DERIVADOS = new Set(["socSenciencia", "socSencienciaPenalizada", "extremos", "anomalias", "ano1", "ano2", "clado", "cladoC1", "cladoV", "cladoC2"]);
+const GENES_SEMPRE_DERIVADOS = new Set(["socSenciencia", "socSencienciaPenalizada", "extremos", "anomalias", "ano1", "ano2"]);
 
 /* Obtém a seed (endereço combinatório) que, decodificada na Estação DRN2,
    reconstrói este genoma — inclusive espécies nascidas por deriva, que
@@ -1890,7 +1950,29 @@ const GENES_SEMPRE_DERIVADOS = new Set(["socSenciencia", "socSencienciaPenalizad
    que o gerador normal sempre impõe (ex. espécie cega com visão alta) —
    nesse caso a seed ainda é válida e reconstrói a espécie mais próxima
    possível, mas alguns campos derivados podem diferir; eles são listados. */
+/* v34, performance — MEMO. `seedParaGenoma` custa ~0,65 ms (roda
+   runSpeciesSteps duas vezes: uma para codificar, outra para decodificar e
+   conferir fidelidade) e a UI a chama uma vez por card de espécie, em toda
+   renderização da árvore. Com 200 espécies em tela isso é 130 ms de trabalho
+   idêntico repetido a cada re-render — que é boa parte da lentidão sentida
+   ao mexer em filtros ou rodar seleção natural.
+   A função é determinística: mesmo genoma, mesma seed. A chave é o código
+   DRN2 serializado (que já resume todos os genes) mais o flag de primordial.
+   Cache limitado para não crescer sem fim numa sessão longa; ao encher,
+   descarta tudo em vez de manter uma LRU — o custo de recomputar é baixo e
+   o de manter ordenação de acesso, não. */
+const __memoSeed = new Map();
+const MEMO_SEED_MAX = 3000;
 function seedParaGenoma(g, isPrimordial) {
+  const chave = serialize(g) + (isPrimordial ? "|P" : "|-");
+  const cacheado = __memoSeed.get(chave);
+  if (cacheado) return cacheado;
+  const r = seedParaGenomaCalc(g, isPrimordial);
+  if (__memoSeed.size >= MEMO_SEED_MAX) __memoSeed.clear();
+  __memoSeed.set(chave, r);
+  return r;
+}
+function seedParaGenomaCalc(g, isPrimordial) {
   const encCur = newCursor("encode", { ctx: { ...g } });
   runSpeciesSteps(encCur, isPrimordial);
   const seed = mixInverse(encCur.outValue, SPECIES_HALF);
@@ -2168,8 +2250,8 @@ function genomaDeCodigoDRN2(codigo, isPrimordial = false) {
 
 /* Devolve o mesmo formato de decodificarSeedColada, pra que a UI de busca
    trate seed, texto livre e DNA pelo mesmo caminho. `fiel` diz se o código
-   reconstruído bate exatamente com o colado (ignorando o clado, que é nome
-   próprio e não gene); `camposDivergentes` lista o que não coube — acontece
+   reconstruído bate exatamente com o colado (o TAX de três campos das versões
+   antigas é aparado para dois); `camposDivergentes` lista o que não coube — acontece
    quando o código colado descreve uma combinação que as travas do sistema
    não permitem (ex.: código editado à mão, ou vindo de uma versão antiga). */
 function decodificarDNAColado(codigo, isPrimordial = false) {
@@ -2217,7 +2299,7 @@ async function buscarTrilhaReversa(codigoAlvo, onProgress, tentativas = 3) {
     const gAncestral = buildSpecies(null, { reino: "Ba" }, true).g;
     const nodeAncestral = {
       id: "ancestral_hipotetico_" + t,
-      clado: gAncestral.clado,
+      linhagemId: "?",
       g: gAncestral,
       isPrimordial: true,
       code: serialize(gAncestral),
@@ -2243,7 +2325,7 @@ const SPECIES_DIGITS = 155n; // 512 bits
 const IND_MOD = 10n ** IND_DIGITS;
 function padSeed(value, digits) { return (value ?? 0n).toString().padStart(Number(digits), "0"); }
 const GENE_LABELS = {
-  reino: "reino", classe: "classe", clado: "clado",
+  reino: "reino", classe: "classe",
   porte: "porte", densidade: "densidade", simetria: "simetria", morForma: "forma de crescimento", morTorso: "proporção de tronco",
   memProp: "proporção de membros",
   crnPescoco: "pescoço",
@@ -2263,7 +2345,7 @@ const GENE_LABELS = {
 function describeIndividual(g) {
   const l = (k) => GENE_LABELS[k] || k;
   const lines = [
-    `TAX: ${l("reino")}=${g.reino} ${l("classe")}=${g.classe} ${l("clado")}=${g.clado}`,
+    `TAX: ${l("reino")}=${g.reino} ${l("classe")}=${g.classe}`,
     `MOR: ${l("porte")}=${g.porte} ${l("densidade")}=${g.densidade} ${l("simetria")}=${g.simetria}${g.morForma !== "0" ? ` ${l("morForma")}=${g.morForma}` : ""}${g.morTorso !== "0" ? ` ${l("morTorso")}=${g.morTorso}` : ""}`,
     `LOC: ${l("locPrimario")}=${g.locPrimario} ${l("locSecundario")}=${g.locSecundario} ${l("locVelocidade")}=${g.locVelocidade}`,
     `MEM: ${l("memSup")}=${g.memSup} ${l("memInf")}=${g.memInf} ${l("memApendices")}=${g.memApendices} ${l("memTerm")}=${g.memTerm}${g.memProp !== "0" ? ` ${l("memProp")}=${g.memProp}` : ""}`,
@@ -2307,7 +2389,7 @@ function describeCreatureProse(g) {
   const p = [];
 
   p.push(
-    `${g.isPrimordial ? "Primordial" : "Espécie"} do clado ${g.clado}: ${generoReino(g.reino)}${g.classe && !["VEG", "FUN", "MIC"].includes(g.classe) ? ` da classe ${labelOf(T.classeAn, g.classe).toLowerCase()}` : ""}, de porte ${labelOf(T.porte, g.porte).toLowerCase()} e simetria ${labelOf(T.simetria, g.simetria).toLowerCase()}, com densidade corporal ${tier(g.densidade, ["quase sem massa", "leve", "mediana", "densa", "pétrea ou metálica"])}${g.morForma !== "0" ? `, de forma de crescimento ${labelOf(g.reino === "Pl" ? T.morFormaPl : g.reino === "Ba" ? T.morFormaBa : T.morFormaFu, g.morForma).toLowerCase()}` : ""}${g.morTorso !== "0" ? `, tronco ${labelOf(T.morTorso, g.morTorso).toLowerCase()}` : ""}.`
+    `${g.isPrimordial ? "Primordial" : "Espécie"}: ${generoReino(g.reino)}${g.classe && !["VEG", "FUN", "MIC"].includes(g.classe) ? ` da classe ${labelOf(T.classeAn, g.classe).toLowerCase()}` : ""}, de porte ${labelOf(T.porte, g.porte).toLowerCase()} e simetria ${labelOf(T.simetria, g.simetria).toLowerCase()}, com densidade corporal ${tier(g.densidade, ["quase sem massa", "leve", "mediana", "densa", "pétrea ou metálica"])}${g.morForma !== "0" ? `, de forma de crescimento ${labelOf(g.reino === "Pl" ? T.morFormaPl : g.reino === "Ba" ? T.morFormaBa : T.morFormaFu, g.morForma).toLowerCase()}` : ""}${g.morTorso !== "0" ? `, tronco ${labelOf(T.morTorso, g.morTorso).toLowerCase()}` : ""}.`
   );
 
   // Fase 1, item 4.1 — bactéria não tem membros; molde próprio, sem falar em
@@ -2333,11 +2415,28 @@ function describeCreatureProse(g) {
     const nSup = Number(String(g.memSup).replace("S", "")) || 0;
     const nInf = Number(String(g.memInf).replace("I", "")) || 0;
     const nApd = Number(String(g.memApendices).replace("X", "")) || 0;
-    const totalMembros = nSup + nInf;
-    const membrosFrase = totalMembros === 0
-      ? "Não tem membros locomotores"
-      : `Tem ${totalMembros} membro(s) locomotor(es) ao todo — ${nSup} superior(es) e ${nInf} inferior(es)`;
-    locFrase = `Locomove-se principalmente por ${labelOf(T.locPrim, g.locPrimario).toLowerCase()}${g.locSecundario !== "0" ? `, com ${labelOf(T.locSec, g.locSecundario).toLowerCase()} como modo secundário` : ""}, a uma velocidade ${tier(g.locVelocidade)}. ${membrosFrase}${totalMembros > 0 ? `, terminando em ${labelOf(T.memTerm, g.memTerm).toLowerCase()}` : ""}${g.memProp !== "0" && totalMembros > 0 ? `, com membros ${labelOf(T.memProp, g.memProp).toLowerCase()}` : ""}${nApd > 0 ? `. Fora dos membros, porta ${nApd} apêndice(s) não-locomotor(es) — antena, barbilhão ou tentáculo, conforme o plano corporal` : ""}.`;
+    /* v34 — a asa entra na CONTA e ganha origem declarada. Antes o total
+       somava só superiores e inferiores, e as asas apareciam páginas depois
+       numa frase solta: um wyvern (0S/2I + 2 asas) era lido como bicho sem
+       braços com asas vindas do nada. */
+    const nAsa = Number(g.asaQtd) || 0;
+    const origemAsa = origemDaAsa(g);
+    const totalMembros = nSup + nInf + nAsa;
+    let membrosFrase;
+    if (totalMembros === 0) membrosFrase = "Não tem membros locomotores";
+    else if (nAsa && origemAsa === "superior") {
+      membrosFrase = `Tem ${totalMembros} membro(s) locomotor(es) ao todo — ${nInf} inferior(es) e o par superior inteiramente convertido em ${nAsa} asa(s), sem braço livre`;
+    } else if (nAsa && origemAsa === "independente") {
+      membrosFrase = `Tem ${totalMembros} membro(s) locomotor(es) ao todo — ${nSup} superior(es), ${nInf} inferior(es) e ${nAsa} asa(s) num par próprio, articulado à parte dos outros membros`;
+    } else {
+      membrosFrase = `Tem ${totalMembros} membro(s) locomotor(es) ao todo — ${nSup} superior(es) e ${nInf} inferior(es)`;
+    }
+    /* v34 — voar sem asa é permitido, mas só por magia (mag >= 4); a prosa
+       precisa dizer isso, senão o leitor (e o gerador de imagem) recebe um
+       bicho que voa e não tem com o quê. */
+    const magNivel = g.mag ? Number(String(g.mag).slice(1)) || 0 : 0;
+    const vooArcano = (g.locPrimario === "V" || g.locPrimario === "P" || g.locSecundario === "V" || g.locSecundario === "P") && !nAsa && magNivel >= 4;
+    locFrase = `Locomove-se principalmente por ${labelOf(T.locPrim, g.locPrimario).toLowerCase()}${g.locSecundario !== "0" ? `, com ${labelOf(T.locSec, g.locSecundario).toLowerCase()} como modo secundário` : ""}, a uma velocidade ${tier(g.locVelocidade)}. ${membrosFrase}${totalMembros > 0 ? `, terminando em ${labelOf(T.memTerm, g.memTerm).toLowerCase()}` : ""}${g.memProp !== "0" && totalMembros > 0 ? `, com membros ${labelOf(T.memProp, g.memProp).toLowerCase()}` : ""}${nApd > 0 ? `. Fora dos membros, porta ${nApd} apêndice(s) não-locomotor(es) — antena, barbilhão ou tentáculo, conforme o plano corporal` : ""}.${vooArcano ? " Não possui asas: a sustentação no ar é arcana, não anatômica." : ""}`;
   }
   p.push(locFrase);
 
@@ -2362,7 +2461,13 @@ function describeCreatureProse(g) {
     p.push(`Possui ${g.facOlhosQtd} olho(s) do tipo ${labelOf(T.facOlhosTipo, g.facOlhosTipo).toLowerCase()}.`);
   }
 
-  if (g.asaQtd !== 0 && g.asaQtd !== "0") p.push(`Possui ${g.asaQtd} asas do tipo ${labelOf(T.asaTipo, g.asaTipo).toLowerCase()}, com funcionalidade ${tier(g.asaFuncionalidade)}.`);
+  if (g.asaQtd !== 0 && g.asaQtd !== "0") {
+    const orig = origemDaAsa(g);
+    const procedencia = orig === "independente"
+      ? " Elas nascem de um par próprio, à parte dos membros superiores e inferiores"
+      : " Elas são o par de membros superiores modificado — a criatura não tem braços separados das asas";
+    p.push(`Possui ${g.asaQtd} asas do tipo ${labelOf(T.asaTipo, g.asaTipo).toLowerCase()}, com funcionalidade ${tier(g.asaFuncionalidade)}.${procedencia}.`);
+  }
   if (g.cdaComp && g.cdaComp !== "0") p.push(`A cauda é ${labelOf(T.cdaComp, g.cdaComp).toLowerCase()}, do tipo ${labelOf(T.cdaTipo, g.cdaTipo).toLowerCase()}.`);
 
   let dieFrase = `Alimenta-se como ${labelOf(T.dieBase, g.dieBase).toLowerCase()}`;
@@ -2585,11 +2690,28 @@ const DL_PESOS = (() => {
 /* Compara só as chaves que o alvo de fato declara — um código DRN2 sem
    bloco ASA/CDA (porque a espécie não tem asa nem cauda) não deve penalizar
    as chaves ausentes como se fossem exigências. */
+/* v34, performance — `calcularDL` é a função mais chamada do sistema: a
+   busca de trilha a invoca uma vez por tentativa, e o guard permite 4.000
+   tentativas por trilha. Duas coisas custavam caro e nenhuma era necessária:
+     1. `Object.entries(DL_PESOS)` alocava 59 pares NOVOS a cada chamada. A
+        tabela é estática — vira dois arrays paralelos, montados uma vez.
+     2. `String(a) !== String(b)` convertia SEMPRE os dois lados, mesmo
+        quando já eram idênticos. Na prática a maioria dos genes bate, então
+        a comparação estrita resolve quase tudo antes de qualquer conversão.
+   A conversão continua existindo para o caso que ela cobre (2 e "2" contam
+   como iguais, porque um código colado traz números como texto), só que
+   agora como caminho lento. Resultado idêntico, gene a gene. */
+const DL_CHAVES = Object.keys(DL_PESOS);
+const DL_VALORES = DL_CHAVES.map((k) => DL_PESOS[k]);
 function calcularDL(gA, gB) {
   let dl = 0;
-  for (const [k, peso] of Object.entries(DL_PESOS)) {
-    if (gB[k] === undefined) continue;
-    if (String(gA[k]) !== String(gB[k])) dl += peso;
+  for (let i = 0; i < DL_CHAVES.length; i++) {
+    const k = DL_CHAVES[i];
+    const b = gB[k];
+    if (b === undefined) continue;
+    const a = gA[k];
+    if (a === b) continue;                       // caminho rápido: já bate
+    if (String(a) !== String(b)) dl += DL_VALORES[i];
   }
   return dl;
 }
@@ -2933,11 +3055,16 @@ async function buscarTrilhaParaAlvo(nodeOrigem, alvoCodigo, onProgress) {
      dos dois lados. */
   const codigoFinal = serialize(gAtual);
   const alvoNormalizado = String(alvoCodigo).trim();
-  const codigoIdentico = codigoFinal.replace(/-TAX:[^.]+\.[^.]+\.[^-]+/, "") === alvoNormalizado.replace(/^DRN2/, "DRN2").replace(/-TAX:[^.]+\.[^.]+\.[^-]+/, "");
+  /* v34 — o clado sumiu do código, então não há mais nome próprio a ignorar
+     na comparação. O normalizador abaixo apenas apara um TAX de três campos
+     (formato até a v33) para dois, para que um DNA-alvo antigo colado pelo
+     usuário continue batendo. */
+  const taxDoisCampos = (c) => String(c).replace(/TAX:([A-Za-z]+)\.([A-Za-z]+)(\.[A-Za-z]+)?/, "TAX:$1.$2");
+  const codigoIdentico = taxDoisCampos(codigoFinal) === taxDoisCampos(alvoNormalizado);
 
   return {
     sucesso: melhorDL === 0,
-    codigoIdentico, // ignora só o clado (nome próprio da espécie, não é gene)
+    codigoIdentico,
     codigoFinal,
     trilha,
     dlFinal: melhorDL,
@@ -3017,17 +3144,18 @@ function materializarTrilha(resultado, opts = {}) {
     const gA = clonarGenoma(resultado.ancestral.g);
     gA.isPrimordial = true;
     const id = novoId();
+    const segsPrim = proximoPrimordialSegs();
     pai = {
-      id, clado: gA.clado, g: gA, code: serialize(gA), auSurgimento: auInicial,
+      id, linhagemSegs: segsPrim, linhagemId: fmtLinhagem(segsPrim), g: gA, code: serialize(gA), auSurgimento: auInicial,
       pais: [], filhos: [], primordialId: id, ordem: 0, ciclosDecorridos: 0,
       orcamento: 0, acumEstratoII: new Set(), historico: [], isPrimordial: true,
       extinta: false, massaId: massaId || null, origemTrilha: true,
     };
     novos.push(pai);
     emitirEvento({
-      tipo: "primordial", tipoLabel: "PRIMORDIAL SURGE", speciesId: id, clado: pai.clado,
-      primordialId: id, primordialClado: pai.clado, auSurgimento: pai.auSurgimento,
-      texto: `Espécie primordial ${pai.clado} (${REINO_LABEL_LOG[gA.reino] || gA.reino}) surge em ${auTextoLog(pai.auSurgimento)}, reconstruída como ancestral hipotético de uma trilha de deriva.`,
+      tipo: "primordial", tipoLabel: "PRIMORDIAL SURGE", speciesId: id, linhagemId: pai.linhagemId,
+      primordialId: id, primordialLinhagem: pai.linhagemId, auSurgimento: pai.auSurgimento,
+      texto: `Espécie primordial ${pai.linhagemId} (${REINO_LABEL_LOG[gA.reino] || gA.reino}) surge em ${auTextoLog(pai.auSurgimento)}, reconstruída como ancestral hipotético de uma trilha de deriva.`,
       code: pai.code,
     });
   }
@@ -3073,11 +3201,11 @@ function materializarTrilha(resultado, opts = {}) {
        trilha é chegar exatamente no alvo, o nó final tem que ser o alvo. */
     const paiAnterior = pai;
     const g2 = ultimo && gFinal && gFinal.reino ? clonarGenoma(gFinal) : clonarGenoma(g);
-    g2.clado = sortClado();
     g2.isPrimordial = false;
     const id = novoId();
+    const segsF = segsDoFilho(pai);
     const filho = {
-      id, clado: g2.clado, g: g2, code: serialize(g2), auSurgimento: au,
+      id, linhagemSegs: segsF, linhagemId: fmtLinhagem(segsF), g: g2, code: serialize(g2), auSurgimento: au,
       pais: [pai.id], filhos: [], primordialId: pai.primordialId, ordem: 0,
       ciclosDecorridos: 0, orcamento: 0, acumEstratoII: new Set(), historico: [],
       isPrimordial: false, extinta: false, massaId: massaId || pai.massaId || null,
@@ -3085,10 +3213,10 @@ function materializarTrilha(resultado, opts = {}) {
     };
     pai.filhos.push(id);
     emitirEvento({
-      tipo: "especiacao", tipoLabel: "ESPECIAÇÃO (TRILHA)", speciesId: id, clado: filho.clado,
-      maeId: pai.id, maeClado: pai.clado, primordialId: filho.primordialId,
-      primordialClado: pai.primordialClado || pai.clado, auSurgimento: filho.auSurgimento,
-      texto: `${filho.clado} especia a partir de ${pai.clado} após ${ciclosDesdeUltimoCorte} ciclo(s) de uma trilha de deriva materializada. Surge em ${auTextoLog(filho.auSurgimento)}.`,
+      tipo: "especiacao", tipoLabel: "ESPECIAÇÃO (TRILHA)", speciesId: id, linhagemId: filho.linhagemId,
+      maeId: pai.id, maeLinhagem: pai.linhagemId, primordialId: filho.primordialId,
+      primordialLinhagem: pai.primordialLinhagem || pai.linhagemId, auSurgimento: filho.auSurgimento,
+      texto: `${filho.linhagemId} especia a partir de ${pai.linhagemId} após ${ciclosDesdeUltimoCorte} ciclo(s) de uma trilha de deriva materializada. Surge em ${auTextoLog(filho.auSurgimento)}.`,
       code: filho.code, codeAntes: pai.code,
     });
     novos.push(filho);
@@ -3114,10 +3242,10 @@ function materializarTrilha(resultado, opts = {}) {
       aplicarCicloDeriva(gIrma, 0, null);
       Object.assign(gIrma, normalizarGenoma(gIrma, false));
       aplicarCorrecoesAutomaticas(gIrma);
-      gIrma.clado = sortClado();
       const idIrma = novoId();
+      const segsIrma = segsDoFilho(paiAnterior);
       const irma = {
-        id: idIrma, clado: gIrma.clado, g: gIrma, code: serialize(gIrma),
+        id: idIrma, linhagemSegs: segsIrma, linhagemId: fmtLinhagem(segsIrma), g: gIrma, code: serialize(gIrma),
         auSurgimento: au + Math.max(1e-6, duracaoCicloDeriva(gIrma) * 0.5),
         pais: [paiAnterior.id], filhos: [], primordialId: paiAnterior.primordialId, ordem: 0,
         ciclosDecorridos: 0, orcamento: 0, acumEstratoII: new Set(), historico: [],
@@ -3126,10 +3254,10 @@ function materializarTrilha(resultado, opts = {}) {
       };
       paiAnterior.filhos.push(idIrma);
       emitirEvento({
-        tipo: "especiacao", tipoLabel: "ESPECIAÇÃO (RAMO LATERAL)", speciesId: idIrma, clado: irma.clado,
-        maeId: paiAnterior.id, maeClado: paiAnterior.clado, primordialId: irma.primordialId,
-        primordialClado: paiAnterior.primordialClado || paiAnterior.clado, auSurgimento: irma.auSurgimento,
-        texto: `${irma.clado} especia a partir de ${paiAnterior.clado} como ramo lateral da trilha — linhagem-irmã de ${filho.clado}, que não segue rumo ao DNA-alvo. Surge em ${auTextoLog(irma.auSurgimento)}.`,
+        tipo: "especiacao", tipoLabel: "ESPECIAÇÃO (RAMO LATERAL)", speciesId: idIrma, linhagemId: irma.linhagemId,
+        maeId: paiAnterior.id, maeLinhagem: paiAnterior.linhagemId, primordialId: irma.primordialId,
+        primordialLinhagem: paiAnterior.primordialLinhagem || paiAnterior.linhagemId, auSurgimento: irma.auSurgimento,
+        texto: `${irma.linhagemId} especia a partir de ${paiAnterior.linhagemId} como ramo lateral da trilha — linhagem-irmã de ${filho.linhagemId}, que não segue rumo ao DNA-alvo. Surge em ${auTextoLog(irma.auSurgimento)}.`,
         code: irma.code, codeAntes: paiAnterior.code,
       });
       novos.push(irma);
@@ -3268,9 +3396,9 @@ async function gerarLinhagemMultiAlvo(codigosAlvo, opts = {}) {
       sucesso: !!resultado.codigoIdentico,
       ciclos: resultado.trilha.length,
       nosCriados: mat.novos.length,
-      ancoraClado: paiDaTrilha ? paiDaTrilha.clado : null,
+      ancoraLinhagem: paiDaTrilha ? paiDaTrilha.linhagemId : null,
       ancoraDL: ancora ? ancora.dl : null,
-      cladoFinal: mat.novos[mat.novos.length - 1]?.clado || null,
+      linhagemFinal: mat.novos[mat.novos.length - 1]?.linhagemId || null,
       genesResiduais: resultado.genesResiduais || [],
       motivo: resultado.codigoIdentico ? null : (resultado.motivoTexto || null),
     });
@@ -3403,12 +3531,72 @@ function duracaoCicloDeriva(g) {
    de deriva, mas acompanha a escala global. */
 function duracaoCicloSelecao() { return 0.5 * ESCALA_TEMPO; }
 
-function sortClado() {
-  const c1 = CONS[Math.floor(Math.random() * CONS.length)];
-  const v1 = VOG[Math.floor(Math.random() * VOG.length)];
-  const c2 = CONS[Math.floor(Math.random() * CONS.length)];
-  const s = c1 + v1 + c2;
-  return s.charAt(0).toUpperCase() + s.slice(1).toLowerCase();
+/* ============================================================
+   v34 — ID DE LINHAGEM (substitui o clado)
+   ============================================================
+   Pedido: "que todo o sistema de clado fosse removido e substituído por um
+   sistema de id que descreva exatamente a linhagem. Por exemplo 1121
+   (primordial 1, filho 1, neto 2, bisneto 1)".
+
+   O id é a lista de posições do nó em cada nível: o n-ésimo primordial, o
+   n-ésimo filho dele, o n-ésimo filho DESSE, e assim por diante. Guardamos
+   os SEGMENTOS (array de inteiros), não a string — porque a forma compacta
+   "1121" deixa de ser legível assim que algum nível passa de nove irmãos
+   (1-12-1 e 11-2-1 dariam ambos "1121"). `fmtLinhagem` decide: compacto
+   enquanto todos os segmentos couberem num dígito, separado por ponto no
+   instante em que um deles não couber. Assim o caso comum sai exatamente
+   como pedido e o caso extenso continua não-ambíguo.
+
+   O id é atribuído no nascimento e nunca sorteado: o segmento novo é a
+   posição do filho entre os irmãos, isto é, `mae.filhos.length + 1` no
+   momento em que ele é pendurado. */
+function fmtLinhagem(segs) {
+  if (!Array.isArray(segs) || !segs.length) return "?";
+  return segs.every((n) => n >= 0 && n <= 9) ? segs.join("") : segs.join(".");
+}
+
+let __primordialCounter = 0;
+function proximoPrimordialSegs() { return [++__primordialCounter]; }
+
+/* Segmentos do próximo filho de `mae`. Chamar ANTES de dar push em
+   mae.filhos — a posição do novo filho é o tamanho atual mais um. */
+function segsDoFilho(mae) {
+  const base = Array.isArray(mae?.linhagemSegs) ? mae.linhagemSegs : [0];
+  return [...base, (mae?.filhos?.length || 0) + 1];
+}
+
+/* Recalcula o id de uma subárvore inteira. Necessário quando a topologia
+   muda depois do nascimento: materializar uma trilha para trás reparenteia
+   uma raiz, e aí todos os descendentes dela mudam de endereço. Sem isto o
+   id mentiria sobre a linhagem, que é justamente o que ele existe para não
+   fazer. */
+function recalcularLinhagemSubarvore(node, idx, segsBase) {
+  if (!node) return;
+  node.linhagemSegs = segsBase;
+  node.linhagemId = fmtLinhagem(segsBase);
+  const filhos = node.filhos || [];
+  for (let i = 0; i < filhos.length; i++) {
+    const f = idx.get ? idx.get(filhos[i]) : null;
+    if (f) recalcularLinhagemSubarvore(f, idx, [...segsBase, i + 1]);
+  }
+}
+
+/* Reconstrói os ids de TODA a árvore a partir dos primordiais. Usado ao
+   importar um projeto salvo em v33 ou antes, que não tem `linhagemSegs`. */
+function recalcularTodasAsLinhagens(nodes) {
+  const idx = new Map(nodes.map((n) => [n.id, n]));
+  let ordem = 0;
+  for (const n of nodes) {
+    if (!n.isPrimordial) continue;
+    recalcularLinhagemSubarvore(n, idx, [++ordem]);
+  }
+  __primordialCounter = Math.max(__primordialCounter, ordem);
+  // órfãos (nó sem primordial alcançável) recebem um endereço próprio, para
+  // que nenhuma espécie fique sem id depois de um import parcial
+  for (const n of nodes) {
+    if (!n.linhagemSegs) recalcularLinhagemSubarvore(n, idx, [++ordem]);
+  }
+  return nodes;
 }
 
 /* Depois de mutar um gene isoladamente, o genoma pode ficar num estado que
@@ -3602,6 +3790,7 @@ function resetarMotor() {
   __idCounter = 1;
   __idRegiaoCounter = 1;
   __idEraCounter = 1;
+  __primordialCounter = 0; // v34 — senão o mundo novo começa em "7"
 }
 
 /* Restaura o log importado. Os contadores (idCounter/logCounter) são
@@ -3656,7 +3845,7 @@ function emitirEvento(evento) {
 /* Formata uma linha de log pronta para exibição/cópia — sempre inclui
    o código DNA (ou o trecho relevante dele) referenciado pelo evento. */
 function formatarLinhaLog(e) {
-  const cab = `[#${e.seq}] ${e.tipoLabel} · ${e.clado}${e.primordialClado && e.primordialClado !== e.clado ? ` (linhagem de ${e.primordialClado})` : ""}`;
+  const cab = `[#${e.seq}] ${e.tipoLabel} · ${e.linhagemId}${e.primordialLinhagem && e.primordialLinhagem !== e.linhagemId ? ` (linhagem de ${e.primordialLinhagem})` : ""}`;
   const linhas = [cab, e.texto];
   if (e.code) linhas.push(`  DNA: ${e.code}`);
   if (e.codeAntes && e.codeAntes !== e.code) linhas.push(`  DNA antes: ${e.codeAntes}`);
@@ -3665,7 +3854,7 @@ function formatarLinhaLog(e) {
 
 /* ============================================================
    MOTOR DE ÁRVORE GENEALÓGICA
-   Um "nó" é uma espécie: { id, clado, g (genoma completo), code,
+   Um "nó" é uma espécie: { id, linhagemId, linhagemSegs, g (genoma completo), code,
    auSurgimento, pais:[id], filhos:[id], primordialId, ordem,
    ciclosDecorridos, historico:[{cd, pressao, fonte, genesAlterados}],
    extinta, auExtincao, motivoExtincao } — os três últimos setados só por
@@ -3691,9 +3880,11 @@ function sortNomeIndividuo() {
 function criarPrimordial(manual, auInicial, massaId) {
   const built = buildSpecies(null, manual || {}, true);
   const id = novoId();
+  const segs = proximoPrimordialSegs();
   const node = {
     id,
-    clado: built.g.clado,
+    linhagemSegs: segs,
+    linhagemId: fmtLinhagem(segs),
     g: built.g,
     code: built.code,
     auSurgimento: auInicial ?? 0,
@@ -3713,11 +3904,11 @@ function criarPrimordial(manual, auInicial, massaId) {
     tipo: "primordial",
     tipoLabel: "PRIMORDIAL SURGE",
     speciesId: id,
-    clado: node.clado,
+    linhagemId: node.linhagemId,
     primordialId: id,
-    primordialClado: node.clado,
+    primordialLinhagem: node.linhagemId,
     auSurgimento: node.auSurgimento,
-    texto: `Espécie primordial ${node.clado} (${REINO_LABEL_LOG[node.g.reino] || node.g.reino}) surge em ${auTextoLog(node.auSurgimento)}, sem ancestral.`,
+    texto: `Espécie primordial ${node.linhagemId} (${REINO_LABEL_LOG[node.g.reino] || node.g.reino}) surge em ${auTextoLog(node.auSurgimento)}, sem ancestral.`,
     code: node.code,
   });
   return node;
@@ -3729,7 +3920,7 @@ function criarPrimordial(manual, auInicial, massaId) {
    escreve nos logs. */
 const REINO_LABEL = { An: "Animal", Pl: "Planta", Fu: "Fungo", Ba: "Bactéria", Ar: "Construto", Sp: "Espiritual" }; // Fase 1, item 4.1
 const REINO_LABEL_LOG = REINO_LABEL;
-/* v29 — a árvore mostra o reino ANTES do clado, para dar pra identificar a
+/* v29 — a árvore mostra o reino ANTES do id de linhagem, para dar pra identificar a
    espécie sem abrir o card. Em tela de celular o nome inteiro come a linha,
    então aqui ficam a etiqueta curta e a cor de cada reino. */
 const REINO_CURTO = { An: "ANI", Pl: "PLA", Fu: "FUN", Ba: "BAC", Ar: "CON", Sp: "ESP" };
@@ -3759,13 +3950,13 @@ function avancarCicloNaLinhagem(linhagemState) {
 
   const totalGenes = genesAlterados.I.length + genesAlterados.II.length + genesAlterados.III.length;
   if (vaiLogar) {
-    const { speciesId, clado, primordialId, primordialClado } = linhagemState.logContext;
+    const { speciesId, linhagemId, primordialId, primordialLinhagem } = linhagemState.logContext;
     const codeDepois = serialize(linhagemState.g);
     const listaGenes = [...genesAlterados.I.map((k) => `${k}(I)`), ...genesAlterados.II.map((k) => `${k}(II)`), ...genesAlterados.III.map((k) => `${k}(III)`)];
     emitirEvento({
       tipo: "ciclo_deriva",
       tipoLabel: `CICLO DE DERIVA CD${linhagemState.ciclosDecorridos}`,
-      speciesId, clado, primordialId, primordialClado,
+      speciesId, linhagemId, primordialId, primordialLinhagem,
       texto: totalGenes > 0
         ? `Pressão ${nomePressao(pressaoValor)}(${pressaoValor}) via "${fonte.nome}" — ${totalGenes} gene(s) alterado(s): ${listaGenes.join(", ")}.`
         : `Pressão ${nomePressao(pressaoValor)}(${pressaoValor}) via "${fonte.nome}" — nenhum gene mudou neste ciclo.`,
@@ -3781,8 +3972,7 @@ function avancarCicloNaLinhagem(linhagemState) {
 
 
 function especiar(mae, linhagemState) {
-  const novoClado = sortClado();
-  const g2 = { ...linhagemState.g, clado: novoClado, isPrimordial: false };
+  const g2 = { ...linhagemState.g, isPrimordial: false };
   const id = novoId();
   const cdDuracaoAU = duracaoCicloDeriva(mae.g); // AU = 1 milhão de anos (ver AU_EM_ANOS)
   const auAcumulado = linhagemState.ciclosDecorridos * cdDuracaoAU;
@@ -3797,9 +3987,13 @@ function especiar(mae, linhagemState) {
      nunca colida com a mãe no mesmo instante; o arredondamento ao milhão
      de anos é aplicado só na exibição. */
   const auFilha = mae.auSurgimento + Math.max(1e-6, auAcumulado);
+  /* v34 — o endereço é calculado ANTES do push em mae.filhos: a posição do
+     novo filho é o tamanho atual da lista mais um. */
+  const segsFilho = segsDoFilho(mae);
   const filho = {
     id,
-    clado: novoClado,
+    linhagemSegs: segsFilho,
+    linhagemId: fmtLinhagem(segsFilho),
     g: g2,
     code: serialize(g2),
     auSurgimento: auFilha,
@@ -3821,18 +4015,18 @@ function especiar(mae, linhagemState) {
   };
   mae.filhos.push(id);
 
-  const primordialClado = linhagemState.logContext?.primordialClado || mae.clado;
+  const primordialLinhagem = linhagemState.logContext?.primordialLinhagem || mae.linhagemId;
   const totalGenesOrigem = linhagemState.historico.reduce((acc, h) => acc + h.genesAlterados.I.length + h.genesAlterados.II.length + h.genesAlterados.III.length, 0);
   emitirEvento({
     tipo: "especiacao",
     tipoLabel: "ESPECIAÇÃO",
     speciesId: id,
-    clado: novoClado,
+    linhagemId: filho.linhagemId,
     maeId: mae.id,
-    maeClado: mae.clado,
+    maeLinhagem: mae.linhagemId,
     primordialId: filho.primordialId,
-    primordialClado,
-    texto: `${novoClado} especia a partir de ${mae.clado} após ${linhagemState.ciclosDecorridos} ciclo(s) de deriva (${totalGenesOrigem} gene(s) acumulado(s) alterado(s)). Surge em ${auTextoLog(filho.auSurgimento)}.`,
+    primordialLinhagem,
+    texto: `${filho.linhagemId} especia a partir de ${mae.linhagemId} após ${linhagemState.ciclosDecorridos} ciclo(s) de deriva (${totalGenesOrigem} gene(s) acumulado(s) alterado(s)). Surge em ${auTextoLog(filho.auSurgimento)}.`,
     code: filho.code,
     codeAntes: mae.code,
   });
@@ -3962,7 +4156,7 @@ function novaLinhagemState(node, fontePressaoFixa) {
     acumEstratoII: new Set(),
     historico: [],
     fontePressaoFixa: fontePressaoFixa || null,
-    logContext: { speciesId: node.id, clado: node.clado, primordialId: node.primordialId, primordialClado: node.primordialClado || node.clado },
+    logContext: { speciesId: node.id, linhagemId: node.linhagemId, primordialId: node.primordialId, primordialLinhagem: node.primordialLinhagem || node.linhagemId },
     idadeRodadas: 0, // quantas rodadas essa linhagem já está viva — usado para extinguir a mais antiga quando o teto satura
   };
 }
@@ -4007,8 +4201,8 @@ function cederControle() {
    barra de progresso simplesmente não passam o callback. */
 async function derivarLinhagem(nodeInicial, ciclosAlvo, registrarNo, onProgress) {
   const todasFilhas = [];
-  const primordialClado = nodeInicial.isPrimordial ? nodeInicial.clado : (__eventLog.find((e) => e.speciesId === nodeInicial.primordialId)?.clado || nodeInicial.clado);
-  const nodeInicialComPrimordial = { ...nodeInicial, primordialClado };
+  const primordialLinhagem = nodeInicial.isPrimordial ? nodeInicial.linhagemId : (__eventLog.find((e) => e.speciesId === nodeInicial.primordialId)?.linhagemId || nodeInicial.linhagemId);
+  const nodeInicialComPrimordial = { ...nodeInicial, primordialLinhagem };
 
   /* Pool de linhagens vivas. Ao contrário da v31, ele NÃO tem tamanho
      máximo: o que é limitado é quantas avançam por rodada (concorrência) e
@@ -4057,7 +4251,7 @@ async function derivarLinhagem(nodeInicial, ciclosAlvo, registrarNo, onProgress)
       // especiação: a filha nova sempre nasce
       const maeAnterior = linhagem.maeAtual;
       const filha = especiar(maeAnterior, linhagem.state);
-      const filhaComPrimordial = { ...filha, primordialClado };
+      const filhaComPrimordial = { ...filha, primordialLinhagem };
       registrarNo(filha);
       todasFilhas.push(filha);
 
@@ -4371,7 +4565,7 @@ const FILTROS_POR_ID = new Map(FILTROS_ESPECIE.map((f) => [f.id, f]));
 
 /* Estado de filtro (o que a UI guarda):
    {
-     texto: "trecho de DNA ou nome de clado",
+     texto: "trecho de DNA ou id de linhagem",
      au: 12345 | null,                        // corte temporal do slider
      campos: { reino: ["An","Pl"], pesoKg: { min: 1, max: 500 }, temAsa: true }
    }
@@ -4406,7 +4600,7 @@ function nodePassaNoFiltro(node, estado, ctx) {
 
   const texto = (estado?.texto || "").trim().toLowerCase();
   if (texto) {
-    const alvo = `${node.clado} ${node.code}`.toLowerCase();
+    const alvo = `${node.linhagemId} ${node.code}`.toLowerCase();
     if (!alvo.includes(texto)) return false;
   }
 
@@ -4531,10 +4725,10 @@ function avaliarInteracao(nodeA, nodeB) {
   const gA = nodeA.g, gB = nodeB.g;
   // predação: A caça B, ou B caça A
   if (ehPredadorViavel(gA) && ehPresaVulneravel(gB) && ehPresaAnimal(gB) && gA.dieBase !== "hb" && gA.dieBase !== "de") {
-    return { perdedora: nodeB, vencedora: nodeA, tipo: "predacao", motivo: `${nodeA.clado} (armado, agressivo) predaria ${nodeB.clado} (pouco blindada e lenta)` };
+    return { perdedora: nodeB, vencedora: nodeA, tipo: "predacao", motivo: `${nodeA.linhagemId} (armado, agressivo) predaria ${nodeB.linhagemId} (pouco blindada e lenta)` };
   }
   if (ehPredadorViavel(gB) && ehPresaVulneravel(gA) && ehPresaAnimal(gA) && gB.dieBase !== "hb" && gB.dieBase !== "de") {
-    return { perdedora: nodeA, vencedora: nodeB, tipo: "predacao", motivo: `${nodeB.clado} (armado, agressivo) predaria ${nodeA.clado} (pouco blindada e lenta)` };
+    return { perdedora: nodeA, vencedora: nodeB, tipo: "predacao", motivo: `${nodeB.linhagemId} (armado, agressivo) predaria ${nodeA.linhagemId} (pouco blindada e lenta)` };
   }
   // competição por nicho: mesma dieta, mesma locomoção primária — quem tem
   // mais senciência OU mais velocidade domina o recurso primeiro
@@ -4543,7 +4737,7 @@ function avaliarInteracao(nodeA, nodeB) {
     const scoreB = (gB.socSenciencia ?? 0) * 2 + (gB.locVelocidade ?? 0);
     if (scoreA !== scoreB) {
       const [venc, perd] = scoreA > scoreB ? [nodeA, nodeB] : [nodeB, nodeA];
-      return { perdedora: perd, vencedora: venc, tipo: "competicao", motivo: `${venc.clado} e ${perd.clado} disputam o mesmo nicho (dieta e locomoção iguais) — ${venc.clado} tem vantagem cognitiva/de velocidade` };
+      return { perdedora: perd, vencedora: venc, tipo: "competicao", motivo: `${venc.linhagemId} e ${perd.linhagemId} disputam o mesmo nicho (dieta e locomoção iguais) — ${venc.linhagemId} tem vantagem cognitiva/de velocidade` };
     }
   }
   return null;
@@ -4642,9 +4836,9 @@ function simularSelecaoNatural(nodes, idx, au, massaId) {
       tipo: "selecao_natural",
       tipoLabel: interacao.tipo === "predacao" ? "PRESSÃO DE PREDAÇÃO" : "PRESSÃO DE COMPETIÇÃO",
       speciesId: alvo.id,
-      clado: alvo.clado,
+      linhagemId: alvo.linhagemId,
       primordialId: alvo.primordialId,
-      primordialClado: alvo.primordialId ? (idx.get(alvo.primordialId)?.clado || alvo.clado) : alvo.clado,
+      primordialLinhagem: alvo.primordialId ? (idx.get(alvo.primordialId)?.linhagemId || alvo.linhagemId) : alvo.linhagemId,
       texto: `${interacao.motivo}. Em ${auTextoLog(au)}, ${totalGenes} gene(s) alterado(s) por pressão de contemporâneos.`,
       code: alvo.code,
       codeAntes,
@@ -4821,8 +5015,8 @@ function rodarCicloSelecaoIndividual(idx, individuals, massas, auAtual = 0) {
         emitirEvento({
           tipo: "selecao_natural_populacao",
           tipoLabel: tipo === "predacao" ? "PRESSÃO DE PREDAÇÃO · POPULAÇÃO" : "PRESSÃO DE COMPETIÇÃO · POPULAÇÃO",
-          speciesId: perdedoraNode.id, clado: perdedoraNode.clado,
-          primordialId: perdedoraNode.primordialId, primordialClado: idx.get(perdedoraNode.primordialId)?.clado || perdedoraNode.clado,
+          speciesId: perdedoraNode.id, linhagemId: perdedoraNode.linhagemId,
+          primordialId: perdedoraNode.primordialId, primordialLinhagem: idx.get(perdedoraNode.primordialId)?.linhagemId || perdedoraNode.linhagemId,
           texto: `${motivo}. Colisão de populações na divisão ${divisao} de ${massa.nome}: ${totalGenes} gene(s) alterado(s) por pressão de indivíduos rivais.`,
           code: perdedoraNode.code, codeAntes,
         });
@@ -4858,9 +5052,9 @@ function rodarCicloSelecaoIndividual(idx, individuals, massas, auAtual = 0) {
           emitirEvento({
             tipo: "migracao",
             tipoLabel: "MIGRAÇÃO",
-            speciesId: perdedoraNode.id, clado: perdedoraNode.clado,
-            primordialId: perdedoraNode.primordialId, primordialClado: idx.get(perdedoraNode.primordialId)?.clado || perdedoraNode.clado,
-            texto: `${perdedoraNode.clado} perde disputa de população na divisão ${divisao} de ${massa.nome} e migra ${queMigram.length} indivíduo(s) para a divisão ${destino} (mantendo população de origem).`,
+            speciesId: perdedoraNode.id, linhagemId: perdedoraNode.linhagemId,
+            primordialId: perdedoraNode.primordialId, primordialLinhagem: idx.get(perdedoraNode.primordialId)?.linhagemId || perdedoraNode.linhagemId,
+            texto: `${perdedoraNode.linhagemId} perde disputa de população na divisão ${divisao} de ${massa.nome} e migra ${queMigram.length} indivíduo(s) para a divisão ${destino} (mantendo população de origem).`,
             code: perdedoraNode.code,
           });
         } else if (queMigram.length) {
@@ -4943,10 +5137,10 @@ function rodarCicloSelecaoIndividual(idx, individuals, massas, auAtual = 0) {
     emitirEvento({
       tipo: "extincao",
       tipoLabel: "EXTINÇÃO",
-      speciesId: node.id, clado: node.clado,
-      primordialId: node.primordialId, primordialClado: idx.get(node.primordialId)?.clado || node.clado,
+      speciesId: node.id, linhagemId: node.linhagemId,
+      primordialId: node.primordialId, primordialLinhagem: idx.get(node.primordialId)?.linhagemId || node.linhagemId,
       auSurgimento: node.auSurgimento,
-      texto: `${node.clado} é extinta: perdeu o último indivíduo vivo em ${auTextoLog(node.auExtincao)} (extinção populacional, por pressão de contemporâneos).`,
+      texto: `${node.linhagemId} é extinta: perdeu o último indivíduo vivo em ${auTextoLog(node.auExtincao)} (extinção populacional, por pressão de contemporâneos).`,
       code: node.code,
     });
   }
@@ -5023,10 +5217,54 @@ function destaquesIndividuoParaPrompt(individual) {
   }
   return destaques;
 }
-function gerarPromptImagem(g, individual) {
+/* ============================================================
+   v34 — ORIGEM DA ASA
+   ============================================================
+   Relato: "apareceu um réptil voador, sem membros superiores, apenas 2
+   inferiores. E descreve duas asas membranosas."
+
+   Diagnóstico: o genoma estava certo — 0S/2I + 2 asas é exatamente o plano
+   do pterossauro e do wyvern, em que o par superior NÃO desapareceu, ele
+   VIROU a asa. Quem estava errado era a redação, que somava só `memSup` e
+   `memInf` no total de membros e depois anunciava as asas numa frase
+   separada, sem dizer de onde elas vinham. Lido em sequência, virava um
+   bicho de duas pernas com asas penduradas em lugar nenhum.
+
+   Aqui a origem passa a ser derivada e dita. A ambiguidade só existe em
+   réptil (única classe de asa independente), e o desempate é o número de
+   pernas, que é o que separa os dois planos que a v31 liberou:
+     - até 2 pernas  → a asa É o par superior modificado (4 membros)
+     - 4 pernas      → a asa é um par a mais (6 membros, dragão ocidental)
+   ============================================================ */
+function origemDaAsa(g) {
+  const n = Number(g.asaQtd) || 0;
+  if (!n) return null;
+  const nInf = Number(String(g.memInf).replace("I", "")) || 0;
+  if (!CLASSES_ASA_INDEPENDENTE.has(g.classe)) return "superior";
+  return nInf >= 4 ? "independente" : "superior";
+}
+
+/* Total de membros CONTANDO as asas — é o número que o leitor quer, e o que
+   a checagem de plano corporal impossível usa. Asa de origem superior já
+   ocupa o lugar do braço (não soma duas vezes); asa independente soma. */
+function totalDeMembros(g) {
+  const nSup = Number(String(g.memSup).replace("S", "")) || 0;
+  const nInf = Number(String(g.memInf).replace("I", "")) || 0;
+  const nAsa = Number(g.asaQtd) || 0;
+  const origem = origemDaAsa(g);
+  if (!nAsa) return nSup + nInf;
+  return origem === "independente" ? nSup + nInf + nAsa : nSup + nInf + nAsa;
+}
+
+/* v34 — `linhagemId` é opcional: quem tem o nó passa o endereço, quem só tem
+   um genoma solto (montador, busca por seed) não tem endereço nenhum a
+   passar, e o prompt cai numa referência genérica. */
+function gerarPromptImagem(g, individual, linhagemId) {
   const descricao = describeCreatureProse(g);
   const destaques = destaquesIndividuoParaPrompt(individual);
-  const nomeRef = individual?.nome ? `${individual.nome}, an individual of the ${g.clado} species` : `a specimen of the ${g.clado} species`;
+  const nomeRef = individual?.nome
+    ? `${individual.nome}, an individual of ${linhagemId ? `lineage ${linhagemId}` : "the described species"}`
+    : `a specimen of ${linhagemId ? `lineage ${linhagemId}` : "the described species"}`;
   /* v26, correção #1 — âncora de assunto por reino. Sem isso, "creature" +
      "anatomically coherent" empurra qualquer gerador de imagem para bicho,
      mesmo quando a descrição é de uma planta. */

@@ -123,8 +123,8 @@ function App() {
     const migradas = aplicarDivisaoEra(nodes, mapaAntigaParaNovas);
     if (migradas > 0) setNodes((prev) => prev.map((n) => ({ ...n })));
     emitirEvento({
-      tipo: "era", tipoLabel: "NOVA ERA", speciesId: null, clado: novaEra.nome,
-      primordialId: null, primordialClado: novaEra.nome,
+      tipo: "era", tipoLabel: "NOVA ERA", speciesId: null, linhagemId: novaEra.nome,
+      primordialId: null, primordialLinhagem: novaEra.nome,
       texto: `${novaEra.nome} começa em ${fmtAU(novaEra.auInicio)} com ${novaEra.massas.length} massa(s) de terra. ${migradas} espécie(s) migrada(s) para as massas herdeiras.`,
     });
     setLogVersion((v) => v + 1);
@@ -144,7 +144,7 @@ function App() {
     setIndividuals((prev) => [...prev, ...populacao]);
     setAnoAtual((a) => Math.max(a, auInicial));
     setEditor(null); setLogVersion((v) => v + 1);
-    showToast(`Primordial ${node.clado} criado, com ${populacao.length} indivíduo(s) espalhados pelo território.`);
+    showToast(`Primordial ${node.linhagemId} criado, com ${populacao.length} indivíduo(s) espalhados pelo território.`);
   };
   const salvarEdicao = ({ g, auInicial, massaId }) => {
     // Fase 2, item 5.4 — edição de espécie já viva vira especiação manual:
@@ -156,17 +156,17 @@ function App() {
     setNodes((prev) => [...prev.map((n) => (n.id === alvo.id ? { ...n, filhos: [...n.filhos] } : n)), filho]);
     setIndividuals((prev) => [...prev, ...populacao]);
     setEditor(null); setLogVersion((v) => v + 1);
-    showToast(`${filho.clado} especiada manualmente a partir de ${alvo.clado} (${alvo.clado} preservada intacta), com ${populacao.length} indivíduo(s).`);
+    showToast(`${filho.linhagemId} especiada manualmente a partir de ${alvo.linhagemId} (${alvo.linhagemId} preservada intacta), com ${populacao.length} indivíduo(s).`);
   };
   const deletarEspecie = (node) => {
     if (node.filhos.length > 0) { showToast("Remova (ou reatribua) os descendentes antes de deletar esta espécie."); return; }
-    if (!window.confirm(`Deletar ${node.clado} definitivamente?`)) return;
+    if (!window.confirm(`Deletar ${node.linhagemId} definitivamente?`)) return;
     setNodes((prev) => prev.filter((n) => n.id !== node.id).map((n) => (n.pais.includes(node.id) ? { ...n, pais: [] } : n)));
     if (node.pais[0]) setNodes((prev) => prev.map((n) => (n.id === node.pais[0] ? { ...n, filhos: n.filhos.filter((f) => f !== node.id) } : n)));
     setIndividuals((prev) => prev.filter((i) => i.especieId !== node.id));
     setSelectedSpeciesId(null);
     setLogVersion((v) => v + 1);
-    showToast(`${node.clado} deletada.`);
+    showToast(`${node.linhagemId} deletada.`);
   };
   const clonarEspecie = (node) => {
     const gClone = JSON.parse(JSON.stringify(node.g));
@@ -175,18 +175,20 @@ function App() {
        quando a origem era derivada — e esse flag governa travas reais
        (magia A0-A3, sem crânio humanoide, sem mente coletiva) e a
        reconstrução por seed; (2) o clado era copiado igual, criando duas
-       espécies com o mesmo nome, o que colide os [[wikilinks]] da ficha
+       espécies com o mesmo nome, o que colidia os [[wikilinks]] da ficha
        Obsidian. O clone agora é um primordial de verdade, com identidade
-       própria e genoma renormalizado sob as travas de primordial. */
+       própria e genoma renormalizado sob as travas de primordial.
+       v34 — a identidade não é mais sorteada: `commitPrimordialFromGenome`
+       atribui o próximo endereço de linhagem raiz, então o clone vira uma
+       linhagem nova e numerada, não um nome novo. */
     gClone.isPrimordial = true;
-    gClone.clado = sortClado();
     const gNormalizado = normalizarGenoma(gClone, true);
     const novo = commitPrimordialFromGenome(gNormalizado, node.auSurgimento, node.massaId);
     const populacao = gerarPopulacaoParaEspecie(novo, TAMANHO_POPULACAO_INICIAL, DIVISOES_POR_MASSA, massaIdx.get(novo.massaId)); // Fase 2, item 5.5
     setNodes((prev) => [...prev, novo]);
     setIndividuals((prev) => [...prev, ...populacao]);
     setLogVersion((v) => v + 1);
-    showToast(`${node.clado} clonada como ${novo.clado} (nova espécie primordial independente, mesmo genoma base), com ${populacao.length} indivíduo(s) próprios.`);
+    showToast(`${node.linhagemId} clonada como ${novo.linhagemId} (nova espécie primordial independente, mesmo genoma base), com ${populacao.length} indivíduo(s) próprios.`);
   };
   const derivarEspecie = async (node, ciclos) => {
     setDerivando(true); setProgressoDerivar(0);
@@ -200,7 +202,7 @@ function App() {
     setModalDerivarNode(null); setLogVersion((v) => v + 1);
     setDerivando(false);
     showToast(
-      `${novos.length} nova(s) espécie(s) derivada(s) de ${node.clado}, ${novaPopulacao.length} indivíduo(s) espalhados.` +
+      `${novos.length} nova(s) espécie(s) derivada(s) de ${node.linhagemId}, ${novaPopulacao.length} indivíduo(s) espalhados.` +
       /* v32 — não existe mais extinção por saturação de linhagens; o que
          pode acontecer agora é o orçamento global de ciclos acabar antes de
          todas as linhagens terminarem, e isso é informação útil (dá pra
@@ -219,7 +221,7 @@ function App() {
     setIndividuals((prev) => [...prev, individuo]);
     setLogVersion((v) => v + 1);
     setIndividualViewer({ individual: individuo, especieNode: node });
-    showToast(`Indivíduo ${individuo.nome} criado (${node.clado}).`);
+    showToast(`Indivíduo ${individuo.nome} criado (${node.linhagemId}).`);
   };
 
   /* ---------- v33: salvamento automático, restauração e reset ---------- */
@@ -309,7 +311,7 @@ function App() {
     setIndividuals((prev) => [...prev, ...populacao]);
     setSeedSearchAberto(false);
     setLogVersion((v) => v + 1);
-    showToast(`${node.clado} adicionada ao mundo a partir da seed, com ${populacao.length} indivíduo(s).`);
+    showToast(`${node.linhagemId} adicionada ao mundo a partir da seed, com ${populacao.length} indivíduo(s).`);
   };
 
   /* ---------- v29: materializar uma trilha de deriva na árvore ----------
@@ -368,6 +370,13 @@ function App() {
         });
         const ultimo = novos.find((n) => n.id === anexarA);
         if (ultimo && !ultimo.filhos.includes(alvoNode.id)) ultimo.filhos.push(alvoNode.id);
+        /* v34 — reparentar muda o ENDEREÇO de toda a subárvore: o que era o
+           primordial 3 vira, digamos, o neto 112, e todos os descendentes
+           dele passam a pender de 112. Como o id existe justamente para
+           descrever a linhagem, deixá-lo desatualizado seria pior que não
+           tê-lo. Recalculado sobre a árvore inteira, que é barato e não
+           depende de adivinhar quais nós foram afetados. */
+        return recalcularTodasAsLinhagens([...base, ...novos]);
       }
       return [...base, ...novos];
     });
@@ -376,7 +385,7 @@ function App() {
     setLogVersion((v) => v + 1);
     showToast(
       `Linhagem gerada na árvore: ${novos.length} espécie(s), ${populacao.length} indivíduo(s).` +
-      (podeReparentar ? ` ${alvoNode.clado} deixou de ser primordial e passou a descender de ${novos[0].clado}.` : "")
+      (podeReparentar ? ` ${alvoNode.linhagemId} deixou de ser primordial e passou a descender de ${novos[0].linhagemId}.` : "")
     );
     return novos;
   };
@@ -405,15 +414,22 @@ function App() {
           <div className="w-9 h-9 shrink-0 rounded-full border border-emerald-700 flex items-center justify-center text-emerald-500"><GitBranch size={18} /></div>
           <div className="min-w-0">
             <h1 className="font-display text-lg sm:text-xl font-semibold tracking-tight text-stone-100 leading-none">Droerni · Ecossistema DRN2</h1>
-            <p className="font-data text-[10px] text-stone-500 tracking-wider truncate">v33 · tempo geológico, trilha gradual, salvamento automático</p>
+            <p className="font-data text-[10px] text-stone-500 tracking-wider truncate">v34 · asas coerentes, montador manual, mobile e performance</p>
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
+          {/* v34 — no celular ficam só busca e configurações. Os outros quatro
+              (testes, patchnotes, importar, exportar) mudaram para dentro do
+              painel de configurações: seis ícones nesta barra espremiam o
+              título e nenhum deles é de uso frequente. Em telas grandes, onde
+              sobra espaço, continuam à mão. */}
           <button onClick={() => abrirBusca()} title="Buscar por seed, DNA ou texto" className="p-2 rounded border border-stone-800 text-stone-400 hover:text-stone-200 hover:border-stone-600"><Search size={14} /></button>
-          <button onClick={() => setTestesAberto(true)} title="Bateria de testes" className="p-2 rounded border border-stone-800 text-stone-400 hover:text-stone-200 hover:border-stone-600"><FlaskConical size={14} /></button>
+          <div className="hidden sm:flex items-center gap-2">
+            <button onClick={() => setTestesAberto(true)} title="Bateria de testes" className="p-2 rounded border border-stone-800 text-stone-400 hover:text-stone-200 hover:border-stone-600"><FlaskConical size={14} /></button>
+            <button onClick={() => setPatchnotesAberto(true)} title="Patchnotes" className="p-2 rounded border border-stone-800 text-stone-400 hover:text-stone-200 hover:border-stone-600"><FileText size={14} /></button>
+            <PersistenceBar eras={eras} nodes={nodes} individuals={individuals} anoAtual={anoAtual} faseGeoConfirmada={faseGeoConfirmada} faseErasConfirmada={faseErasConfirmada} onImportar={onImportarProjeto} showToast={showToast} />
+          </div>
           <IndicadorSalvamento ultimoSalvamento={ultimoSalvamento} onAbrir={() => setConfigAberto(true)} />
-          <button onClick={() => setPatchnotesAberto(true)} title="Patchnotes" className="p-2 rounded border border-stone-800 text-stone-400 hover:text-stone-200 hover:border-stone-600"><FileText size={14} /></button>
-          <PersistenceBar eras={eras} nodes={nodes} individuals={individuals} anoAtual={anoAtual} faseGeoConfirmada={faseGeoConfirmada} faseErasConfirmada={faseErasConfirmada} onImportar={onImportarProjeto} showToast={showToast} />
         </div>
       </header>
 
@@ -510,6 +526,9 @@ function App() {
           onMudarEscala={mudarEscalaTempo}
           totais={{ especies: nodes.length, individuos: individuals.length, eras: eras.length }}
           showToast={showToast}
+          onAbrirPatchnotes={() => { setConfigAberto(false); setPatchnotesAberto(true); }}
+          onAbrirTestes={() => { setConfigAberto(false); setTestesAberto(true); }}
+          barraProjeto={<PersistenceBar eras={eras} nodes={nodes} individuals={individuals} anoAtual={anoAtual} faseGeoConfirmada={faseGeoConfirmada} faseErasConfirmada={faseErasConfirmada} onImportar={onImportarProjeto} showToast={showToast} rotulos />}
         />
       )}
 
@@ -528,7 +547,7 @@ function App() {
 
       {patchnotesAberto && <PainelPatchnotes onFechar={() => setPatchnotesAberto(false)} />}
 
-      <footer className="max-w-4xl mx-auto px-4 sm:px-6 pb-10 pt-4 text-[10px] text-stone-700 font-data">DRN2 v32 · Droerni — trilha multi-alvo, geografia editável, 33 filtros</footer>
+      <footer className="max-w-4xl mx-auto px-4 sm:px-6 pb-10 pt-4 text-[10px] text-stone-700 font-data">DRN2 v34 · Droerni — coerência de asas, mobile, performance</footer>
     </div>
   );
 }

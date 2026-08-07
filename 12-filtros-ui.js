@@ -131,7 +131,7 @@ function PainelFiltros({ estado, setEstado, ctx, totalNodes, totalVisiveis }) {
           type="text"
           value={estado.texto || ""}
           onChange={(e) => setEstado((s) => ({ ...s, texto: e.target.value }))}
-          placeholder="Buscar por clado ou trecho do DNA (ex.: TAX:An.MAM)"
+          placeholder="Buscar por id de linhagem ou trecho do DNA (ex.: TAX:An.MAM)"
           className="flex-1 min-w-0 text-[11px] font-mono bg-stone-900 border border-stone-800 rounded px-2.5 py-1.5 text-stone-300 placeholder-stone-600 focus:border-emerald-700 focus:outline-none"
         />
         <button
@@ -342,7 +342,7 @@ function ModalTrilhaMultiAlvo({ eraAtual, nodesDisponiveis, onGerar, onFechar, r
                     className="bg-stone-950 border border-stone-800 rounded px-2 py-1.5 text-xs text-stone-200 w-full">
                     <option value="">Ancestral primordial novo (bactéria sorteada)</option>
                     {(nodesDisponiveis || []).map((n) => (
-                      <option key={n.id} value={n.id}>{n.clado} · {REINO_CURTO[n.g.reino] || n.g.reino}</option>
+                      <option key={n.id} value={n.id}>{n.linhagemId} · {REINO_CURTO[n.g.reino] || n.g.reino}</option>
                     ))}
                   </select>
                 </div>
@@ -373,7 +373,7 @@ function ModalTrilhaMultiAlvo({ eraAtual, nodesDisponiveis, onGerar, onFechar, r
                 <div key={i} className={`text-[10px] rounded border px-2 py-1.5 ${r.sucesso ? "border-emerald-900 bg-emerald-950/20 text-emerald-300" : "border-amber-900 bg-amber-950/20 text-amber-300"}`}>
                   Alvo {r.indice + 1}: {r.sucesso ? "bateu 100%" : "parcial"}
                   {r.ciclos !== undefined && ` · ${r.ciclos} ciclo(s) · ${r.nosCriados} nó(s)`}
-                  {r.ancoraClado ? ` · ramificou de ${r.ancoraClado}` : " · linhagem-tronco"}
+                  {r.ancoraLinhagem ? ` · ramificou de ${r.ancoraLinhagem}` : " · linhagem-tronco"}
                   {r.motivo ? ` — ${r.motivo}` : ""}
                 </div>
               ))}

@@ -65,8 +65,8 @@ function ModalGerarEcossistema({ eraAtual, onGerar, onFechar, gerando, progresso
   };
 
   return (
-    <div className="fixed inset-0 z-40 bg-black/70 flex items-center justify-center p-4">
-      <div className="bg-stone-950 border border-stone-800 rounded-lg w-full max-w-sm p-4 space-y-3">
+    <div className="fixed inset-0 z-40 bg-black/70 flex items-end sm:items-center justify-center p-0 sm:p-4">
+      <div className="bg-stone-950 border border-stone-800 rounded-t-2xl sm:rounded-lg w-full max-w-sm p-4 space-y-3 max-h-[88vh] overflow-y-auto">
         <div className="flex items-center justify-between">
           <h2 className="font-mono text-sm text-emerald-400 uppercase tracking-widest">Gerar Ecossistema</h2>
           {!gerando && <button onClick={onFechar} className="text-stone-500 hover:text-stone-200"><X size={18} /></button>}
@@ -134,10 +134,10 @@ function ModalGerarEcossistema({ eraAtual, onGerar, onFechar, gerando, progresso
 function ModalDerivar({ node, onDerivar, onFechar, derivando, progresso }) {
   const [ciclos, setCiclos] = useState("5");
   return (
-    <div className="fixed inset-0 z-40 bg-black/70 flex items-center justify-center p-4">
-      <div className="bg-stone-950 border border-stone-800 rounded-lg w-full max-w-sm p-4 space-y-3">
+    <div className="fixed inset-0 z-40 bg-black/70 flex items-end sm:items-center justify-center p-0 sm:p-4">
+      <div className="bg-stone-950 border border-stone-800 rounded-t-2xl sm:rounded-lg w-full max-w-sm p-4 space-y-3 max-h-[88vh] overflow-y-auto">
         <div className="flex items-center justify-between">
-          <h2 className="font-mono text-sm text-emerald-400 uppercase tracking-widest">Derivar · {node.clado}</h2>
+          <h2 className="font-mono text-sm text-emerald-400 uppercase tracking-widest">Derivar · {node.linhagemId}</h2>
           {!derivando && <button onClick={onFechar} className="text-stone-500 hover:text-stone-200"><X size={18} /></button>}
         </div>
         {derivando ? (
@@ -160,8 +160,8 @@ function ModalDerivar({ node, onDerivar, onFechar, derivando, progresso }) {
 function ModalSelecaoNatural({ onRodar, onFechar, rodando, progresso }) {
   const [ciclos, setCiclos] = useState("10");
   return (
-    <div className="fixed inset-0 z-40 bg-black/70 flex items-center justify-center p-4">
-      <div className="bg-stone-950 border border-stone-800 rounded-lg w-full max-w-sm p-4 space-y-3">
+    <div className="fixed inset-0 z-40 bg-black/70 flex items-end sm:items-center justify-center p-0 sm:p-4">
+      <div className="bg-stone-950 border border-stone-800 rounded-t-2xl sm:rounded-lg w-full max-w-sm p-4 space-y-3 max-h-[88vh] overflow-y-auto">
         <div className="flex items-center justify-between">
           <h2 className="font-mono text-sm text-emerald-400 uppercase tracking-widest">Rodar Seleção Natural</h2>
           {!rodando && <button onClick={onFechar} className="text-stone-500 hover:text-stone-200"><X size={18} /></button>}
@@ -195,7 +195,7 @@ function CardEspecie({ node, onClick, individuosCount }) {
       <div className="flex items-center justify-between">
         <span className="flex items-center gap-1.5 min-w-0">
           <span className={`font-mono text-[9px] tracking-widest ${REINO_COR[node.g.reino] || "text-stone-500"}`}>{REINO_CURTO[node.g.reino] || node.g.reino}</span>
-          <span className="font-mono text-xs text-stone-200 truncate">{node.clado}</span>
+          <span className="font-mono text-xs text-stone-200 truncate">{node.linhagemId}</span>
         </span>
         <div className="flex gap-1">
           {node.isPrimordial && <Badge className="border-amber-800 text-amber-500">primordial</Badge>}
@@ -226,7 +226,38 @@ function CardEspecie({ node, onClick, individuosCount }) {
    pode renderizar tudo aberto de uma vez sem travar o celular —
    o usuário expande sob demanda, como uma árvore de arquivos.
    ============================================================ */
-function NodeArvore({ node, idx, profundidade, onAbrir, individuosPorEspecie, visiveis }) {
+/* v34, performance — NodeArvore é RECURSIVO: cada re-render do App repintava
+   a árvore inteira, nó por nó, mesmo quando nada da árvore tinha mudado. E o
+   App re-renderiza por muito mais coisa que evolução — um toast aparecendo e
+   sumindo já bastava (dois re-renders a cada 2,6 s). Com centenas de
+   espécies isso é a maior fonte de travamento na navegação.
+
+   `React.memo` corta a subárvore inteira quando as props não mudaram. Todas
+   as props aqui são estáveis por construção: `idx`, `individuosPorEspecie` e
+   `visiveis` já vêm de useMemo, `onAbrir` virou useCallback no App, e `node`
+   só troca de referência quando a espécie muda de fato. Nenhuma mudança de
+   comportamento: memo só evita trabalho idêntico. */
+/* v34 — RECUO SATURANTE.
+   O recuo era `profundidade * 14`, linear e sem teto. Uma linhagem de 20
+   níveis (que a trilha gradual da v33 passou a produzir com facilidade)
+   empurrava o nó 280px para dentro e o conteúdo saía da tela — em celular,
+   onde sobram ~360px, isso acontece por volta do 12º nível.
+
+   A solução não é diminuir o passo (a árvore fica ilegível) nem rolar na
+   horizontal (some com o contexto no celular). O recuo passa a SATURAR:
+   cresce normal nos primeiros níveis, onde ele de fato comunica hierarquia,
+   e a partir do 8º cresce 3px por nível até parar em 96px. A profundidade
+   real continua legível porque as bordas verticais dos ancestrais seguem
+   desenhadas, e o nó mostra o número do nível quando passa da saturação. */
+const RECUO_POR_NIVEL = 12;
+const NIVEL_SATURACAO = 8;
+const RECUO_MAXIMO = 96;
+function recuoDaProfundidade(p) {
+  if (p <= NIVEL_SATURACAO) return p * RECUO_POR_NIVEL;
+  return Math.min(RECUO_MAXIMO, NIVEL_SATURACAO * RECUO_POR_NIVEL + (p - NIVEL_SATURACAO) * 3);
+}
+
+const NodeArvore = React.memo(function NodeArvore({ node, idx, profundidade, onAbrir, individuosPorEspecie, visiveis }) {
   const [aberto, setAberto] = useState(profundidade < 2);
   /* v29 — `visiveis` (quando presente) é o conjunto de ids que o filtro
      "ocultar extintas" deixa passar: espécies vivas MAIS os ancestrais
@@ -240,7 +271,7 @@ function NodeArvore({ node, idx, profundidade, onAbrir, individuosPorEspecie, vi
   const indCount = individuosPorEspecie[node.id] || 0;
   return (
     <div>
-      <div className="flex items-center gap-1 py-0.5" style={{ paddingLeft: profundidade * 14 }}>
+      <div className="flex items-center gap-1 py-0.5 min-w-0 overflow-hidden" style={{ paddingLeft: recuoDaProfundidade(profundidade) }}>
         {filhos.length > 0 ? (
           <button onClick={() => setAberto((v) => !v)} className="text-stone-600 hover:text-emerald-400 shrink-0">
             {aberto ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
@@ -249,7 +280,7 @@ function NodeArvore({ node, idx, profundidade, onAbrir, individuosPorEspecie, vi
         <button onClick={() => onAbrir(node.id)} title={node.code} className={`flex items-center gap-1.5 text-left hover:text-emerald-400 group min-w-0 ${node.extinta ? "opacity-50" : ""}`}>
           <Dna size={10} className="text-stone-700 group-hover:text-emerald-500 shrink-0" />
           <span className={`font-mono text-[9px] tracking-widest shrink-0 ${REINO_COR[node.g.reino] || "text-stone-500"}`}>{REINO_CURTO[node.g.reino] || node.g.reino}</span>
-          <span className="font-mono text-xs text-stone-200 group-hover:text-emerald-400 truncate">{node.clado}</span>
+          <span className="font-mono text-xs text-stone-200 group-hover:text-emerald-400 truncate">{node.linhagemId}</span>
           {node.isPrimordial && <Badge className="border-amber-800 text-amber-500 shrink-0">primordial</Badge>}
           {node.extinta && <Badge className="border-red-800 text-red-500 shrink-0">✝ extinta</Badge>}
           <span className="text-[10px] text-stone-600 shrink-0 hidden sm:inline">{fmtKg(pesoCal.pesoKg)} · {fmtAU(node.auSurgimento)}</span>
@@ -259,7 +290,7 @@ function NodeArvore({ node, idx, profundidade, onAbrir, individuosPorEspecie, vi
         </button>
       </div>
       {aberto && filhos.length > 0 && (
-        <div className="border-l border-stone-800 ml-2">
+        <div className={`border-l border-stone-800 ${profundidade < NIVEL_SATURACAO ? "ml-2" : "ml-0"}`}>
           {filhos.map((f) => (
             <NodeArvore key={f.id} node={f} idx={idx} profundidade={profundidade + 1} onAbrir={onAbrir} individuosPorEspecie={individuosPorEspecie} visiveis={visiveis} />
           ))}
@@ -267,7 +298,7 @@ function NodeArvore({ node, idx, profundidade, onAbrir, individuosPorEspecie, vi
       )}
     </div>
   );
-}
+});
 
 /* v29 — conjunto de ids que sobrevivem ao filtro "só espécies vivas":
    toda espécie não extinta, mais todos os ancestrais dela (mesmo extintos),
@@ -288,7 +319,7 @@ function idsVisiveisSoVivas(nodes, idx) {
   return visiveis;
 }
 
-function ArvoreGenealogicaGlobal({ nodes, idx, individuals, onAbrir, ocultarExtintas, filtroEstado, ctxFiltro }) {
+const ArvoreGenealogicaGlobal = React.memo(function ArvoreGenealogicaGlobal({ nodes, idx, individuals, onAbrir, ocultarExtintas, filtroEstado, ctxFiltro }) {
   const individuosPorEspecie = useMemo(() => {
     const m = {};
     for (const ind of individuals) m[ind.especieId] = (m[ind.especieId] || 0) + 1;
@@ -307,19 +338,37 @@ function ArvoreGenealogicaGlobal({ nodes, idx, individuals, onAbrir, ocultarExti
     if (!porFiltro) return porVida;
     return new Set([...porVida].filter((id) => porFiltro.has(id)));
   }, [nodes, idx, ocultarExtintas, filtroEstado, ctxFiltro]);
-  const primordiais = nodes.filter((n) => n.isPrimordial && (!visiveis || visiveis.has(n.id)));
+  /* v34, performance — era `primordiais.map(p => nodes.filter(...))`: uma
+     varredura completa de `nodes` POR primordial, a cada render. Com 30
+     linhagens e 500 espécies dá 15.000 comparações para montar contadores
+     que um único passe resolve. */
+  const linhagensPorPrimordial = useMemo(() => {
+    const m = new Map();
+    for (const n of nodes) {
+      let e = m.get(n.primordialId);
+      if (!e) { e = { total: 0, vivas: 0, raiz: null }; m.set(n.primordialId, e); }
+      e.total++;
+      if (!n.extinta) e.vivas++;
+    }
+    return m;
+  }, [nodes]);
+  const primordiais = useMemo(
+    () => nodes.filter((n) => n.isPrimordial && (!visiveis || visiveis.has(n.id))),
+    [nodes, visiveis]
+  );
   if (primordiais.length === 0) {
     return <div className="text-xs text-stone-600 py-6 text-center">Nenhuma linhagem passa nos filtros atuais. Afrouxe os filtros ou desligue o corte da linha do tempo.</div>;
   }
   return (
     <div className="space-y-3">
       {primordiais.map((prim) => {
-        const linhagem = nodes.filter((n) => n.primordialId === prim.id);
-        const vivas = linhagem.filter((n) => !n.extinta).length;
+        const resumo = linhagensPorPrimordial.get(prim.id) || { total: 0, vivas: 0 };
+        const linhagem = { length: resumo.total };
+        const vivas = resumo.vivas;
         return (
           <div key={prim.id} className="rounded border border-stone-800 bg-stone-950/40 p-2">
             <div className="text-[10px] uppercase tracking-widest text-stone-600 font-mono mb-1.5 px-1">
-              {prim.clado} · {linhagem.length} espécie(s) na linhagem · <span className="text-emerald-600">{vivas} viva(s)</span> · <span className="text-red-800">{linhagem.length - vivas} extinta(s)</span>
+              {prim.linhagemId} · {linhagem.length} espécie(s) na linhagem · <span className="text-emerald-600">{vivas} viva(s)</span> · <span className="text-red-800">{linhagem.length - vivas} extinta(s)</span>
             </div>
             <NodeArvore node={prim} idx={idx} profundidade={0} onAbrir={onAbrir} individuosPorEspecie={individuosPorEspecie} visiveis={visiveis} />
           </div>
@@ -327,7 +376,7 @@ function ArvoreGenealogicaGlobal({ nodes, idx, individuals, onAbrir, ocultarExti
       })}
     </div>
   );
-}
+});
 
 function PainelBiologia({ eras, nodes, setNodes, individuals, setIndividuals, anoAtual, setAnoAtual, onAbrirViewer, onCriarPrimordial, showToast, onLog, idx }) {
   const [modalEcossistema, setModalEcossistema] = useState(false);
@@ -633,7 +682,7 @@ function PainelLog({ eventLog }) {
         <div className="space-y-1.5 max-h-96 overflow-y-auto">
           {itens.slice().reverse().map((e) => (
             <div key={e.seq} className="text-[11px] font-data border-l-2 border-stone-800 pl-2 py-0.5">
-              <span className="text-stone-600">[#{e.seq}]</span> <span className="text-emerald-600">{e.tipoLabel}</span> <span className="text-stone-400">{e.clado}</span>
+              <span className="text-stone-600">[#{e.seq}]</span> <span className="text-emerald-600">{e.tipoLabel}</span> <span className="text-stone-400">{e.linhagemId}</span>
               <div className="text-stone-600">{e.texto}</div>
               {e.code && <div className="text-stone-700 font-mono break-all">{e.code}</div>}
             </div>

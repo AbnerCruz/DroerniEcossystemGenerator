@@ -1,4 +1,4 @@
-# Droerni · Ecossistema DRN2 v33
+# Droerni · Ecossistema DRN2 v34
 
 ## Estrutura (tudo na raiz — de propósito)
 
@@ -21,15 +21,16 @@ index.html               shell — carrega tudo via <script src>, em ordem
 11-testes.js             bateria de testes embutida (ícone de frasco no cabeçalho)
 12-filtros-ui.js         UI de filtros e linha do tempo
 13-persistencia.js       salvamento automático (IndexedDB), escala de tempo e reset total — carrega ANTES de 10-app.js
+14-montador.js           montador manual de DNA-alvo (usado pela busca)
 manifest.webmanifest     manifesto PWA (instalável, offline)
 sw.js                    service worker — casca rede-primeiro, CDN cache-primeiro
 icon-192.png             ícones do PWA (192, 512 e 512-maskable)
 patchnotes-manifest.json lista de versões — [0] é sempre a aberta por padrão
-patchnotes-v33.md        changelog da versão atual (um .md por versão)
+patchnotes-v34.md        changelog da versão atual (um .md por versão)
 ```
 
 > Ao subir uma versão nova, lembre de bumpar `VERSAO` em `sw.js` (hoje
-> `drn2-v33`) e de acrescentar o `patchnotes-vXX.md` novo à lista de arquivos
+> `drn2-v34`) e de acrescentar o `patchnotes-vXX.md` novo à lista de arquivos
 > pré-cacheados lá dentro — senão o service worker serve a casca antiga.
 
 Nenhum build step: os arquivos `.js` são JSX puro, transformados no navegador pelo Babel Standalone (carregado via CDN no `index.html`). Editar qualquer arquivo e dar refresh já reflete a mudança.

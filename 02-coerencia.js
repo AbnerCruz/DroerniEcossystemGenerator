@@ -93,7 +93,7 @@ const FAIXA_ALTURA_POR_PORTE_REINO = {
 };
 const FAIXA_ALTURA_POR_PORTE = FAIXA_ALTURA_POR_PORTE_REINO.An; // fallback
 
-/* Hash estável (FNV-1a) — usado só para dar a cada clado uma posição
+/* Hash estável (FNV-1a) — usado só para dar a cada espécie uma posição
    própria dentro da faixa do seu porte. Não é aleatoriedade: roda igual em
    qualquer sessão e em qualquer aparelho. */
 function hashEstavel(texto) {
@@ -106,7 +106,7 @@ function hashEstavel(texto) {
 
    Metade vem de um viés BIOLÓGICO legível — tronco alongado e membros
    longos puxam para o topo da faixa, corpo compacto e prole numerosa puxam
-   para o fundo — e metade de um hash do clado, que é o que dá variação
+   para o fundo — e metade de um hash de genes estáveis, que é o que dá variação
    entre espécies de morfologia grosseira parecida. Só genes que teriam a
    ver com tamanho entram na conta, para o peso não oscilar a cada ciclo de
    deriva por causa de um gene irrelevante como a cor do tegumento. */
@@ -128,7 +128,10 @@ function posicaoNaFaixa(g) {
     if (g.morForma === "ta" || g.morForma === "tr") vies -= 0.15; // tapete, trepadeira
   }
   vies = Math.max(0, Math.min(1, vies));
-  const ruido = hashEstavel(String(g.clado || "") + "|" + g.porte + "|" + g.reino + "|" + (g.classe || ""));
+  /* v34 — o clado saiu do genoma; o ruído de variação individual passa a
+     ser semeado só por genes reais, que é o que ele deveria ter usado desde
+     sempre (o clado era nome próprio e não dizia nada do corpo). */
+  const ruido = hashEstavel(String(g.densidade) + "|" + g.porte + "|" + g.reino + "|" + (g.classe || ""));
   return Math.max(0, Math.min(1, vies * 0.5 + ruido * 0.5));
 }
 

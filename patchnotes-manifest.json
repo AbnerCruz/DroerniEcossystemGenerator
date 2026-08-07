@@ -1,5 +1,11 @@
 [
   {
+    "id": "v34",
+    "titulo": "v34 — Asas coerentes, ID de linhagem, mobile e performance",
+    "arquivo": "patchnotes-v34.md",
+    "data": "2026-08-07"
+  },
+  {
     "id": "v33",
     "titulo": "v33 — Tempo geológico, trilha gradual e salvamento automático",
     "arquivo": "patchnotes-v33.md",

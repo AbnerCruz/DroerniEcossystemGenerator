@@ -25,12 +25,13 @@ const CAMPOS_EDITAVEIS = [
    especiar() (Fase 2 do motor), mas com os genes escolhidos manualmente em
    vez de mutação por pressão evolutiva. */
 function commitEspeciacaoManualFromGenome(mae, g, auInicial, massaId) {
-  const novoClado = sortClado();
-  const g2 = { ...g, clado: novoClado, isPrimordial: false };
+  const g2 = { ...g, isPrimordial: false };
   const id = novoId();
+  const segs = segsDoFilho(mae); // v34 — antes do push em mae.filhos
+  const novoLinhagemId = fmtLinhagem(segs);
   const auFilha = Math.max(mae.auSurgimento + 1e-6, auInicial ?? mae.auSurgimento);
   const filho = {
-    id, clado: novoClado, g: g2, code: serialize(g2), auSurgimento: auFilha,
+    id, linhagemSegs: segs, linhagemId: novoLinhagemId, g: g2, code: serialize(g2), auSurgimento: auFilha,
     pais: [mae.id], filhos: [], primordialId: mae.primordialId, ordem: 0,
     ciclosDecorridos: 0, orcamento: 0, acumEstratoII: new Set(), historico: [],
     isPrimordial: false, extinta: false, massaId: massaId || mae.massaId || null,
@@ -38,10 +39,10 @@ function commitEspeciacaoManualFromGenome(mae, g, auInicial, massaId) {
   };
   mae.filhos.push(id);
   emitirEvento({
-    tipo: "especiacao-manual", tipoLabel: "ESPECIAÇÃO MANUAL", speciesId: id, clado: novoClado,
-    maeId: mae.id, maeClado: mae.clado, primordialId: filho.primordialId, primordialClado: mae.primordialClado || mae.clado,
+    tipo: "especiacao-manual", tipoLabel: "ESPECIAÇÃO MANUAL", speciesId: id, linhagemId: novoLinhagemId,
+    maeId: mae.id, maeLinhagem: mae.linhagemId, primordialId: filho.primordialId, primordialLinhagem: mae.primordialLinhagem || mae.linhagemId,
     auSurgimento: filho.auSurgimento,
-    texto: `${novoClado} especia manualmente a partir de ${mae.clado} (edição dirigida pelo usuário). Surge em ${auTextoLog(filho.auSurgimento)}.`,
+    texto: `${novoLinhagemId} especia manualmente a partir de ${mae.linhagemId} (edição dirigida pelo usuário). Surge em ${auTextoLog(filho.auSurgimento)}.`,
     code: filho.code, codeAntes: mae.code,
   });
   return filho;
@@ -53,16 +54,18 @@ function commitEspeciacaoManualFromGenome(mae, g, auInicial, massaId) {
 function commitPrimordialFromGenome(g, auInicial, massaId) {
   const code = serialize(g);
   const id = novoId();
+  const segs = proximoPrimordialSegs(); // v34 — endereço de linhagem
   const node = {
-    id, clado: g.clado, g, code, auSurgimento: auInicial ?? 0,
+    id, g, code, auSurgimento: auInicial ?? 0,
+    linhagemSegs: segs, linhagemId: fmtLinhagem(segs),
     pais: [], filhos: [], primordialId: id, ordem: 0, ciclosDecorridos: 0,
     orcamento: 0, acumEstratoII: new Set(), historico: [], isPrimordial: true,
     extinta: false, massaId: massaId || null,
   };
   emitirEvento({
-    tipo: "primordial", tipoLabel: "PRIMORDIAL SURGE", speciesId: id, clado: node.clado,
-    primordialId: id, primordialClado: node.clado, auSurgimento: node.auSurgimento,
-    texto: `Espécie primordial ${node.clado} (${REINO_LABEL_LOG[g.reino] || g.reino}) surge em ${auTextoLog(node.auSurgimento)}, sem ancestral.`,
+    tipo: "primordial", tipoLabel: "PRIMORDIAL SURGE", speciesId: id, linhagemId: node.linhagemId,
+    primordialId: id, primordialLinhagem: node.linhagemId, auSurgimento: node.auSurgimento,
+    texto: `Espécie primordial ${node.linhagemId} (${REINO_LABEL_LOG[g.reino] || g.reino}) surge em ${auTextoLog(node.auSurgimento)}, sem ancestral.`,
     code,
   });
   return node;
@@ -139,7 +142,7 @@ function SpeciesEditor({ modo, node, eraAtual, onSalvar, onCancelar }) {
     <div className="fixed inset-0 z-40 bg-black/70 flex items-end sm:items-center justify-center p-0 sm:p-4">
       <div className="bg-stone-950 border border-stone-800 rounded-t-lg sm:rounded-lg w-full sm:max-w-2xl max-h-[92vh] overflow-y-auto">
         <div className="sticky top-0 bg-stone-950 border-b border-stone-800 px-4 py-3 flex items-center justify-between">
-          <h2 className="font-mono text-sm text-emerald-400 uppercase tracking-widest">{modo === "criar" ? "Nova Espécie Primordial" : `Especiação Manual · a partir de ${node.clado}`}</h2>
+          <h2 className="font-mono text-sm text-emerald-400 uppercase tracking-widest">{modo === "criar" ? "Nova Espécie Primordial" : `Especiação Manual · a partir de ${node.linhagemId}`}</h2>
           <button onClick={onCancelar} className="text-stone-500 hover:text-stone-200"><X size={18} /></button>
         </div>
 
@@ -318,7 +321,7 @@ function SpeciesViewer({ node, idx, eras, massaIdx, onFechar, onEditar, onDeleta
       <div className="bg-stone-950 border border-stone-800 rounded-t-lg sm:rounded-lg w-full sm:max-w-xl max-h-[92vh] overflow-y-auto">
         <div className="sticky top-0 bg-stone-950 border-b border-stone-800 px-4 py-3 flex items-center justify-between">
           <h2 className="font-mono text-sm text-emerald-400 uppercase tracking-widest flex items-center gap-2">
-            <Dna size={16} />{node.clado} {node.isPrimordial && <Badge className="border-amber-800 text-amber-500">primordial</Badge>}
+            <Dna size={16} />{node.linhagemId} {node.isPrimordial && <Badge className="border-amber-800 text-amber-500">primordial</Badge>}
             {node.extinta && <Badge className="border-red-800 text-red-500">extinta · {fmtAU(node.auExtincao)}</Badge>}
           </h2>
           <button onClick={onFechar} className="text-stone-500 hover:text-stone-200"><X size={18} /></button>
@@ -351,7 +354,7 @@ function SpeciesViewer({ node, idx, eras, massaIdx, onFechar, onEditar, onDeleta
                     disabled={n.id === node.id}
                     onClick={() => onNavegar(n.id)}
                     className={`font-mono text-[11px] px-1.5 py-0.5 rounded border whitespace-nowrap ${n.id === node.id ? "border-emerald-700 bg-emerald-950/50 text-emerald-400 cursor-default" : "border-stone-800 text-stone-400 hover:text-emerald-400 hover:border-emerald-800"}`}>
-                    {n.clado}{n.isPrimordial ? " · primordial" : ""}
+                    {n.linhagemId}{n.isPrimordial ? " · primordial" : ""}
                   </button>
                 </React.Fragment>
               ))}
@@ -364,7 +367,7 @@ function SpeciesViewer({ node, idx, eras, massaIdx, onFechar, onEditar, onDeleta
               <div className="flex flex-wrap gap-1.5">
                 {irmaosLista.map((s) => (
                   <button key={s.id} onClick={() => onNavegar(s.id)} className="font-mono text-[11px] px-1.5 py-0.5 rounded border border-stone-800 text-stone-400 hover:text-emerald-400 hover:border-emerald-800">
-                    {s.clado}
+                    {s.linhagemId}
                   </button>
                 ))}
               </div>
@@ -372,7 +375,7 @@ function SpeciesViewer({ node, idx, eras, massaIdx, onFechar, onEditar, onDeleta
           )}
 
           <div className="flex items-center gap-4 text-xs">
-            <div><span className="text-stone-500">Ancestral: </span>{ancestral ? <button onClick={() => onNavegar(ancestral.id)} className="text-emerald-400 hover:underline">{ancestral.clado}</button> : <span className="text-stone-600">nenhum</span>}</div>
+            <div><span className="text-stone-500">Ancestral: </span>{ancestral ? <button onClick={() => onNavegar(ancestral.id)} className="text-emerald-400 hover:underline">{ancestral.linhagemId}</button> : <span className="text-stone-600">nenhum</span>}</div>
             <div><span className="text-stone-500">Descendentes: </span><span className="text-stone-300">{descendentes.length}</span></div>
             <div><span className="text-stone-500">Indivíduos: </span><span className="text-stone-300">{individuosDaEspecie.length}</span></div>
           </div>
@@ -389,7 +392,7 @@ function SpeciesViewer({ node, idx, eras, massaIdx, onFechar, onEditar, onDeleta
             </div>
           )}
 
-          <PromptImagemBox g={node.g} individual={null} showToast={showToast} />
+          <PromptImagemBox g={node.g} individual={null} linhagemId={node.linhagemId} showToast={showToast} />
 
           {/* Fase 4, item 7.3 — árvore reversa: buscar trilha de deriva até um DNA-alvo colado */}
           {trilhaAberta && (
@@ -413,7 +416,7 @@ function SpeciesViewer({ node, idx, eras, massaIdx, onFechar, onEditar, onDeleta
                 />
               ) : (
                 <p className="text-[10px] text-stone-500 leading-relaxed">
-                  Reconstrói uma linhagem que chega em <span className="font-mono text-stone-300">{node.clado}</span> a
+                  Reconstrói uma linhagem que chega em <span className="font-mono text-stone-300">{node.linhagemId}</span> a
                   partir de um ancestral primordial (bactéria) sorteado. Não existe "a" trilha certa: a deriva
                   descarta informação, então vários caminhos diferentes chegam ao mesmo genoma. Esta é <span className="text-stone-300">uma</span> das
                   possíveis — sortear de novo devolve outra, igualmente válida.
@@ -442,7 +445,7 @@ function SpeciesViewer({ node, idx, eras, massaIdx, onFechar, onEditar, onDeleta
                       : resultadoTrilha.motivo === "barreira-de-reino" ? resultadoTrilha.motivoTexto
                       : resultadoTrilha.sucesso
                         ? (sentidoTrilha === "atras"
-                          ? `Linhagem reconstruída: ${resultadoTrilha.ciclos} ciclo(s) de deriva do ancestral até ${node.clado}.`
+                          ? `Linhagem reconstruída: ${resultadoTrilha.ciclos} ciclo(s) de deriva do ancestral até ${node.linhagemId}.`
                           : `Bateu 100% no alvo em ${resultadoTrilha.ciclos} ciclo(s) de deriva aceitos.`)
                       : resultadoTrilha.motivoTexto
                         || `Não bateu 100% dentro do limite de tentativas (distância residual: ${resultadoTrilha.dlFinal}).`}
@@ -451,14 +454,14 @@ function SpeciesViewer({ node, idx, eras, massaIdx, onFechar, onEditar, onDeleta
                     <p className="text-[10px] text-stone-600 leading-relaxed">
                       "Gerar linhagem na árvore" materializa esses ciclos como espécies de verdade
                       {sentidoTrilha === "atras"
-                        ? `: o ancestral primordial, as espécies intermediárias e — se ${node.clado} for hoje uma raiz sem ancestral — ${node.clado} passa a descender delas em vez de virar uma cópia.`
-                        : `, penduradas em ${node.clado}, terminando numa espécie com o DNA-alvo.`}
+                        ? `: o ancestral primordial, as espécies intermediárias e — se ${node.linhagemId} for hoje uma raiz sem ancestral — ${node.linhagemId} passa a descender delas em vez de virar uma cópia.`
+                        : `, penduradas em ${node.linhagemId}, terminando numa espécie com o DNA-alvo.`}
                     </p>
                   )}
                   {sentidoTrilha === "atras" && resultadoTrilha.ancestral && (
                     <div className="rounded border border-stone-800 bg-stone-900/40 p-2 space-y-1">
                       <div className="text-[10px] uppercase tracking-widest text-stone-500 font-mono">Ancestral primordial hipotético</div>
-                      <div className="text-[11px] text-stone-300 font-mono">{resultadoTrilha.ancestral.clado}</div>
+                      <div className="text-[11px] text-stone-300 font-mono">{resultadoTrilha.ancestral.linhagemId}</div>
                       <div className="text-[10px] font-mono text-stone-500 break-all">{resultadoTrilha.ancestral.code}</div>
                       <button onClick={copiarAncestral} className="text-[10px] font-mono uppercase text-stone-400 hover:text-emerald-400 border border-stone-800 rounded px-2 py-1">
                         <Copy size={11} className="inline -mt-0.5 mr-1" />Copiar DNA do ancestral

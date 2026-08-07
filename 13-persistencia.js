@@ -234,6 +234,7 @@ function IndicadorSalvamento({ ultimoSalvamento, onAbrir }) {
 function PainelConfiguracoes({
   onFechar, ultimoSalvamento, onSalvarAgora, onApagarSalvamento,
   onResetarTudo, escalaTempo, onMudarEscala, totais, showToast,
+  onAbrirPatchnotes, onAbrirTestes, barraProjeto,
 }) {
   const [confirmandoReset, setConfirmandoReset] = useState(false);
   const [salvando, setSalvando] = useState(false);
@@ -254,6 +255,26 @@ function PainelConfiguracoes({
         </div>
 
         <div className="p-4 space-y-5">
+          {/* PROJETO E FERRAMENTAS — v34.
+              Vieram do cabeçalho. Seis botões de ícone lado a lado numa tela
+              de celular não cabem: espremiam o título, e nenhum deles é de
+              uso frequente o bastante para justificar ocupar a barra
+              permanente. No cabeçalho ficaram só busca e esta engrenagem. */}
+          <section className="space-y-2">
+            <h3 className="font-data text-[11px] uppercase tracking-wider text-stone-500">Projeto</h3>
+            <div className="flex flex-wrap gap-2">{barraProjeto}</div>
+            <div className="flex flex-wrap gap-2">
+              <button onClick={onAbrirPatchnotes}
+                className="flex-1 min-w-[45%] px-3 py-2 rounded border border-stone-800 text-xs text-stone-300 hover:border-stone-600 flex items-center justify-center gap-1.5">
+                <FileText size={13} /> Novidades da versão
+              </button>
+              <button onClick={onAbrirTestes}
+                className="flex-1 min-w-[45%] px-3 py-2 rounded border border-stone-800 text-xs text-stone-300 hover:border-stone-600 flex items-center justify-center gap-1.5">
+                <FlaskConical size={13} /> Bateria de testes
+              </button>
+            </div>
+          </section>
+
           {/* SALVAMENTO */}
           <section className="space-y-2">
             <h3 className="font-data text-[11px] uppercase tracking-wider text-stone-500 flex items-center gap-1.5"><Save size={12} /> Salvamento automático</h3>

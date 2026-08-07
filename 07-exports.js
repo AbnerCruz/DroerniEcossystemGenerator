@@ -37,7 +37,7 @@ function exportarHistoricoPdf(eventLog) {
   const cab = [`${eventLog.length} evento(s) registrado(s).`, ""];
   const corpo = eventLog.map((e) => {
     const hora = new Date(e.ts).toLocaleTimeString("pt-BR");
-    return `[${hora}] #${e.seq} ${e.tipoLabel}\n  ${e.clado}${e.primordialClado && e.primordialClado !== e.clado ? ` (linhagem de ${e.primordialClado})` : ""}\n  ${e.texto}${e.code ? `\n  DNA: ${e.code}` : ""}`;
+    return `[${hora}] #${e.seq} ${e.tipoLabel}\n  ${e.linhagemId}${e.primordialLinhagem && e.primordialLinhagem !== e.linhagemId ? ` (linhagem de ${e.primordialLinhagem})` : ""}\n  ${e.texto}${e.code ? `\n  DNA: ${e.code}` : ""}`;
   });
   downloadPdf(
     `historico-droerni-${new Date().toISOString().slice(0, 10)}.pdf`,
@@ -63,7 +63,7 @@ function arvoreTextoNode(node, idx, prefixo, ehUltimo) {
   const linhas = [];
   const ramo = ehUltimo ? "└─ " : "├─ ";
   const marcaExtincao = node.extinta ? ` [EXTINTA em ${fmtAU(node.auExtincao)}]` : ""; // Fase 1, item 4.2
-  linhas.push(`${prefixo}${ramo}[${fmtAU(node.auSurgimento)}] ${node.clado}${marcaExtincao}`);
+  linhas.push(`${prefixo}${ramo}[${fmtAU(node.auSurgimento)}] ${node.linhagemId}${marcaExtincao}`);
   const filhos = node.filhos.map((id) => idx.get(id)).filter(Boolean);
   const novoPrefixo = prefixo + (ehUltimo ? "   " : "│  ");
   filhos.forEach((f, i) => linhas.push(...arvoreTextoNode(f, idx, novoPrefixo, i === filhos.length - 1)));
@@ -77,7 +77,7 @@ function exportarHistoriaGlobalPdf(nodes, idx, massaIdx) {
     const filhos = prim.filhos.map((id) => idx.get(id)).filter(Boolean);
     const descendencia = filhos.flatMap((f, i) => arvoreTextoNode(f, idx, "   ", i === filhos.length - 1));
     return [
-      `>> ${prim.clado.toUpperCase()}`,
+      `>> ${prim.linhagemId.toUpperCase()}`,
       `   DNA: ${prim.code}`,
       `   Reino: ${REINO_LABEL[prim.g.reino] || prim.g.reino} | Porte: ${prim.g.porte} | Peso: ${fmtKg(pc.pesoKg)}`,
       `   Habitat: ${habitatDoNo(prim, massaIdx).primary.join(", ") || "—"}`,
@@ -110,7 +110,7 @@ function fichaObsidianMd(node, idx, massaIdx) {
   const descendentes = node.filhos.map((id) => idx.get(id)).filter(Boolean);
   const fm = [
     "---",
-    `title: ${node.clado}`,
+    `title: ${node.linhagemId}`,
     `seed: ${gluedSeedText(node.speciesSeed ?? seedParaGenoma(node.g, node.g.isPrimordial).seed, null, node.isPrimordial)}`,
     `peso_kg: ${pc.pesoKg.toFixed(1)}`,
     `calorias_diarias: ${pc.caloriasDia.toFixed(0)}`,
@@ -127,17 +127,17 @@ function fichaObsidianMd(node, idx, massaIdx) {
     `- Primário: ${habitatDoNo(node, massaIdx).primary.join(", ") || "—"}`,
     `- Marginal: ${habitatDoNo(node, massaIdx).marginal.join(", ") || "—"}`, "",
     `## Genealogia`, "",
-    `- Ancestral: ${ancestral ? `[[${ancestral.clado}]]` : "nenhum (primordial)"}`,
-    `- Descendentes: ${descendentes.length ? descendentes.map((d) => `[[${d.clado}]]`).join(", ") : "nenhum"}`,
+    `- Ancestral: ${ancestral ? `[[${ancestral.linhagemId}]]` : "nenhum (primordial)"}`,
+    `- Descendentes: ${descendentes.length ? descendentes.map((d) => `[[${d.linhagemId}]]`).join(", ") : "nenhum"}`,
   ].join("\n");
   return fm + corpo;
 }
 function nomeArquivoSeguro(nome) { return (nome || "especie").replace(/[\\/:*?"<>|]/g, "-"); }
 function exportarFichaUnicaMd(node, idx, massaIdx) {
-  downloadBlob(`${nomeArquivoSeguro(node.clado)}.md`, fichaObsidianMd(node, idx, massaIdx), "text/markdown;charset=utf-8");
+  downloadBlob(`${nomeArquivoSeguro(node.linhagemId)}.md`, fichaObsidianMd(node, idx, massaIdx), "text/markdown;charset=utf-8");
 }
 function exportarFichasObsidianZip(nodes, idx, massaIdx) {
-  const files = nodes.map((n) => ({ name: `${nomeArquivoSeguro(n.clado)}-${n.id}.md`, content: fichaObsidianMd(n, idx, massaIdx) }));
+  const files = nodes.map((n) => ({ name: `${nomeArquivoSeguro(n.linhagemId)}-${n.id}.md`, content: fichaObsidianMd(n, idx, massaIdx) }));
   downloadZip(`fichas-obsidian-droerni-${new Date().toISOString().slice(0, 10)}.zip`, files);
 }
 
@@ -191,6 +191,7 @@ function deserializarProjetoV17(text) {
     };
   });
   const individuals = (parsed.individuals || []).map((i) => ({ ...i, individualSeed: i.individualSeed !== undefined ? BigInt(i.individualSeed) : undefined }));
+  recalcularTodasAsLinhagens(nodes);
   return {
     eras: parsed.eras || [],
     nodes,
@@ -201,6 +202,10 @@ function deserializarProjetoV17(text) {
     faseErasConfirmada: !!parsed.faseErasConfirmada,
     contadores: parsed.contadores || {},
     especiesMigradasDeReinoRemovido: migrados, // Fase 2, item 5.3
+    /* v34 — projetos salvos até a v33 trazem `clado` (nome próprio sorteado)
+       e nenhum `linhagemSegs`. `recalcularTodasAsLinhagens` reconstrói os
+       endereços a partir da topologia salva, que é a única fonte verdadeira
+       deles — o nome antigo simplesmente deixa de ser usado. */
     dominiosCustom: parsed.dominiosCustom || [], // Fase 5, item 9.5
   };
 }
@@ -208,7 +213,11 @@ function deserializarProjetoV17(text) {
 /* ============================================================
    BARRA DE PERSISTÊNCIA
    ============================================================ */
-function PersistenceBar({ eras, nodes, individuals, anoAtual, faseGeoConfirmada, faseErasConfirmada, onImportar, showToast }) {
+/* `rotulos` — v34. A mesma barra aparece em dois contextos: como dois ícones
+   no cabeçalho (telas grandes) e como dois botões com texto dentro do painel
+   de configurações (o caminho do celular). Ícone sem rótulo é ilegível fora
+   de uma barra de ferramentas, então o modo com rótulo existe para lá. */
+function PersistenceBar({ eras, nodes, individuals, anoAtual, faseGeoConfirmada, faseErasConfirmada, onImportar, showToast, rotulos = false }) {
   const fileInputRef = useRef(null);
   const exportar = () => {
     const text = serializeProjetoV17({ eras, nodes, individuals, anoAtual, faseGeoConfirmada, faseErasConfirmada });
@@ -239,6 +248,15 @@ function PersistenceBar({ eras, nodes, individuals, anoAtual, faseGeoConfirmada,
     reader.readAsText(file);
     e.target.value = "";
   };
+  if (rotulos) {
+    return (
+      <>
+        <input ref={fileInputRef} type="file" accept=".json" className="hidden" onChange={importar} />
+        <button onClick={() => fileInputRef.current?.click()} className="flex-1 min-w-[45%] px-3 py-2 rounded border border-stone-800 text-xs text-stone-300 hover:border-stone-600 flex items-center justify-center gap-1.5"><Upload size={13} /> Importar .json</button>
+        <button onClick={exportar} className="flex-1 min-w-[45%] px-3 py-2 rounded border border-stone-800 text-xs text-stone-300 hover:border-stone-600 flex items-center justify-center gap-1.5"><Download size={13} /> Exportar .json</button>
+      </>
+    );
+  }
   return (
     <div className="flex items-center gap-2">
       <input ref={fileInputRef} type="file" accept=".json" className="hidden" onChange={importar} />
