@@ -86,7 +86,14 @@ function MontadorDNA({ onUsar, onCancelar, showToast }) {
      bactéria, magia baixa, sem apêndice) não têm o que fazer aqui. */
   const [g, setG] = useState(() => buildSpecies(null, {}, false, false).g);
 
-  const recalcular = (novos, baseManual) => {
+  /* v36 — mesma correção do editor de espécie (ver 05-ui-especie.js):
+     editar UM campo não pode resortear a tela inteira. Ver o comentário lá
+     para o diagnóstico completo. */
+  const aplicarEdicao = (novosOverrides) => {
+    const candidato = { ...g, ...novosOverrides };
+    setG(normalizarGenoma(candidato, false));
+  };
+  const gerarDoZero = (novos, baseManual) => {
     const built = buildSpecies(null, { ...(baseManual ?? presetAtualManual()), ...novos }, false, false);
     setG(built.g);
   };
@@ -96,14 +103,14 @@ function MontadorDNA({ onUsar, onCancelar, showToast }) {
     const base = (PRESETS_MONTADOR.find((p) => p.id === id) || {}).manual || {};
     setPreset(id);
     setOverrides({});
-    recalcular({}, base);
+    gerarDoZero({}, base); // troca de preset é recomeço deliberado, não edição
   };
   const setCampo = (chave, valor) => {
     const novos = { ...overrides, [chave]: valor };
     setOverrides(novos);
-    recalcular(novos);
+    aplicarEdicao(novos);
   };
-  const resortear = () => recalcular(overrides);
+  const resortear = () => gerarDoZero(overrides); // mantém overrides, resorteia o resto do zero
 
   const issues = useMemo(() => validarCoerencia(g), [g]);
   const erros = issues.filter((i) => i.severidade === "erro");
@@ -148,7 +155,7 @@ function MontadorDNA({ onUsar, onCancelar, showToast }) {
         </p>
       </div>
 
-      <ListaGruposEditaveis g={g} setCampo={setCampo} overridesAtivos={new Set(Object.keys(overrides))} />
+      <ListaGruposEditaveis g={g} setCampo={setCampo} overridesAtivos={new Set(Object.keys(overrides))} isPrimordial={false} />
 
       <button onClick={resortear} className="text-[11px] font-mono uppercase text-stone-400 hover:text-emerald-400 border border-stone-800 rounded px-3 py-2">
         <Dices size={12} className="inline -mt-0.5 mr-1" />Resortear o que não foi fixado

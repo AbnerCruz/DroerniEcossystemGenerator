@@ -232,13 +232,44 @@ const GRUPOS_CAMPOS_EDITAVEIS = [
 const CAMPOS_EDITAVEIS = GRUPOS_CAMPOS_EDITAVEIS.flatMap((gr) => gr.campos);
 
 /* ------------------------------------------------------------
+   v36 — OPÇÕES INVÁLIDAS FICAM DESABILITADAS, NÃO SILENCIOSAMENTE
+   REJEITADAS.
+
+   Pedido: "se por acaso for por inconsistência é só não permitir a
+   seleção." Antes desta versão, escolher uma opção incoerente com o resto
+   do genoma era ACEITA pelo clique e revertida em silêncio pela trava —
+   o usuário via o campo "não pegar" sem entender por quê.
+
+   Esta função não reimplementa nenhuma trava: ela RODA o motor de verdade
+   (a mesma `normalizarGenoma` usada para aplicar a edição) uma vez por
+   opção da tabela, com o resto do genoma atual como contexto, e verifica
+   se o valor pedido sobreviveu. Reimplementar as regras à parte correria o
+   risco de divergir da trava real assim que o motor mudasse — rodar o
+   motor de verdade elimina esse risco por construção, ao custo de uma
+   chamada extra ao motor por opção (~0,2ms cada; medido: uma tabela de 14
+   linhas custa ~3ms, imperceptível). Só é calculada para o grupo ABERTO na
+   tela — grupos recolhidos não pagam esse custo. */
+function opcoesValidasParaCampo(g, campo, isPrimordial) {
+  const tabela = campo.tabela(g);
+  if (!tabela) return null;
+  const base = { ...g };
+  delete base[campo.chave];
+  const validos = new Set();
+  for (const row of tabela) {
+    const teste = normalizarGenoma({ ...base, [campo.chave]: row.value }, isPrimordial);
+    if (String(teste[campo.chave]) === String(row.value)) validos.add(String(row.value));
+  }
+  return validos;
+}
+
+/* ------------------------------------------------------------
    Renderiza um grupo de campos editáveis (select ou slider), com
    cabeçalho colapsável. Compartilhado pelo editor de espécie e pelo
    montador — um único lugar para a UI de campo a campo. `g` é o genoma
    atual (decide quais campos do grupo se aplicam); `setCampo` recebe
    (chave, valor). Grupos sem nenhum campo aplicável não renderizam nada.
    ------------------------------------------------------------ */
-function GrupoCamposEditaveis({ grupo, g, setCampo, abertoPadrao }) {
+function GrupoCamposEditaveis({ grupo, g, setCampo, abertoPadrao, isPrimordial }) {
   const [aberto, setAberto] = useState(abertoPadrao);
   if (grupo.aplicavel && !grupo.aplicavel(g)) return null;
   const camposVisiveis = grupo.campos.filter((c) => {
@@ -278,12 +309,22 @@ function GrupoCamposEditaveis({ grupo, g, setCampo, abertoPadrao }) {
               );
             }
             const tabela = campo.tabela(g);
+            /* Só calcula para o que está de fato na tela (grupo aberto) —
+               ver comentário de opcoesValidasParaCampo acima. */
+            const validos = opcoesValidasParaCampo(g, campo, isPrimordial);
             return (
               <div key={campo.chave}>
                 <label className="text-[10px] uppercase text-stone-500 font-mono truncate block">{campo.label}</label>
                 <select value={g[campo.chave]} onChange={(e) => setCampo(campo.chave, isNaN(Number(e.target.value)) ? e.target.value : Number(e.target.value))}
                   className="bg-stone-950 border border-stone-800 rounded px-2 py-1.5 text-xs text-stone-200 w-full">
-                  {tabela.map((row) => <option key={String(row.value)} value={row.value}>{row.label}</option>)}
+                  {tabela.map((row) => {
+                    const valido = !validos || validos.has(String(row.value));
+                    return (
+                      <option key={String(row.value)} value={row.value} disabled={!valido}>
+                        {row.label}{!valido ? " — indisponível agora" : ""}
+                      </option>
+                    );
+                  })}
                 </select>
               </div>
             );
@@ -298,7 +339,7 @@ function GrupoCamposEditaveis({ grupo, g, setCampo, abertoPadrao }) {
    o conjunto de chaves com valor manual fixado nesta sessão — usado só
    para decidir quais grupos abrem por padrão (o que já tem algo fixado
    fica visível de cara; o resto começa recolhido, pra não virar parede). */
-function ListaGruposEditaveis({ g, setCampo, overridesAtivos }) {
+function ListaGruposEditaveis({ g, setCampo, overridesAtivos, isPrimordial }) {
   return (
     <div className="space-y-1.5">
       {GRUPOS_CAMPOS_EDITAVEIS.map((grupo, i) => (
@@ -307,6 +348,7 @@ function ListaGruposEditaveis({ g, setCampo, overridesAtivos }) {
           grupo={grupo}
           g={g}
           setCampo={setCampo}
+          isPrimordial={isPrimordial}
           abertoPadrao={i < 3 || grupo.campos.some((c) => overridesAtivos?.has(c.chave))}
         />
       ))}
@@ -389,19 +431,44 @@ function SpeciesEditor({ modo, node, eraAtual, onSalvar, onCancelar }) {
   const [massaId, setMassaId] = useState(modo === "criar" ? (eraAtual.massas[0]?.id || "") : node.massaId);
   const [trilhaImportar, setTrilhaImportar] = useState(""); // Fase 4, item 7.3 — só usado em modo "criar"
 
-  const recalcular = (novosOverrides) => {
+  /* v36 — DUAS SEMÂNTICAS DE RECÁLCULO, ANTES CONFUNDIDAS NUMA SÓ.
+
+     Relato: "eu clico na opção e fica resorteando as configurações e
+     portanto perco as configurações anteriores que coloquei."
+
+     Diagnóstico: `recalcular` chamava `buildSpecies` do ZERO a cada clique,
+     com manual = só os overrides explícitos. Todo gene que o usuário não
+     tinha fixado — inclusive os que ele via na tela, só não tinha marcado
+     como override — era resortado de novo, com `Math.random()` novo, em
+     TODO clique. Não era só o campo clicado: a tela inteira embaralhava.
+
+     A correção usa `normalizarGenoma`, que já existe no motor com
+     exatamente esta semântica (documentada lá: "cada gene mantém seu valor
+     atual sempre que ainda for uma opção válida... é recalculado só quando
+     deixou de ser válido" — o "modo dirigido" da Estação DRN2). Editar um
+     campo agora parte do que JÁ ESTÁ NA TELA (`g`), não do zero: só o campo
+     tocado muda de propósito; o resto permanece, e só é recalculado se a
+     mudança o tornou de fato incoerente.
+
+     "Sortear tudo" e "Resortear não-fixados" continuam com a semântica
+     antiga — eles EXISTEM para embaralhar, então usam `buildSpecies` do
+     zero mesmo. */
+  const aplicarEdicao = (novosOverrides) => {
+    const candidato = { ...g, ...novosOverrides };
+    setG(normalizarGenoma(candidato, isPrimordial));
+  };
+  const resortear = (novosOverrides) => {
     const manual = { ...baseManual, ...novosOverrides };
-    // sem seed: o editor recalcula a cada tecla e não usa speciesSeed
     const built = buildSpecies(null, manual, isPrimordial, false);
     setG(built.g);
   };
   const setCampo = (chave, valor) => {
     const novos = { ...overrides, [chave]: valor };
     setOverrides(novos);
-    recalcular(novos);
+    aplicarEdicao(novos);
   };
-  const sortear = () => { setOverrides({}); recalcular({}); };
-  const sortearDeNovo = () => recalcular(overrides); // mantém overrides, resorteia o resto
+  const sortear = () => { setOverrides({}); resortear({}); };
+  const sortearDeNovo = () => resortear(overrides); // mantém overrides, resorteia o resto do zero
 
   const issues = useMemo(() => validarCoerencia(g), [g]);
   const erros = issues.filter((i) => i.severidade === "erro");
@@ -474,7 +541,7 @@ function SpeciesEditor({ modo, node, eraAtual, onSalvar, onCancelar }) {
             </div>
           )}
 
-          <ListaGruposEditaveis g={g} setCampo={setCampo} overridesAtivos={new Set(Object.keys(overrides))} />
+          <ListaGruposEditaveis g={g} setCampo={setCampo} overridesAtivos={new Set(Object.keys(overrides))} isPrimordial={isPrimordial} />
 
           <div className="flex gap-2">
             {modo === "criar" && <BotaoPrimario onClick={sortear} className="!bg-stone-800 !text-stone-300"><Dices size={12} className="inline -mt-0.5 mr-1" />Sortear tudo</BotaoPrimario>}

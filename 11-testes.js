@@ -1409,6 +1409,103 @@ async function suiteCamposExpandidos({ suite, chk, info }, prog) {
   prog(1);
 }
 
+
+/* ============================================================
+   v36 · CC — Edição estável e opções desabilitadas
+   ============================================================
+   Relato: "eu clico na opção e fica resorteando as configurações e
+   portanto perco as configurações anteriores que coloquei. Corrija, se
+   por acaso for por inconsistência é só não permitir a seleção."
+
+   Duas afirmações a testar: (1) editar um campo não pode alterar campos
+   não relacionados que já estavam na tela; (2) uma opção que a trava
+   rejeitaria não deveria nem aparecer selecionável. */
+async function suiteEdicaoEstavel({ suite, chk, info }, prog) {
+  suite("CC · Edição estável e opções desabilitadas (v36)");
+  resetarMotor(); setLogVerbosidade("resumido");
+
+  // (1) normalizarGenoma é a função por trás da edição pontual: aplicar
+  // UM campo não pode reescrever campos que já eram válidos
+  let instaveis = 0, N = 200;
+  for (let i = 0; i < N; i++) {
+    const g = buildSpecies(null, {}, false, false).g;
+    const antes = { tegCor: g.tegCor, dieBase: g.dieBase, socEstrutura: g.socEstrutura, senVisao: g.senVisao };
+    // simula uma edição pontual não relacionada a nenhum dos campos medidos
+    const depois = normalizarGenoma({ ...g, tolCiclo: g.tolCiclo === "di" ? "no" : "di" }, false);
+    if (depois.tegCor !== antes.tegCor || depois.dieBase !== antes.dieBase ||
+        depois.socEstrutura !== antes.socEstrutura || String(depois.senVisao) !== String(antes.senVisao)) instaveis++;
+  }
+  chk("CC1 editar um campo não altera campos não relacionados",
+    instaveis === 0, `${instaveis}/${N} tiveram algum campo não tocado mudando de valor`);
+  prog(0.2);
+
+  // (2) uma sequência de edições incrementais (como o usuário faz na
+  // prática: um clique de cada vez) preserva TODAS as escolhas anteriores
+  let g = buildSpecies(null, {}, false, false).g;
+  const sequencia = [["reino", "An"], ["classe", "MAM"], ["porte", "gr"], ["tegCor", "Azl"], ["dieBase", "cn"]];
+  const overridesAcumulados = {};
+  for (const [chave, valor] of sequencia) {
+    overridesAcumulados[chave] = valor;
+    g = normalizarGenoma({ ...g, ...overridesAcumulados }, false);
+  }
+  const perdidos = sequencia.filter(([k, v]) => String(g[k]) !== String(v));
+  chk("CC2 uma sequência de 5 edições preserva todas as escolhas anteriores",
+    perdidos.length === 0, perdidos.map(([k, v]) => `${k}: pedido ${v}, ficou ${g[k]}`).join(" | "));
+  prog(0.35);
+
+  // (3) opcoesValidasParaCampo: nenhuma opção marcada válida é na verdade
+  // rejeitada pelo motor (sem falsos positivos — isso deixaria o usuário
+  // clicar em algo que ainda reverte sozinho)
+  let falsosPositivos = 0, camposChecados = 0;
+  const amostraGrupos = GRUPOS_CAMPOS_EDITAVEIS.filter((gr) => !gr.aplicavel || gr.aplicavel({ reino: "An", classe: "MOL" }));
+  const gMol = buildSpecies(null, { reino: "An", classe: "MOL" }, false, false).g;
+  for (const grupo of amostraGrupos) {
+    for (const campo of grupo.campos) {
+      if (campo.tipo === "scalar") continue;
+      const tabela = campo.tabela(gMol);
+      if (!tabela) continue;
+      camposChecados++;
+      const validos = opcoesValidasParaCampo(gMol, campo, false);
+      for (const row of tabela) {
+        if (!validos.has(String(row.value))) continue;
+        const base = { ...gMol }; delete base[campo.chave];
+        const teste = normalizarGenoma({ ...base, [campo.chave]: row.value }, false);
+        if (String(teste[campo.chave]) !== String(row.value)) falsosPositivos++;
+      }
+    }
+  }
+  chk("CC3 nenhuma opção marcada disponível é na verdade rejeitada",
+    falsosPositivos === 0, `${falsosPositivos} falso(s) positivo(s) em ${camposChecados} campo(s) checados`);
+  prog(0.6);
+
+  // (4) caso concreto: molusco só aceita "0S" para membros superiores —
+  // a opção deve estar marcada disponível, e as demais, indisponíveis
+  const campoMemSup = { chave: "memSup", tabela: () => T.memSup };
+  const validosMol = opcoesValidasParaCampo(gMol, campoMemSup, false);
+  chk("CC4 molusco: só '0S' aparece disponível para membros superiores",
+    validosMol.size === 1 && validosMol.has("0S"), [...validosMol].join(","));
+
+  // (5) bactéria só aceita tegumento mucoso
+  const gBa = buildSpecies(null, { reino: "Ba" }, false, false).g;
+  const campoTeg = { chave: "tegTipo", tabela: () => T.tegTipo };
+  const validosBa = opcoesValidasParaCampo(gBa, campoTeg, false);
+  chk("CC5 bactéria: só tegumento mucoso aparece disponível",
+    validosBa.size === 1 && validosBa.has("Mu"), [...validosBa].join(","));
+  prog(0.8);
+
+  // (6) "sortear tudo" e "resortear não-fixados" continuam de fato
+  // resorteando (a correção não pode ter travado esses dois botões)
+  const gA = buildSpecies(null, { reino: "An" }, false, false).g;
+  let diferentes = 0;
+  for (let i = 0; i < 30; i++) {
+    const gB = buildSpecies(null, { reino: "An" }, false, false).g;
+    if (gB.tegCor !== gA.tegCor || gB.porte !== gA.porte) diferentes++;
+  }
+  chk("CC6 resortear do zero continua produzindo variação de verdade",
+    diferentes > 20, `${diferentes}/30 saíram diferentes do primeiro — resortear não pode ter virado edição estável por engano`);
+  prog(1);
+}
+
 const SUITES_TESTE = [
   { id: "seed", nome: "Seed e determinismo", fn: suiteSeed, peso: 2, nivel: "rapida" },
   { id: "fuzz", nome: "Fuzzing de entrada", fn: suiteFuzz, peso: 1, nivel: "rapida" },
@@ -1427,6 +1524,7 @@ const SUITES_TESTE = [
   { id: "bifurcacao", nome: "Trilha bifurcando e multi-alvo", fn: suiteBifurcacao, peso: 5, nivel: "completa" },
   { id: "geo32", nome: "Geografia sorteada e editável", fn: suiteGeografia32, peso: 2, nivel: "rapida" },
   { id: "filtros", nome: "Filtros e linha do tempo", fn: suiteFiltros, peso: 2, nivel: "rapida" },
+  { id: "edicao36", nome: "Edição estável e opções desabilitadas", fn: suiteEdicaoEstavel, peso: 4, nivel: "completa" },
   { id: "campos35", nome: "Campos editáveis expandidos", fn: suiteCamposExpandidos, peso: 4, nivel: "completa" },
   { id: "linhagem34", nome: "ID de linhagem", fn: suiteLinhagem, peso: 3, nivel: "completa" },
   { id: "asas34", nome: "Asas, plano corporal e montador", fn: suiteAsasMontador, peso: 4, nivel: "completa" },
