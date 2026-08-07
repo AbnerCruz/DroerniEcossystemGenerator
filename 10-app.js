@@ -19,6 +19,11 @@ function App() {
   const [individualViewer, setIndividualViewer] = useState(null); // { individual, especieNode|null } | null
   const [seedSearchAberto, setSeedSearchAberto] = useState(false);
   const [testesAberto, setTestesAberto] = useState(false); // v28 — bateria embutida
+  // v33 — salvamento automático, configurações e reset
+  const [configAberto, setConfigAberto] = useState(false);
+  const [ultimoSalvamento, setUltimoSalvamento] = useState(null);
+  const [restaurando, setRestaurando] = useState(true); // trava a gravação até a restauração terminar
+  const [escalaTempo, setEscalaTempoState] = useState(getEscalaTempo());
   // v27 — a busca pode ser aberta já preenchida (ex.: pelo botão "Abrir na
   // busca" dentro do painel do indivíduo, que joga o DNA dele no campo)
   const [seedSearchTexto, setSeedSearchTexto] = useState("");
@@ -217,6 +222,71 @@ function App() {
     showToast(`Indivíduo ${individuo.nome} criado (${node.clado}).`);
   };
 
+  /* ---------- v33: salvamento automático, restauração e reset ---------- */
+  const estadoPersistivel = useMemo(
+    () => ({ eras, nodes, individuals, anoAtual, faseGeoConfirmada, faseErasConfirmada }),
+    [eras, nodes, individuals, anoAtual, faseGeoConfirmada, faseErasConfirmada]
+  );
+  const salvarAgora = useAutoSalvamento(estadoPersistivel, {
+    ativo: !restaurando,
+    aoSalvar: (envelope) => setUltimoSalvamento(envelope),
+  });
+
+  /* Restauração na abertura. Roda uma vez, antes de liberar a gravação — se
+     rodasse depois, o debounce do estado vazio inicial gravaria por cima da
+     sessão que estamos tentando ler. */
+  useEffect(() => {
+    let cancelado = false;
+    (async () => {
+      const prefs = await lerPreferencias();
+      if (prefs && setEscalaTempo(prefs.escalaTempo)) setEscalaTempoState(getEscalaTempo());
+      const salvo = await lerSessaoSalva();
+      if (!cancelado && salvo) {
+        restaurarEventLog(salvo.dados.eventLog, salvo.dados.contadores?.idCounter, salvo.dados.contadores?.logCounter);
+        restaurarDominiosCustom(salvo.dados.dominiosCustom);
+        if (typeof salvo.dados.contadores?.idRegiaoCounter === "number") __idRegiaoCounter = Math.max(__idRegiaoCounter, salvo.dados.contadores.idRegiaoCounter);
+        if (typeof salvo.dados.contadores?.idEraCounter === "number") __idEraCounter = Math.max(__idEraCounter, salvo.dados.contadores.idEraCounter);
+        onImportarProjeto(salvo.dados);
+        setUltimoSalvamento(salvo.envelope);
+        showToast(`Sessão restaurada: ${salvo.dados.nodes.length} espécie(s).`);
+      }
+      if (!cancelado) setRestaurando(false);
+    })();
+    return () => { cancelado = true; };
+  }, []);
+
+  const mudarEscalaTempo = (v) => {
+    if (!setEscalaTempo(v)) return;
+    setEscalaTempoState(getEscalaTempo());
+    salvarPreferencias();
+    showToast(`Escala de tempo: ${(ESCALAS_TEMPO.find((e) => Number(e.id) === Number(v)) || {}).label || v}.`);
+  };
+
+  const apagarCopiaSalva = async () => {
+    await apagarSessaoSalva();
+    setUltimoSalvamento(null);
+    showToast("Cópia salva apagada. O mundo aberto continua aqui.");
+  };
+
+  /* Reset total. A ordem importa: primeiro trava a gravação (senão o
+     debounce do estado ainda cheio regrava logo depois de apagar), depois
+     apaga o disco, depois o motor, depois o React — e só então destrava. */
+  const resetarTudo = async () => {
+    setRestaurando(true);
+    await apagarSessaoSalva();
+    resetarMotor();
+    setEras([]); setNodes([]); setIndividuals([]); setAnoAtual(0);
+    setFaseGeoConfirmada(false); setFaseErasConfirmada(false);
+    setSelectedSpeciesId(null); setEditor(null); setModalDerivarNode(null);
+    setIndividualViewer(null); setSeedSearchAberto(false); setSeedSearchTexto("");
+    setUltimoSalvamento(null);
+    setLogVersion((v) => v + 1);
+    setDominiosVersion((v) => v + 1);
+    setConfigAberto(false);
+    setTimeout(() => setRestaurando(false), 0);
+    showToast("Tudo apagado. Recomeçando da Fase 1.");
+  };
+
   /* ---------- import de projeto ---------- */
   const onImportarProjeto = (dados) => {
     setEras(dados.eras.length ? dados.eras : []);
@@ -335,12 +405,13 @@ function App() {
           <div className="w-9 h-9 shrink-0 rounded-full border border-emerald-700 flex items-center justify-center text-emerald-500"><GitBranch size={18} /></div>
           <div className="min-w-0">
             <h1 className="font-display text-lg sm:text-xl font-semibold tracking-tight text-stone-100 leading-none">Droerni · Ecossistema DRN2</h1>
-            <p className="font-data text-[10px] text-stone-500 tracking-wider truncate">v32 · trilha bifurca, filtros, linha do tempo, sem teto de linhagens</p>
+            <p className="font-data text-[10px] text-stone-500 tracking-wider truncate">v33 · tempo geológico, trilha gradual, salvamento automático</p>
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
           <button onClick={() => abrirBusca()} title="Buscar por seed, DNA ou texto" className="p-2 rounded border border-stone-800 text-stone-400 hover:text-stone-200 hover:border-stone-600"><Search size={14} /></button>
           <button onClick={() => setTestesAberto(true)} title="Bateria de testes" className="p-2 rounded border border-stone-800 text-stone-400 hover:text-stone-200 hover:border-stone-600"><FlaskConical size={14} /></button>
+          <IndicadorSalvamento ultimoSalvamento={ultimoSalvamento} onAbrir={() => setConfigAberto(true)} />
           <button onClick={() => setPatchnotesAberto(true)} title="Patchnotes" className="p-2 rounded border border-stone-800 text-stone-400 hover:text-stone-200 hover:border-stone-600"><FileText size={14} /></button>
           <PersistenceBar eras={eras} nodes={nodes} individuals={individuals} anoAtual={anoAtual} faseGeoConfirmada={faseGeoConfirmada} faseErasConfirmada={faseErasConfirmada} onImportar={onImportarProjeto} showToast={showToast} />
         </div>
@@ -428,6 +499,19 @@ function App() {
       )}
 
       {testesAberto && <PainelTestes onFechar={() => setTestesAberto(false)} showToast={showToast} />}
+      {configAberto && (
+        <PainelConfiguracoes
+          onFechar={() => setConfigAberto(false)}
+          ultimoSalvamento={ultimoSalvamento}
+          onSalvarAgora={salvarAgora}
+          onApagarSalvamento={apagarCopiaSalva}
+          onResetarTudo={resetarTudo}
+          escalaTempo={escalaTempo}
+          onMudarEscala={mudarEscalaTempo}
+          totais={{ especies: nodes.length, individuos: individuals.length, eras: eras.length }}
+          showToast={showToast}
+        />
+      )}
 
       {seedSearchAberto && (
         <SeedSearchModal

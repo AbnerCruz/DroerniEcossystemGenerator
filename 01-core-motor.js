@@ -2745,7 +2745,11 @@ function instantaneoDeGenes(g, genesAlterados) {
 }
 
 const GUARD_MAX_BUSCA_TRILHA = 4000;
-const MAX_RODADAS_DIRIGIDAS = 12;
+const MAX_RODADAS_DIRIGIDAS = 400; // v33 — era 12, quando cada rodada convergia o genoma inteiro
+const RODADAS_ACABAMENTO = 12;     // fase final em bloco: garante o 100% no alvo
+const LOTE_DIRIGIDO = 2;           // genes categóricos fixados por rodada gradual
+const PASSO_ESCALAR_DIRIGIDO = 1;  // quanto um gene escalar anda por rodada gradual
+const CICLOS_MAX_SEM_CORTE_TRILHA = 10; // teto de ciclos sem cortar espécie ao materializar
 
 async function buscarTrilhaParaAlvo(nodeOrigem, alvoCodigo, onProgress) {
   const alvo = parseAlvoDLDoCode(alvoCodigo);
@@ -2811,24 +2815,67 @@ async function buscarTrilhaParaAlvo(nodeOrigem, alvoCodigo, onProgress) {
     await yieldSeNecessario((1 - melhorDL / dlInicial) * 0.6);
   }
 
-  /* ---------- Fase 2: convergência dirigida, gene a gene ---------- */
+  /* ---------- Fase 2: convergência dirigida, gradual ---------- */
+  /* v33 — a fase dirigida convergia TODOS os genes divergentes numa rodada
+     só. Medido numa trilha bactéria → mamífero: 82 blocos de deriva seguidos
+     de UM ÚNICO bloco dirigido com 17 genes. Como materializarTrilha corta
+     espécie por bloco, o resultado era o salto relatado: a linhagem passava
+     de anfíbio genérico para o mamífero-alvo completo em um nó, sem nada no
+     meio.
+
+     Agora a rodada aplica no máximo LOTE_DIRIGIDO genes, e genes ESCALARES
+     (os 19 campos numéricos de verdade — visão, olfato, agressividade,
+     blindagem, longevidade…) andam UM PONTO por rodada em direção ao alvo,
+     em vez de saltarem de 1 para 8. Cada rodada vira um bloco, cada bloco
+     candidata um corte de espécie, e a linhagem ganha os intermediários.
+
+     Os genes categóricos continuam sendo fixados de uma vez — não existe
+     "meio caminho" entre escama e pelo —, mas espalhados por rodadas
+     diferentes, o que já basta para que a transição ocupe vários nós.
+
+     O compromisso de bater 100% no alvo é preservado por construção: se o
+     caminho gradual esgotar as rodadas com DL > 0, a fase de acabamento
+     abaixo reaplica o modo em bloco, que é exatamente o comportamento
+     antigo. Ou seja, o gradualismo só pode adiar a chegada, nunca impedi-la. */
   let rodadas = 0;
-  while (melhorDL > 0 && rodadas++ < MAX_RODADAS_DIRIGIDAS) {
+  let acabamento = false;
+  while (melhorDL > 0 && rodadas++ < MAX_RODADAS_DIRIGIDAS + RODADAS_ACABAMENTO) {
+    if (!acabamento && rodadas > MAX_RODADAS_DIRIGIDAS) acabamento = true;
     const divergentes = Object.keys(DL_PESOS).filter((k) => alvo[k] !== undefined && String(gAtual[k]) !== String(alvo[k]));
     if (!divergentes.length) break;
     // mais caros primeiro: um gene de Estrato I costuma arrastar os de baixo
     divergentes.sort((a, b) => (DL_PESOS[b] || 0) - (DL_PESOS[a] || 0));
 
-    const aplicadosNestaRodada = { I: [], II: [], III: [], fase: "dirigida" };
+    const aplicadosNestaRodada = { I: [], II: [], III: [], fase: acabamento ? "dirigida" : "dirigida-gradual" };
+    let noLote = 0;
     for (const k of divergentes) {
+      if (!acabamento && noLote >= LOTE_DIRIGIDO) break;
+      /* v33 — no máximo UM gene de Estrato I por rodada. Sem isso, `reino` e
+         `classe` (os dois mais pesados, logo os dois primeiros da fila) caíam
+         na mesma rodada e a normalização reconstruía o corpo inteiro de uma
+         vez: era literalmente a bactéria virando mamífero num nó só, que foi
+         o salto relatado. Separados, a linhagem atravessa o reino primeiro e
+         só depois converge a classe, com morfologia intermediária no meio. */
+      if (!acabamento && aplicadosNestaRodada.I.length > 0 && ESTRATO_I.includes(k)) continue;
       if (GENE_FONTE_DERIVADA[k]) continue; // ver comentário abaixo: ajustados pela fonte
       // barreira de reino: só forçada se a linhagem nasceu bactéria
       if (k === "reino" && gAtual.reino !== "Ba" && !origemEraBacteria) continue;
       const antes = gAtual[k];
-      fixarEspelhoRaw(gAtual, k, alvo[k]);
+      /* Escalar de verdade = o valor ATUAL do genoma é number. Campos como
+         morTorso ou defArma guardam códigos categóricos em string ("0" =
+         ausente); somar 1 neles produziria uma categoria vizinha sem
+         sentido biológico, então esses são fixados direto. */
+      let proximo = alvo[k];
+      if (!acabamento && typeof antes === "number" && Number.isFinite(Number(alvo[k]))) {
+        const destino = Number(alvo[k]);
+        const passo = Math.sign(destino - antes) * Math.min(PASSO_ESCALAR_DIRIGIDO, Math.abs(destino - antes));
+        proximo = antes + passo;
+      }
+      fixarEspelhoRaw(gAtual, k, proximo);
       if (String(gAtual[k]) !== String(antes)) {
         const estrato = ESTRATO_I.includes(k) ? "I" : ESTRATO_II.includes(k) ? "II" : "III";
         aplicadosNestaRodada[estrato].push(k);
+        noLote++;
       }
     }
     /* Genes DERIVADOS não aceitam atribuição direta — a normalização os
@@ -2837,7 +2884,9 @@ async function buscarTrilhaParaAlvo(nodeOrigem, alvoCodigo, onProgress) {
        reconstruídos justamente por isso. */
     for (const [derivado, fonte] of Object.entries(GENE_FONTE_DERIVADA)) {
       if (alvo[derivado] === undefined || gAtual[derivado] === undefined) continue;
-      const delta = Number(alvo[derivado]) - Number(gAtual[derivado]);
+      let delta = Number(alvo[derivado]) - Number(gAtual[derivado]);
+      // v33 — no modo gradual o gene-fonte também anda um ponto por rodada
+      if (!acabamento && delta) delta = Math.sign(delta) * Math.min(PASSO_ESCALAR_DIRIGIDO, Math.abs(delta));
       if (delta && Number.isFinite(delta) && gAtual[fonte] !== undefined) {
         gAtual[fonte] = Math.max(0, Math.min(9, Number(gAtual[fonte]) + delta));
       }
@@ -2861,7 +2910,15 @@ async function buscarTrilhaParaAlvo(nodeOrigem, alvoCodigo, onProgress) {
     const dlDepois = calcularDL(gAtual, alvo);
     const mudouAlgo = aplicadosNestaRodada.I.length + aplicadosNestaRodada.II.length + aplicadosNestaRodada.III.length > 0;
     if (mudouAlgo) trilha.push({ ...aplicadosNestaRodada, valores: instantaneoDeGenes(gAtual, aplicadosNestaRodada) });
-    if (dlDepois >= melhorDL && !mudouAlgo) break; // travou de vez
+    /* v33 — travar no modo gradual não encerra a busca: pula direto para o
+       acabamento em bloco, que é quem garante os 100% no alvo. Só o
+       acabamento pode encerrar a fase 2 por travamento. */
+    if (dlDepois >= melhorDL && !mudouAlgo) {
+      if (acabamento) break;
+      acabamento = true;
+      rodadas = MAX_RODADAS_DIRIGIDAS;
+      continue;
+    }
     melhorDL = dlDepois;
     await yieldSeNecessario(0.6 + 0.4 * (1 - melhorDL / dlInicial));
   }
@@ -2999,7 +3056,13 @@ function materializarTrilha(resultado, opts = {}) {
        acumularam desde o último corte. Sem a segunda via, uma trilha de 57
        ciclos com um único ciclo estrutural virava uma "linhagem" de dois
        nós — o ancestral e o alvo — e todo o meio do caminho sumia. */
-    if (!checarEspeciacao(estruturais.length, acumII.size, 0, g) && !ultimo) return;
+    /* v33 — teto de ciclos sem corte. Mesmo com a fase dirigida gradual, uma
+       trilha pode acumular dezenas de ciclos que só mexem em Estrato III
+       (nenhum deles dispara checarEspeciacao) e desaguar tudo num nó só. O
+       teto garante que a linhagem materializada tenha densidade de nós
+       parecida com a de uma linhagem que surgiu por deriva livre. */
+    const estourouTeto = ciclosDesdeUltimoCorte >= CICLOS_MAX_SEM_CORTE_TRILHA;
+    if (!checarEspeciacao(estruturais.length, acumII.size, 0, g) && !estourouTeto && !ultimo) return;
 
     au += Math.max(1e-6, ciclosDesdeUltimoCorte * duracaoCicloDeriva(g));
     if (ultimo && finalExistente) return; // o nó final já existe: quem chama reparenta
@@ -3270,12 +3333,75 @@ function aplicarTrilhaImportada(g, textoTrilha) {
    e export derivem daqui, em vez de repetir o número em cada arquivo. */
 const AU_EM_ANOS = 1e6;
 const DURACAO_GERACAO_ANOS = { 0: 0.01, 1: 0.1, 2: 1, 3: 3, 4: 10, 5: 30, 6: 100, 7: 300, 8: 1000, 9: 3000 };
+
+/* v33 — TEMPO GEOLÓGICO.
+
+   Relato: "tudo está acontecendo muito rápido, na primeira dezena de milhão
+   do tempo". Medido e confirmado: um ciclo de deriva custava
+   `anosGeracao × 1000` anos, o que dá 10 anos para uma bactéria (maturação 0)
+   e 1.000 anos para um mamífero. Uma linhagem inteira de bactéria a mamífero
+   fechava em 1,85 AU — 1,85 milhão de anos. Todo o mundo cabia na primeira
+   dezena de milhão de anos, exatamente como relatado.
+
+   O erro é de modelo, não de aritmética. "1 ciclo = 1000 gerações" trata a
+   velocidade evolutiva como proporcional à velocidade reprodutiva, e a
+   biologia real não funciona assim: procariontes se dividem em minutos e
+   mesmo assim levaram ~3 bilhões de anos para produzir eucariontes
+   complexos. Tempo de geração acelera a ADAPTAÇÃO fina, não a mudança
+   morfológica profunda — essa depende de oportunidade ecológica, que é
+   contada em escala geológica.
+
+   O modelo novo tem três partes:
+     1) 1 CD = 1.000.000 de gerações (era 1.000) — a base sobe três ordens.
+     2) PISO por reino, que é o que de fato domina o resultado: bactéria
+        custa no mínimo 12 AU por ciclo mesmo se dividindo a cada minuto.
+        É a peça que reproduz a longa estase procariótica.
+     3) TETO, para que uma espécie de maturação 9 (3000 anos/geração) não
+        sozinha estoure a idade do universo.
+
+   Referências que a calibração persegue (Terra): vida ~3.800 AU atrás,
+   eucarionte ~2.100 AU, animais ~600 AU, mamíferos modernos ~66 AU. */
+/* A compressão é SUBLINEAR (raiz quadrada do tempo de geração). Linear era o
+   modelo antigo e produz os dois extremos errados ao mesmo tempo: bactéria
+   evoluindo em décadas e sequoia (3000 anos/geração) gastando 3 bilhões de
+   anos por ciclo — mais que a idade do Sol. A raiz achata os dois extremos e
+   mantém a ordem correta entre eles. Rendimento em AU por ciclo:
+     0,01 ano/ger →  0,1 ·K   |  1 → 1 ·K   |  10 → 3,2 ·K
+      100        →  10 ·K     | 1000 → 32 ·K | 3000 → 55 ·K            */
+const K_CICLO_AU = 1;
+const PISO_CICLO_AU = { Ba: 12, Fu: 4, Pl: 3, An: 0.5 };
+const PISO_CICLO_AU_PADRAO = 0.5;
+const TETO_CICLO_AU = 40;
+
+/* Multiplicador global, ajustável pelo usuário (Configurações). 1 = padrão.
+   Vive em estado mutável do motor, no mesmo padrão de DOMINIOS_CUSTOM. */
+let ESCALA_TEMPO = 1;
+const ESCALAS_TEMPO = [
+  { id: 0.25, label: "Comprimida (¼×)", desc: "mundo jovem; evolução acelerada" },
+  { id: 1, label: "Padrão (1×)", desc: "calibrada pela escala geológica da Terra" },
+  { id: 4, label: "Dilatada (4×)", desc: "estase longa; eras muito mais lentas" },
+];
+function setEscalaTempo(v) {
+  const n = Number(v);
+  if (Number.isFinite(n) && n > 0 && n <= 100) { ESCALA_TEMPO = n; return true; }
+  return false;
+}
+function getEscalaTempo() { return ESCALA_TEMPO; }
+
 function duracaoCicloDeriva(g) {
   const mat = Number(g.repMaturacao ?? 2);
   const anosGeracao = DURACAO_GERACAO_ANOS[mat] ?? 1;
-  const anosPorCiclo = anosGeracao * 1000; // 1 CD = 1000 gerações
-  return anosPorCiclo / 1e6; // converte para AU (milhões de anos) aqui mesmo
+  const bruto = Math.sqrt(anosGeracao) * K_CICLO_AU; // já em AU (ver K_CICLO_AU)
+  const piso = PISO_CICLO_AU[g.reino] ?? PISO_CICLO_AU_PADRAO;
+  const clampado = Math.min(TETO_CICLO_AU, Math.max(piso, bruto));
+  return clampado * ESCALA_TEMPO;
 }
+
+/* Quanto o "ano atual" avança por ciclo de seleção natural. A seleção opera
+   dentro de populações vivas — é um processo muito mais fino que a deriva
+   morfológica —, então continua uma ordem de grandeza abaixo do menor ciclo
+   de deriva, mas acompanha a escala global. */
+function duracaoCicloSelecao() { return 0.5 * ESCALA_TEMPO; }
 
 function sortClado() {
   const c1 = CONS[Math.floor(Math.random() * CONS.length)];
@@ -3461,6 +3587,22 @@ function setLogVerbosidade(modo) { __logVerbosidade = modo === "resumido" ? "res
 function getLogVerbosidade() { return __logVerbosidade; }
 
 function resetEventLog() { __eventLog = []; __logCounter = 1; __logVerbosidade = "detalhado"; }
+
+/* v33 — zera TODO o estado mutável do motor. Existe por causa do botão
+   "resetar tudo": limpar só o estado do React deixaria os contadores de id
+   correndo de onde pararam e os domínios customizados do mundo anterior no
+   lugar — o mundo novo nasceria com ids na casa dos milhares e com
+   configuração herdada de um mundo que o usuário mandou apagar.
+   `restaurarDominiosCustom` e a família de contadores são declaradas em
+   pontos diferentes deste arquivo; centralizar aqui evita que o próximo
+   estado mutável adicionado ao motor seja esquecido no reset. */
+function resetarMotor() {
+  resetEventLog();
+  restaurarDominiosCustom([]);
+  __idCounter = 1;
+  __idRegiaoCounter = 1;
+  __idEraCounter = 1;
+}
 
 /* Restaura o log importado. Os contadores (idCounter/logCounter) são
    sempre elevados ao MAIOR entre o valor salvo e o atual — nunca
@@ -4528,7 +4670,8 @@ function simularSelecaoNatural(nodes, idx, au, massaId) {
 const DIVISOES_POR_MASSA = 8;         // "n divisões" do espaço simulado por massa de terra
 const TAMANHO_POPULACAO_INICIAL = 6;  // indivíduos gerados por espécie ao nascer
 const TETO_POPULACAO_POR_DIVISAO = 10; // limite de indivíduos vivos de uma espécie numa única divisão
-const CICLO_SELECAO_AU = 0.1;         // quanto o "ano atual" avança por ciclo de seleção natural (100 mil anos)
+/* v33 — passou a derivar de duracaoCicloSelecao(), que acompanha a escala
+   de tempo global. Mantido como getter para não quebrar leitores externos. */
 
 /* Gera `quantidade` indivíduos pra uma espécie, espalhados pelas divisões
    simuladas da massa de terra dela. Fase 2, item 5.5 (pré-requisito 1) —
@@ -4823,7 +4966,7 @@ function rodarCicloSelecaoIndividual(idx, individuals, massas, auAtual = 0) {
    fatiado no tempo (mesmo padrão de derivarLinhagem) pra não travar
    a aba em runs longos. Retorna a lista de indivíduos atualizada, um
    resumo agregado e quanto o "ano atual" deve avançar (ciclos ×
-   CICLO_SELECAO_AU). Muta os nós de espécie em lugar (mesmo padrão
+   duracaoCicloSelecao()). Muta os nós de espécie em lugar (mesmo padrão
    do resto do motor) — quem chama ainda precisa forçar o React a
    ver a mudança recriando o array de nodes. */
 async function rodarSelecaoNaturalPopulacional(idx, individuals, massas, ciclos, onProgress, auInicial = 0) {
@@ -4832,7 +4975,7 @@ async function rodarSelecaoNaturalPopulacional(idx, individuals, massas, ciclos,
   let ultimoCorte = agoraMs();
   for (let c = 0; c < ciclos; c++) {
     // v26 — o AU corrente é repassado ao ciclo pra datar mortes e extinções
-    const auCiclo = auInicial + (c + 1) * CICLO_SELECAO_AU;
+    const auCiclo = auInicial + (c + 1) * duracaoCicloSelecao();
     const { individuals: out, eventos } = rodarCicloSelecaoIndividual(idx, individualsAtual, massas, auCiclo);
     individualsAtual = out;
     resumo.colisoes += eventos.colisoes;
@@ -4843,7 +4986,7 @@ async function rodarSelecaoNaturalPopulacional(idx, individuals, massas, ciclos,
     if (onProgress) onProgress((c + 1) / ciclos);
     if (agoraMs() - ultimoCorte > 12) { await cederControle(); ultimoCorte = agoraMs(); }
   }
-  return { individuals: individualsAtual, resumo, auAvancado: ciclos * CICLO_SELECAO_AU };
+  return { individuals: individualsAtual, resumo, auAvancado: ciclos * duracaoCicloSelecao() };
 }
 
 /* ============================================================

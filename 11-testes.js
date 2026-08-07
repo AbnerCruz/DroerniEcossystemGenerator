@@ -941,6 +941,165 @@ async function suiteFiltros({ suite, chk, info }, prog) {
   prog(1);
 }
 
+
+/* ============================================================
+   v33 · X — Tempo geológico e granularidade da trilha
+   ============================================================
+   As duas correções da v33 no motor. A primeira é aritmética e se verifica
+   direto; a segunda é estatística e se verifica comparando a linhagem
+   materializada com o que ela era antes (8 nós, com o alvo inteiro num
+   corte só).
+   ============================================================ */
+async function suiteTempoTrilha({ suite, chk, info }, prog) {
+  suite("X · Tempo geológico e trilha gradual (v33)");
+  resetEventLog(); setLogVerbosidade("resumido");
+  const escalaAntes = getEscalaTempo();
+  setEscalaTempo(1);
+
+  // (1) piso por reino: bactéria não evolui em escala de décadas
+  const cicloBac = duracaoCicloDeriva({ reino: "Ba", repMaturacao: 0 });
+  const cicloAni = duracaoCicloDeriva({ reino: "An", repMaturacao: 2 });
+  chk("X1 ciclo de bactéria respeita o piso geológico do reino",
+    cicloBac >= PISO_CICLO_AU.Ba,
+    `bactéria de maturação 0: ${cicloBac} AU/ciclo (piso ${PISO_CICLO_AU.Ba})`);
+  chk("X2 bactéria é mais lenta por ciclo que animal de geração curta",
+    cicloBac > cicloAni,
+    "é a estase procariótica: divisão rápida não implica mudança morfológica rápida");
+  prog(0.1);
+
+  // (2) teto: nenhuma maturação estoura a escala de um mundo
+  const maisLento = Math.max(...[0, 3, 6, 9].map((m) => duracaoCicloDeriva({ reino: "Pl", repMaturacao: m })));
+  chk("X3 nenhum ciclo passa do teto de tempo",
+    maisLento <= TETO_CICLO_AU,
+    `mais lento medido: ${maisLento} AU/ciclo (teto ${TETO_CICLO_AU})`);
+
+  // (3) compressão sublinear: 100x no tempo de geração não vira 100x no ciclo
+  const g1 = duracaoCicloDeriva({ reino: "An", repMaturacao: 2 });   // 1 ano/geração
+  const g100 = duracaoCicloDeriva({ reino: "An", repMaturacao: 6 }); // 100 anos/geração
+  chk("X4 a compressão do tempo de geração é sublinear",
+    g100 / g1 < 100 && g100 > g1,
+    `razão medida ${(g100 / g1).toFixed(1)}x para 100x de tempo de geração`);
+
+  // (4) a escala global multiplica de fato
+  setEscalaTempo(4);
+  const dobrado = duracaoCicloDeriva({ reino: "Ba", repMaturacao: 0 });
+  setEscalaTempo(1);
+  chk("X5 a escala de tempo escolhida pelo usuário multiplica o ciclo",
+    Math.abs(dobrado - cicloBac * 4) < 1e-9);
+  chk("X6 escala inválida é recusada e não corrompe o motor",
+    setEscalaTempo(-1) === false && setEscalaTempo("abc") === false && getEscalaTempo() === 1);
+  prog(0.25);
+
+  // (5) GRANULARIDADE: a fase dirigida não pode despejar o alvo num bloco só
+  let piorBloco = 0, blocosDirigidos = 0, exatos = 0, nosTotais = 0, N = 3;
+  let saltoDeReinoEClasse = 0;
+  for (let i = 0; i < N; i++) {
+    const alvo = buildSpecies(null, {}, false);
+    const prim = buildSpecies(null, {}, true);
+    const r = await buscarTrilhaParaAlvo({ g: prim.g, id: "t" + i, clado: "T" }, alvo.code, null);
+    for (const b of r.trilha) {
+      const fase = b.fase || "dirigida";
+      if (fase !== "dirigida-gradual" && fase !== "dirigida") continue;
+      blocosDirigidos++;
+      const n = (b.I || []).length + (b.II || []).length + (b.III || []).length;
+      if (n > piorBloco) piorBloco = n;
+      if ((b.I || []).length > 1 && fase === "dirigida-gradual") saltoDeReinoEClasse++;
+    }
+    if (r.sucesso) exatos++;
+    const { novos } = materializarTrilha({ ...r, ancestral: { g: prim.g } }, { auInicial: 0, ramosLaterais: 0 });
+    nosTotais += novos.length;
+    prog(0.25 + 0.6 * ((i + 1) / N));
+  }
+  chk("X7 nenhum bloco gradual carrega mais de um gene de Estrato I",
+    saltoDeReinoEClasse === 0,
+    "era isso que fazia `reino` e `classe` caírem juntos e a bactéria virar mamífero num nó só");
+  chk("X8 a fase dirigida se espalha por vários blocos",
+    blocosDirigidos >= 3 * N,
+    `${blocosDirigidos} bloco(s) dirigido(s) em ${N} trilhas (antes: 1 por trilha)`);
+  chk("X9 a linhagem materializada tem densidade de nós",
+    nosTotais / N >= 8,
+    `média de ${(nosTotais / N).toFixed(1)} nós por trilha`);
+  chk("X10 o gradualismo não custa a exatidão: alvo continua batendo 100%",
+    exatos === N, `${exatos}/${N} trilhas fecharam com DL 0`);
+  info(`maior bloco dirigido observado: ${piorBloco} gene(s)`);
+
+  // (6) a linhagem inteira ocupa tempo geológico, não uma dezena de milhão
+  const alvo = buildSpecies(null, {}, false);
+  const prim = buildSpecies(null, {}, true);
+  const r = await buscarTrilhaParaAlvo({ g: prim.g, id: "z", clado: "Z" }, alvo.code, null);
+  const { novos } = materializarTrilha({ ...r, ancestral: { g: prim.g } }, { auInicial: 0, ramosLaterais: 0 });
+  const span = novos.length ? novos[novos.length - 1].auSurgimento - novos[0].auSurgimento : 0;
+  chk("X11 uma linhagem completa se estende por tempo geológico",
+    span >= 50,
+    `linhagem de ${novos.length} nós cobrindo ${span.toFixed(0)} AU (na v32 a mesma trilha fechava em 1,85 AU)`);
+  chk("X12 os nós saem em ordem cronológica estrita",
+    novos.every((n, i) => i === 0 || n.auSurgimento >= novos[i - 1].auSurgimento));
+
+  setEscalaTempo(escalaAntes);
+  prog(1);
+}
+
+/* ============================================================
+   v33 · Y — Serialização do projeto para o salvamento automático
+   ============================================================
+   O auto-salvamento grava exatamente o mesmo texto do export manual. O que
+   se testa aqui é o round-trip: o que sai da serialização tem que voltar
+   igual, senão a sessão restaurada não é o mundo que o usuário deixou.
+   (IndexedDB em si não é testável fora do navegador; o painel de testes
+   embutido cobre isso quando roda no aparelho.)
+   ============================================================ */
+async function suitePersistencia({ suite, chk, info }, prog) {
+  suite("Y · Round-trip do projeto salvo (v33)");
+  resetEventLog(); setLogVerbosidade("resumido");
+
+  const massa = criarMassaDeTerra("Massa Teste", null, []);
+  const eras = [{ id: 1, nome: "Era 1", auInicio: 0, massas: [massa], eraAnteriorId: null }];
+  const nodes = [];
+  for (let i = 0; i < 4; i++) {
+    const s = buildSpecies(null, {}, i === 0);
+    nodes.push({
+      id: "n" + i, clado: s.g.clado, g: s.g, code: s.code, auSurgimento: i * 12,
+      pais: i ? ["n" + (i - 1)] : [], filhos: [], primordialId: "n0", ordem: 0,
+      ciclosDecorridos: 0, orcamento: 0, acumEstratoII: new Set(["senVisao"]),
+      historico: [], isPrimordial: i === 0, extinta: false, massaId: massa.id,
+    });
+  }
+  const individuals = gerarPopulacaoParaEspecie(nodes[1], 4, DIVISOES_POR_MASSA, massa);
+  const estado = { eras, nodes, individuals, anoAtual: 33.5, faseGeoConfirmada: true, faseErasConfirmada: true };
+  prog(0.4);
+
+  const texto = serializeProjetoV17(estado);
+  chk("Y1 a serialização produz JSON válido", (() => { try { JSON.parse(texto); return true; } catch (e) { return false; } })());
+
+  const volta = deserializarProjetoV17(texto);
+  chk("Y2 espécies voltam inteiras", volta.nodes.length === nodes.length);
+  chk("Y3 os códigos DRN2 sobrevivem ao round-trip",
+    volta.nodes.every((n, i) => n.code === nodes[i].code));
+  chk("Y4 acumEstratoII volta como Set (e não como array)",
+    volta.nodes.every((n) => n.acumEstratoII instanceof Set) && volta.nodes[0].acumEstratoII.has("senVisao"),
+    "vira array no JSON; se não voltar Set, checarEspeciacao quebra no primeiro ciclo depois de restaurar");
+  chk("Y5 as seeds de indivíduo voltam como BigInt",
+    volta.individuals.length === individuals.length &&
+    volta.individuals.every((i) => i.individualSeed === undefined || typeof i.individualSeed === "bigint"),
+    "BigInt não é serializável por JSON: vai como string e tem que voltar BigInt");
+  chk("Y6 o ano atual e as fases confirmadas voltam",
+    volta.anoAtual === 33.5 && volta.faseGeoConfirmada && volta.faseErasConfirmada);
+  chk("Y7 a geografia volta com as massas e divisões",
+    volta.eras.length === 1 && volta.eras[0].massas.length === 1);
+  info(`envelope de ${(texto.length / 1024).toFixed(0)} KB para 4 espécies`);
+  prog(0.8);
+
+  // resetarMotor tem que zerar TODO o estado mutável do motor
+  adicionarDominioCustom("Teste Reset v33", []);
+  const antesLog = __eventLog.length;
+  const antesDominios = DOMINIOS_CUSTOM.length;
+  resetarMotor();
+  chk("Y8 resetarMotor zera o log de eventos", __eventLog.length === 0 && antesLog >= 0);
+  chk("Y8b o domínio customizado existia antes do reset", antesDominios > 0);
+  chk("Y9 resetarMotor zera os domínios customizados", DOMINIOS_CUSTOM.length === 0);
+  prog(1);
+}
+
 const SUITES_TESTE = [
   { id: "seed", nome: "Seed e determinismo", fn: suiteSeed, peso: 2, nivel: "rapida" },
   { id: "fuzz", nome: "Fuzzing de entrada", fn: suiteFuzz, peso: 1, nivel: "rapida" },
@@ -959,6 +1118,8 @@ const SUITES_TESTE = [
   { id: "bifurcacao", nome: "Trilha bifurcando e multi-alvo", fn: suiteBifurcacao, peso: 5, nivel: "completa" },
   { id: "geo32", nome: "Geografia sorteada e editável", fn: suiteGeografia32, peso: 2, nivel: "rapida" },
   { id: "filtros", nome: "Filtros e linha do tempo", fn: suiteFiltros, peso: 2, nivel: "rapida" },
+  { id: "tempotrilha", nome: "Tempo geológico e trilha gradual", fn: suiteTempoTrilha, peso: 5, nivel: "completa" },
+  { id: "persistencia", nome: "Round-trip do projeto salvo", fn: suitePersistencia, peso: 2, nivel: "rapida" },
   { id: "performance", nome: "Performance neste aparelho", fn: suitePerformance, peso: 5, nivel: "completa" },
 ];
 

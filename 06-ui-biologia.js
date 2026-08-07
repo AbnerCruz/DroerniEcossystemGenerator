@@ -175,7 +175,7 @@ function ModalSelecaoNatural({ onRodar, onFechar, rodando, progresso }) {
               Cada ciclo agrupa os indivíduos vivos por massa de terra e divisão simulada. Onde indivíduos de
               espécies diferentes coexistem na mesma divisão, a espécie mais fraca sofre pressão genética
               (predação ou competição) e perde população local; a mais forte nasce um indivíduo novo ali.
-              O ano atual avança {CICLO_SELECAO_AU} AU por ciclo.
+              O ano atual avança {duracaoCicloSelecao()} AU por ciclo.
             </p>
             <BotaoPrimario onClick={() => onRodar(Math.max(1, Number(ciclos) || 1))}>Rodar</BotaoPrimario>
           </>

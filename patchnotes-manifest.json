@@ -1,5 +1,11 @@
 [
   {
+    "id": "v33",
+    "titulo": "v33 — Tempo geológico, trilha gradual e salvamento automático",
+    "arquivo": "patchnotes-v33.md",
+    "data": "2026-08-06"
+  },
+  {
     "id": "v32",
     "titulo": "v32 — Bifurcação, geografia editável, filtros e o fim do teto de linhagens",
     "arquivo": "patchnotes-v32.md",

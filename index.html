@@ -53,6 +53,10 @@ const { useState, useMemo, useCallback, useRef, useEffect } = React;
 <script type="text/babel" data-presets="react" src="07-exports.js"></script>
 <script type="text/babel" data-presets="react" src="08-patchnotes.js"></script>
 <script type="text/babel" data-presets="react" src="09-populacao-seed.js"></script>
+<!-- v33 — carrega ANTES de 10-app.js: o App() chama useAutoSalvamento e
+     PainelConfiguracoes já na primeira renderização, e a renderização é
+     disparada no fim de 10-app.js. -->
+<script type="text/babel" data-presets="react" src="13-persistencia.js"></script>
 <script type="text/babel" data-presets="react" src="10-app.js"></script>
 <script type="text/babel" data-presets="react" src="11-testes.js"></script>
 <script type="text/babel" data-presets="react" src="12-filtros-ui.js"></script>
