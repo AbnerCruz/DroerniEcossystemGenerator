@@ -148,31 +148,7 @@ function MontadorDNA({ onUsar, onCancelar, showToast }) {
         </p>
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-        {CAMPOS_EDITAVEIS.map((campo) => {
-          const tabela = campo.tabela(g);
-          if (!tabela) return null;
-          return (
-            <div key={campo.chave}>
-              <label className="text-[10px] uppercase text-stone-500 font-mono truncate block">{campo.label}</label>
-              <select value={g[campo.chave]} onChange={(e) => setCampo(campo.chave, isNaN(Number(e.target.value)) ? e.target.value : Number(e.target.value))}
-                className="bg-stone-950 border border-stone-800 rounded px-2 py-1.5 text-xs text-stone-200 w-full">
-                {tabela.map((row) => <option key={String(row.value)} value={row.value}>{row.label}</option>)}
-              </select>
-            </div>
-          );
-        })}
-        <div>
-          <label className="text-[10px] uppercase text-stone-500 font-mono">Densidade (0-9)</label>
-          <input type="range" min="0" max="9" value={g.densidade} onChange={(e) => setCampo("densidade", Number(e.target.value))} className="w-full accent-emerald-600" />
-          <div className="text-center text-xs text-stone-400 font-data">{g.densidade}</div>
-        </div>
-        <div>
-          <label className="text-[10px] uppercase text-stone-500 font-mono">Cognição (0-9)</label>
-          <input type="range" min="0" max="9" value={g.socSencienciaBruta ?? 0} onChange={(e) => setCampo("socSencienciaBruta", Number(e.target.value))} className="w-full accent-emerald-600" />
-          <div className="text-center text-xs text-stone-400 font-data">{g.socSencienciaBruta ?? 0}</div>
-        </div>
-      </div>
+      <ListaGruposEditaveis g={g} setCampo={setCampo} overridesAtivos={new Set(Object.keys(overrides))} />
 
       <button onClick={resortear} className="text-[11px] font-mono uppercase text-stone-400 hover:text-emerald-400 border border-stone-800 rounded px-3 py-2">
         <Dices size={12} className="inline -mt-0.5 mr-1" />Resortear o que não foi fixado

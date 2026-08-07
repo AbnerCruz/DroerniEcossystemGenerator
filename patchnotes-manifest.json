@@ -1,5 +1,11 @@
 [
   {
+    "id": "v35",
+    "titulo": "v35 — Campos editáveis expandidos, travas sempre ativas",
+    "arquivo": "patchnotes-v35.md",
+    "data": "2026-08-07"
+  },
+  {
     "id": "v34",
     "titulo": "v34 — Asas coerentes, ID de linhagem, mobile e performance",
     "arquivo": "patchnotes-v34.md",

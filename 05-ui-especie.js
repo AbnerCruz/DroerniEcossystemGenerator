@@ -1,22 +1,318 @@
 /* ============================================================
-   CAMPOS EDITÁVEIS NO EDITOR (genes-chave — os ~50 restantes
-   continuam sendo resolvidos pelo motor automaticamente a cada
-   geração/edição, exatamente como no modo aleatório original)
+   v35 — CAMPOS EDITÁVEIS, EXPANDIDOS E AGRUPADOS
+   ============================================================
+   Relato: "a área de montar o DNA não me permite montar precisamente.
+   Formato, número de membros, etc. Quanto mais editável for o aplicativo
+   melhor. Com o sistema de travas sempre ativo para manter a coerência."
+
+   Até a v34 só 12 genes eram editáveis aqui — o resto sempre foi sorteado.
+   Isso não era limitação técnica: o motor já aceita QUALQUER gene como
+   override manual (é assim que a deriva, a busca por DNA-alvo e a
+   reconstrução por seed funcionam). A lista curta era só a UI não
+   oferecendo os controles.
+
+   Esta versão expõe todos os genes que fazem sentido editar à mão — cerca
+   de 45, contra 12 — organizados em grupos temáticos e colapsáveis, para
+   que a tela não vire uma parede única em celular. Cada grupo abre por
+   padrão só se tiver algum campo aplicável ao reino/classe atual.
+
+   SOBRE AS TRAVAS: nenhuma delas foi relaxada. `tabela(g)` decide se o
+   campo aparece (ex.: "Glândula mamária" só para classe MAM); o valor
+   ESCOLHIDO continua passando pelo mesmo `categoricalStep`/`scalarStep`
+   que a geração aleatória usa, com as mesmas restrições de reino/classe.
+   Se o usuário fixar um valor que deixou de ser válido depois de outra
+   escolha (ex.: fixar 6 membros superiores e depois trocar para Molusco,
+   que exige memSup="0S"), a normalização reescreve esse campo — o sistema
+   nunca entra em estado incoerente, só avisa via `validarCoerencia` quando
+   a correção automática não é suficiente.
+
+   Campos ESCALARES (0-9) usam slider; os limites (`limitesEscalar`) já
+   variam por reino, então o slider em si muda de faixa conforme o
+   contexto — outra trava em ação, visível.
    ============================================================ */
-const CAMPOS_EDITAVEIS = [
-  { chave: "reino", label: "Reino", tabela: () => T.reino },
-  { chave: "classe", label: "Classe (só p/ Animal)", tabela: (g) => (g.reino === "An" ? T.classeAn : null) },
-  { chave: "porte", label: "Porte", tabela: () => T.porte },
-  { chave: "tolHidrica", label: "Tolerância Hídrica", tabela: () => T.tolHidrica },
-  { chave: "tolTermica", label: "Tolerância Térmica", tabela: () => T.tolTermica },
-  { chave: "dieBase", label: "Dieta", tabela: () => T.dieBase },
-  { chave: "locPrimario", label: "Locomoção Primária", tabela: () => T.locPrim },
-  { chave: "crnFormato", label: "Formato do Crânio", tabela: () => T.crnFormato },
-  { chave: "facDenticao", label: "Dentição", tabela: () => T.facDenticao },
-  { chave: "asaQtd", label: "Asas (quantidade)", tabela: () => T.asaQtd },
-  { chave: "tegTipo", label: "Tegumento", tabela: () => T.tegTipo },
-  { chave: "tegCor", label: "Cor", tabela: () => T.tegCor },
+const GRUPOS_CAMPOS_EDITAVEIS = [
+  {
+    titulo: "Taxonomia",
+    campos: [
+      { chave: "reino", label: "Reino", tabela: () => T.reino },
+      { chave: "classe", label: "Classe (só p/ Animal)", tabela: (g) => (g.reino === "An" ? T.classeAn : null) },
+      { chave: "mag", label: "Nível de magia", tabela: (g) => (g.isPrimordial ? T.mag.filter((r) => Number(String(r.value).slice(1)) <= 3) : T.mag) },
+    ],
+  },
+  {
+    titulo: "Morfologia geral",
+    campos: [
+      { chave: "porte", label: "Porte", tabela: () => T.porte },
+      { chave: "simetria", label: "Simetria", tabela: () => T.simetria },
+      { chave: "densidade", label: "Densidade corporal", tipo: "scalar", limites: (g) => limitesEscalar(g, "densidade") },
+      { chave: "morForma", label: "Forma de crescimento", tabela: (g) => (g.reino === "Pl" ? T.morFormaPl : g.reino === "Fu" ? T.morFormaFu : g.reino === "Ba" ? T.morFormaBa : null) },
+      { chave: "morTorso", label: "Proporção de tronco", tabela: (g) => (g.reino === "An" ? T.morTorso : null) },
+    ],
+  },
+  {
+    titulo: "Locomoção e membros",
+    campos: [
+      { chave: "locPrimario", label: "Locomoção primária", tabela: () => T.locPrim },
+      { chave: "locSecundario", label: "Locomoção secundária", tabela: () => T.locSec },
+      { chave: "locVelocidade", label: "Velocidade", tipo: "scalar", limites: (g) => limitesEscalar(g, "locVelocidade") },
+      /* memInf não entra aqui: é DERIVADO de locPrimario (bípede => 2, quadrúpede
+         => 4 …) na maioria das classes, e um override nele seria sobrescrito
+         de volta pelo motor a cada normalização. Quem quer controlar o número
+         de pernas controla via locPrimario — é o gene que de fato decide. */
+      { chave: "memSup", label: "Membros superiores", tabela: (g) => T.memSup },
+      { chave: "memTerm", label: "Terminação dos membros", tabela: () => T.memTerm },
+      { chave: "memProp", label: "Proporção dos membros", tabela: () => T.memProp },
+      { chave: "asaQtd", label: "Asas (quantidade)", tabela: () => T.asaQtd },
+      { chave: "asaTipo", label: "Tipo de asa", tabela: (g) => (g.asaQtd ? T.asaTipo : null) },
+      { chave: "cdaComp", label: "Comprimento da cauda", tabela: (g) => (g.reino === "An" ? T.cdaComp : null) },
+      { chave: "cdaTipo", label: "Tipo de cauda", tabela: (g) => (g.reino === "An" && g.cdaComp && g.cdaComp !== "0" ? T.cdaTipo : null) },
+    ],
+  },
+  {
+    titulo: "Crânio e face",
+    campos: [
+      { chave: "crnFormato", label: "Formato do crânio", tabela: (g) => (g.reino === "An" ? T.crnFormato : null) },
+      { chave: "crnPescoco", label: "Pescoço", tabela: (g) => (g.reino === "An" ? T.crnPescoco : null) },
+      { chave: "crnChifreQtd", label: "Chifres (quantidade)", tabela: (g) => (g.reino === "An" ? T.crnChifreQtd : null) },
+      { chave: "crnChifreForma", label: "Formato do chifre", tabela: (g) => (g.reino === "An" && g.crnChifreQtd && g.crnChifreQtd !== "0" ? T.crnChifreForma : null) },
+      { chave: "crnCrista", label: "Crista", tabela: (g) => (g.reino === "An" ? T.crnCrista : null) },
+      { chave: "facFocinho", label: "Focinho", tabela: (g) => (g.reino === "An" ? T.facFocinho : null) },
+      { chave: "facOrelha", label: "Orelha", tabela: (g) => (g.reino === "An" ? T.facOrelha : null) },
+      { chave: "facOlhosQtd", label: "Olhos (quantidade)", tabela: (g) => (g.reino === "An" ? T.facOlhosQtd : null) },
+      { chave: "facOlhosTipo", label: "Tipo de olho", tabela: (g) => (g.reino === "An" && g.facOlhosQtd ? T.facOlhosTipo : null) },
+      { chave: "facDenticao", label: "Dentição", tabela: (g) => (g.reino === "An" ? T.facDenticao : null) },
+    ],
+  },
+  {
+    titulo: "Tegumento",
+    campos: [
+      { chave: "tegTipo", label: "Tipo de tegumento", tabela: () => T.tegTipo },
+      { chave: "tegCor", label: "Cor", tabela: () => T.tegCor },
+      { chave: "tegCorIntensidade", label: "Intensidade da cor", tipo: "scalar", limites: () => ({}) },
+      { chave: "tegPadrao", label: "Padrão", tabela: () => T.tegPadrao },
+      { chave: "tegResistencia", label: "Resistência", tipo: "scalar", limites: () => ({}) },
+    ],
+  },
+  {
+    titulo: "Dieta e reprodução",
+    campos: [
+      { chave: "dieBase", label: "Dieta", tabela: (g) => (g.reino === "Ba" ? T.dieBase.filter((r) => ["de", "qm", "ft"].includes(r.value)) : T.dieBase) },
+      { chave: "dieRestricao", label: "Restrição alimentar", tabela: () => T.dieRestricao },
+      { chave: "dieFrequencia", label: "Frequência alimentar", tipo: "scalar", limites: () => ({}) },
+      { chave: "repModo", label: "Modo de reprodução", tabela: () => T.repModo },
+      { chave: "repProle", label: "Tamanho da prole", tipo: "scalar", limites: () => ({}) },
+      { chave: "repMaturacao", label: "Maturação (velocidade)", tipo: "scalar", limites: () => ({}) },
+      { chave: "repLongevidade", label: "Longevidade", tipo: "scalar", limites: () => ({}) },
+    ],
+  },
+  {
+    titulo: "Sentidos e defesa",
+    campos: [
+      { chave: "senVisao", label: "Visão", tipo: "scalar", limites: (g) => limitesEscalar(g, "senVisao") },
+      { chave: "senOlfato", label: "Olfato", tipo: "scalar", limites: (g) => limitesEscalar(g, "senOlfato") },
+      { chave: "senAudicao", label: "Audição", tipo: "scalar", limites: (g) => limitesEscalar(g, "senAudicao") },
+      { chave: "senTato", label: "Tato", tipo: "scalar", limites: () => ({}) },
+      { chave: "senEspecial", label: "Sentido especial", tabela: () => T.senEspecial },
+      { chave: "senEspecialIntensidade", label: "Intensidade do sentido especial", tipo: "scalar", limites: (g) => (g.senEspecial && g.senEspecial !== "0" ? {} : { min: 0, max: 0 }) },
+      { chave: "defArma", label: "Arma", tabela: () => T.defArma },
+      { chave: "defBlindagem", label: "Blindagem", tipo: "scalar", limites: () => ({}) },
+      { chave: "defEstrategia", label: "Estratégia de defesa", tabela: () => T.defEstrategia },
+    ],
+  },
+  {
+    titulo: "Social e tolerância",
+    campos: [
+      { chave: "socEstrutura", label: "Estrutura social", tabela: () => T.socEstrutura },
+      { chave: "socAgressividade", label: "Agressividade", tipo: "scalar", limites: () => ({}) },
+      { chave: "socSencienciaBruta", label: "Cognição", tipo: "scalar", limites: () => ({}) },
+      { chave: "tolHidrica", label: "Tolerância hídrica", tabela: () => T.tolHidrica },
+      { chave: "tolTermica", label: "Tolerância térmica", tabela: () => T.tolTermica },
+      { chave: "tolCiclo", label: "Ciclo de atividade", tabela: () => T.tolCiclo },
+    ],
+  },
+  /* v35 — GENES POR TÁXON. Cada grupo só faz sentido (e só aparece) para
+     o reino/classe que ele descreve — a mesma condição de GENE_TAXON_APLICAVEL
+     no motor (01-core-motor.js), repetida aqui do lado da UI porque a UI
+     decide o que MOSTRAR e o motor decide o que VALE; as duas precisam
+     concordar, senão o campo aparece para uma espécie que não pode tê-lo. */
+  {
+    titulo: "Mamífero",
+    aplicavel: (g) => g.classe === "MAM",
+    campos: [
+      { chave: "glandulaMamaria", label: "Glândula mamária", tabela: () => T.glandulaMamaria },
+      { chave: "dentesTipo", label: "Tipo de dentição", tabela: () => T.dentesTipo },
+      { chave: "termorregulacao", label: "Termorregulação", tabela: () => T.termorregulacao },
+      { chave: "gestacao", label: "Gestação", tabela: () => T.gestacao },
+    ],
+  },
+  {
+    titulo: "Ave",
+    aplicavel: (g) => g.classe === "AVE",
+    campos: [
+      { chave: "bicoFormato", label: "Formato do bico", tabela: () => T.bicoFormato },
+      { chave: "penaFuncao", label: "Função da penugem", tabela: () => T.penaFuncao },
+      { chave: "migratorio", label: "Padrão migratório", tabela: () => T.migratorio },
+    ],
+  },
+  {
+    titulo: "Réptil",
+    aplicavel: (g) => g.classe === "REP",
+    campos: [
+      { chave: "escamaTipo", label: "Tipo de escama", tabela: () => T.escamaTipo },
+      { chave: "venenoAparato", label: "Aparato de veneno", tabela: () => T.venenoAparato },
+      { chave: "regeneracaoCauda", label: "Regeneração de cauda", tabela: () => T.regeneracaoCauda },
+    ],
+  },
+  {
+    titulo: "Anfíbio",
+    aplicavel: (g) => g.classe === "AMP",
+    campos: [
+      { chave: "metamorfose", label: "Metamorfose", tabela: () => T.metamorfose },
+      { chave: "peleToxinas", label: "Toxinas na pele", tabela: () => T.peleToxinas },
+    ],
+  },
+  {
+    titulo: "Peixe",
+    aplicavel: (g) => g.classe === "PSC",
+    campos: [
+      { chave: "nadadeiraConfiguracao", label: "Configuração de nadadeira", tabela: () => T.nadadeiraConfiguracao },
+      { chave: "bexigaNatatoria", label: "Bexiga natatória", tabela: () => T.bexigaNatatoria },
+    ],
+  },
+  {
+    titulo: "Inseto / artrópode",
+    aplicavel: (g) => g.classe === "INS",
+    campos: [
+      { chave: "metamorfoseTipo", label: "Tipo de metamorfose", tabela: () => T.metamorfoseTipo },
+      { chave: "patasQtdEspecializada", label: "Especialização das patas", tabela: () => T.patasQtdEspecializada },
+      { chave: "venenoOuFerroao", label: "Veneno ou ferrão", tabela: () => T.venenoOuFerroao },
+      { chave: "coloniaTipo", label: "Estrutura de colônia", tabela: () => T.coloniaTipo },
+    ],
+  },
+  {
+    titulo: "Molusco",
+    aplicavel: (g) => g.classe === "MOL",
+    campos: [
+      { chave: "concha", label: "Concha", tabela: () => T.concha },
+      { chave: "tentaculosQtd", label: "Tentáculos", tabela: () => T.tentaculosQtd },
+      { chave: "tintaDefensiva", label: "Tinta defensiva", tabela: () => T.tintaDefensiva },
+    ],
+  },
+  {
+    titulo: "Planta",
+    aplicavel: (g) => g.reino === "Pl",
+    campos: [
+      { chave: "raizTipo", label: "Tipo de raiz", tabela: () => T.raizTipo },
+      { chave: "folhaTipo", label: "Tipo de folha", tabela: () => T.folhaTipo },
+      { chave: "reproducaoEstrutura", label: "Estrutura reprodutiva", tabela: () => T.reproducaoEstrutura },
+    ],
+  },
+  {
+    titulo: "Fungo",
+    aplicavel: (g) => g.reino === "Fu",
+    campos: [
+      { chave: "corpoFrutiferoTipo", label: "Corpo frutífero", tabela: () => T.corpoFrutiferoTipo },
+      { chave: "esporoDispersao", label: "Dispersão de esporos", tabela: () => T.esporoDispersao },
+    ],
+  },
+  {
+    titulo: "Bactéria",
+    aplicavel: (g) => g.reino === "Ba",
+    campos: [
+      { chave: "paredeCelularTipo", label: "Parede celular", tabela: () => T.paredeCelularTipo },
+      { chave: "metabolismoTipo", label: "Metabolismo", tabela: () => T.metabolismoTipo },
+      { chave: "formaColonia", label: "Forma de colônia", tabela: () => T.formaColonia },
+    ],
+  },
 ];
+
+/* Achatada, para quem só precisa iterar todos os campos (ex.: nada hoje,
+   mantida por compatibilidade e clareza — GRUPOS_CAMPOS_EDITAVEIS é a fonte
+   de verdade). */
+const CAMPOS_EDITAVEIS = GRUPOS_CAMPOS_EDITAVEIS.flatMap((gr) => gr.campos);
+
+/* ------------------------------------------------------------
+   Renderiza um grupo de campos editáveis (select ou slider), com
+   cabeçalho colapsável. Compartilhado pelo editor de espécie e pelo
+   montador — um único lugar para a UI de campo a campo. `g` é o genoma
+   atual (decide quais campos do grupo se aplicam); `setCampo` recebe
+   (chave, valor). Grupos sem nenhum campo aplicável não renderizam nada.
+   ------------------------------------------------------------ */
+function GrupoCamposEditaveis({ grupo, g, setCampo, abertoPadrao }) {
+  const [aberto, setAberto] = useState(abertoPadrao);
+  if (grupo.aplicavel && !grupo.aplicavel(g)) return null;
+  const camposVisiveis = grupo.campos.filter((c) => {
+    if (c.tipo === "scalar") return true;
+    const t = c.tabela(g);
+    return !!t;
+  });
+  if (!camposVisiveis.length) return null;
+  return (
+    <div className="border border-stone-800 rounded">
+      <button onClick={() => setAberto((v) => !v)}
+        className="w-full flex items-center justify-between px-2.5 py-2 text-left">
+        <span className="text-[10px] uppercase tracking-widest text-stone-400 font-mono">{grupo.titulo}</span>
+        {aberto ? <ChevronDown size={12} className="text-stone-600" /> : <ChevronRight size={12} className="text-stone-600" />}
+      </button>
+      {aberto && (
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 p-2 pt-0">
+          {camposVisiveis.map((campo) => {
+            if (campo.tipo === "scalar") {
+              const lim = campo.limites ? campo.limites(g) : {};
+              const min = lim.min ?? 0, max = lim.max ?? 9;
+              const valor = Math.min(max, Math.max(min, Number(g[campo.chave] ?? min)));
+              return (
+                <div key={campo.chave}>
+                  <label className="text-[10px] uppercase text-stone-500 font-mono truncate block">{campo.label}</label>
+                  {min === max ? (
+                    <div className="text-center text-xs text-stone-600 font-data py-1.5">— (fixo em {min})</div>
+                  ) : (
+                    <>
+                      <input type="range" min={min} max={max} value={valor}
+                        onChange={(e) => setCampo(campo.chave, Number(e.target.value))}
+                        className="w-full accent-emerald-600" />
+                      <div className="text-center text-xs text-stone-400 font-data">{valor}</div>
+                    </>
+                  )}
+                </div>
+              );
+            }
+            const tabela = campo.tabela(g);
+            return (
+              <div key={campo.chave}>
+                <label className="text-[10px] uppercase text-stone-500 font-mono truncate block">{campo.label}</label>
+                <select value={g[campo.chave]} onChange={(e) => setCampo(campo.chave, isNaN(Number(e.target.value)) ? e.target.value : Number(e.target.value))}
+                  className="bg-stone-950 border border-stone-800 rounded px-2 py-1.5 text-xs text-stone-200 w-full">
+                  {tabela.map((row) => <option key={String(row.value)} value={row.value}>{row.label}</option>)}
+                </select>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* Lista completa dos grupos, na ordem definida acima. `overridesAtivos` é
+   o conjunto de chaves com valor manual fixado nesta sessão — usado só
+   para decidir quais grupos abrem por padrão (o que já tem algo fixado
+   fica visível de cara; o resto começa recolhido, pra não virar parede). */
+function ListaGruposEditaveis({ g, setCampo, overridesAtivos }) {
+  return (
+    <div className="space-y-1.5">
+      {GRUPOS_CAMPOS_EDITAVEIS.map((grupo, i) => (
+        <GrupoCamposEditaveis
+          key={grupo.titulo}
+          grupo={grupo}
+          g={g}
+          setCampo={setCampo}
+          abertoPadrao={i < 3 || grupo.campos.some((c) => overridesAtivos?.has(c.chave))}
+        />
+      ))}
+    </div>
+  );
+}
 
 /* Fase 2, item 5.4 — edição manual de espécie já viva deixou de sobrescrever
    o nó existente in-place (alteração de DNA em vida, incoerente) e passa a
@@ -178,26 +474,7 @@ function SpeciesEditor({ modo, node, eraAtual, onSalvar, onCancelar }) {
             </div>
           )}
 
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-            {CAMPOS_EDITAVEIS.map((campo) => {
-              const tabela = campo.tabela(g);
-              if (!tabela) return null;
-              return (
-                <div key={campo.chave}>
-                  <label className="text-[10px] uppercase text-stone-500 font-mono truncate block">{campo.label}</label>
-                  <select value={g[campo.chave]} onChange={(e) => setCampo(campo.chave, isNaN(Number(e.target.value)) ? e.target.value : Number(e.target.value))}
-                    className="bg-stone-950 border border-stone-800 rounded px-2 py-1.5 text-xs text-stone-200 w-full">
-                    {tabela.map((row) => <option key={String(row.value)} value={row.value}>{row.label}</option>)}
-                  </select>
-                </div>
-              );
-            })}
-            <div>
-              <label className="text-[10px] uppercase text-stone-500 font-mono">Densidade (0-9)</label>
-              <input type="range" min="0" max="9" value={g.densidade} onChange={(e) => setCampo("densidade", Number(e.target.value))} className="w-full accent-emerald-600" />
-              <div className="text-center text-xs text-stone-400 font-data">{g.densidade}</div>
-            </div>
-          </div>
+          <ListaGruposEditaveis g={g} setCampo={setCampo} overridesAtivos={new Set(Object.keys(overrides))} />
 
           <div className="flex gap-2">
             {modo === "criar" && <BotaoPrimario onClick={sortear} className="!bg-stone-800 !text-stone-300"><Dices size={12} className="inline -mt-0.5 mr-1" />Sortear tudo</BotaoPrimario>}
