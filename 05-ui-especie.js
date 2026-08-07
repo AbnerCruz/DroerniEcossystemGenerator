@@ -269,6 +269,73 @@ function opcoesValidasParaCampo(g, campo, isPrimordial) {
    atual (decide quais campos do grupo se aplicam); `setCampo` recebe
    (chave, valor). Grupos sem nenhum campo aplicável não renderizam nada.
    ------------------------------------------------------------ */
+
+/* ------------------------------------------------------------
+   v37 — SLIDER QUE CONFIRMA AO SOLTAR, NÃO A CADA PIXEL
+   ------------------------------------------------------------
+   Relato: "percebi um bug nos sliders na construção manual do dna, ao
+   mexer os sliders às vezes resorteia uma configuração."
+
+   Duas causas somadas, e as duas precisam de correção — arrumar só uma
+   deixa o sintoma vivo:
+
+   1) `normalizarGenoma` RESSORTEIA os genes que a edição invalidou. Correto
+      como comportamento, aleatório como implementação. Resolvido no motor
+      por `normalizarGenomaEstavel` (mesma edição -> mesmo resultado).
+
+   2) `<input type="range">` dispara `onChange` em TODO valor intermediário
+      do arrasto. Ir de 3 a 7 disparava cinco edições, cinco normalizações e
+      cinco cascatas de trava — cada uma partindo do resultado da anterior,
+      não do genoma original. Mesmo com sorteio determinístico, o caminho
+      percorrido importava: chegar em 7 arrastando dava um genoma diferente
+      de chegar em 7 direto, e voltar para 3 não devolvia o ponto de
+      partida.
+
+   O slider passa a ter valor LOCAL durante o arrasto (a tela responde na
+   hora, sem travamento) e só confirma no motor quando o dedo solta —
+   `onPointerUp`/`onTouchEnd`/`onMouseUp` para o arrasto, `onKeyUp` para
+   teclado, `onBlur` como rede de segurança. Uma edição por gesto, em vez
+   de uma por pixel: além de acabar com o embaralhamento, corta o custo de
+   `opcoesValidasParaCampo` (que roda o motor uma vez por opção) na mesma
+   proporção.
+
+   O `useEffect` ressincroniza o valor local quando o genoma muda por fora
+   (outro campo editado, resorteio, DNA colado) — sem ele, o slider ficaria
+   exibindo o valor antigo depois que uma trava mexesse no gene. */
+function SliderGene({ campo, min, max, valor, setCampo }) {
+  const [local, setLocal] = useState(valor);
+  const arrastando = useRef(false);
+  useEffect(() => { if (!arrastando.current) setLocal(valor); }, [valor]);
+
+  const confirmar = () => {
+    arrastando.current = false;
+    if (Number(local) !== Number(valor)) setCampo(campo.chave, Number(local));
+  };
+
+  if (min === max) {
+    return (
+      <div>
+        <label className="text-[10px] uppercase text-stone-500 font-mono truncate block">{campo.label}</label>
+        <div className="text-center text-xs text-stone-600 font-data py-1.5">— (fixo em {min})</div>
+      </div>
+    );
+  }
+  const mostrado = Math.min(max, Math.max(min, Number(local)));
+  return (
+    <div>
+      <label className="text-[10px] uppercase text-stone-500 font-mono truncate block">{campo.label}</label>
+      <input type="range" min={min} max={max} value={mostrado}
+        onChange={(e) => { arrastando.current = true; setLocal(Number(e.target.value)); }}
+        onPointerUp={confirmar} onTouchEnd={confirmar} onMouseUp={confirmar}
+        onKeyUp={confirmar} onBlur={confirmar}
+        className="w-full accent-emerald-600" />
+      <div className={`text-center text-xs font-data ${mostrado !== valor ? "text-amber-500" : "text-stone-400"}`}>
+        {mostrado}{mostrado !== valor ? " · solte para aplicar" : ""}
+      </div>
+    </div>
+  );
+}
+
 function GrupoCamposEditaveis({ grupo, g, setCampo, abertoPadrao, isPrimordial }) {
   const [aberto, setAberto] = useState(abertoPadrao);
   if (grupo.aplicavel && !grupo.aplicavel(g)) return null;
@@ -293,19 +360,8 @@ function GrupoCamposEditaveis({ grupo, g, setCampo, abertoPadrao, isPrimordial }
               const min = lim.min ?? 0, max = lim.max ?? 9;
               const valor = Math.min(max, Math.max(min, Number(g[campo.chave] ?? min)));
               return (
-                <div key={campo.chave}>
-                  <label className="text-[10px] uppercase text-stone-500 font-mono truncate block">{campo.label}</label>
-                  {min === max ? (
-                    <div className="text-center text-xs text-stone-600 font-data py-1.5">— (fixo em {min})</div>
-                  ) : (
-                    <>
-                      <input type="range" min={min} max={max} value={valor}
-                        onChange={(e) => setCampo(campo.chave, Number(e.target.value))}
-                        className="w-full accent-emerald-600" />
-                      <div className="text-center text-xs text-stone-400 font-data">{valor}</div>
-                    </>
-                  )}
-                </div>
+                <SliderGene key={campo.chave} campo={campo} min={min} max={max}
+                  valor={valor} setCampo={setCampo} />
               );
             }
             const tabela = campo.tabela(g);
@@ -453,9 +509,28 @@ function SpeciesEditor({ modo, node, eraAtual, onSalvar, onCancelar }) {
      "Sortear tudo" e "Resortear não-fixados" continuam com a semântica
      antiga — eles EXISTEM para embaralhar, então usam `buildSpecies` do
      zero mesmo. */
-  const aplicarEdicao = (novosOverrides) => {
-    const candidato = { ...g, ...novosOverrides };
-    setG(normalizarGenoma(candidato, isPrimordial));
+  /* v37 — DUAS CORREÇÕES SOBRE A DA v36.
+
+     (a) `normalizarGenomaEstavel` no lugar de `normalizarGenoma`. A v36
+     acertou em partir do genoma da tela, mas o RESSORTEIO dos genes que a
+     edição invalida continuava usando `Math.random()` — então a mesma
+     edição, repetida, dava resultados diferentes. Num <select> isso passa
+     quase despercebido (um clique, um resultado); num SLIDER não, porque
+     arrastar dispara uma edição por valor intermediário e cada uma
+     resorteia de novo. Era o relato: "ao mexer os sliders às vezes
+     resorteia uma configuração". Com a normalização estável, a mesma
+     edição sobre o mesmo genoma dá sempre o mesmo resultado, e arrastar de
+     volta devolve exatamente a configuração anterior.
+
+     (b) A edição aplica SÓ o campo tocado, e não o mapa inteiro de
+     overrides por cima do genoma atual. Reaplicar overrides antigos a cada
+     clique ressuscitava valores que uma trava já tinha revertido, e a
+     cascata resultante mudava campos que o usuário não tocou. O mapa de
+     overrides continua existindo — ele registra o que foi fixado à mão,
+     que é o que o resorteio precisa preservar —, só deixou de ser
+     reaplicado a cada edição. */
+  const aplicarEdicao = (chave, valor) => {
+    setG((atual) => normalizarGenomaEstavel({ ...atual, [chave]: valor }, isPrimordial));
   };
   const resortear = (novosOverrides) => {
     const manual = { ...baseManual, ...novosOverrides };
@@ -463,9 +538,8 @@ function SpeciesEditor({ modo, node, eraAtual, onSalvar, onCancelar }) {
     setG(built.g);
   };
   const setCampo = (chave, valor) => {
-    const novos = { ...overrides, [chave]: valor };
-    setOverrides(novos);
-    aplicarEdicao(novos);
+    setOverrides((o) => ({ ...o, [chave]: valor }));
+    aplicarEdicao(chave, valor);
   };
   const sortear = () => { setOverrides({}); resortear({}); };
   const sortearDeNovo = () => resortear(overrides); // mantém overrides, resorteia o resto do zero
@@ -476,14 +550,17 @@ function SpeciesEditor({ modo, node, eraAtual, onSalvar, onCancelar }) {
   const pesoCal = useMemo(() => calcularPesoCalorias(g), [g]);
   const habitat = useMemo(() => readHabitatNaMassa(g, eraAtual.massas.find((m) => m.id === massaId)), [g, massaId, eraAtual]);
 
+  /* v37 — esta função chamava `recalcular(novos)`, que não existe desde a
+     v36 (virou aplicarEdicao/resortear): clicar em "corrigir" num aviso de
+     coerência lançava ReferenceError e não corrigia nada. Agora aplica o
+     genoma já corrigido e o normaliza, que é o que a correção pretendia. */
   const aplicarCorrecao = (issue) => {
-    const g2 = JSON.parse(JSON.stringify(g));
+    const g2 = clonarGenoma(g);
     issue.corrigir(g2);
-    // devolve os campos corrigidos como novos overrides, pra sobreviverem a futuros recálculos
     const novos = { ...overrides };
     for (const k of Object.keys(g2)) if (g2[k] !== g[k]) novos[k] = g2[k];
     setOverrides(novos);
-    recalcular(novos);
+    setG(normalizarGenomaEstavel(g2, isPrimordial));
   };
 
   const podeConfirmar = erros.length === 0;
@@ -513,7 +590,7 @@ function SpeciesEditor({ modo, node, eraAtual, onSalvar, onCancelar }) {
           {modo === "criar" && (
             <div className="grid grid-cols-2 gap-2">
               <div>
-                <label className="text-[10px] uppercase text-stone-500 font-mono">Ano de surgimento (AU = 1 mi anos)</label>
+                <label className="text-[10px] uppercase text-stone-500 font-mono">Ano de surgimento (AU = 10.000 anos)</label>
                 <CampoNumero value={auInicial} onChange={setAuInicial} placeholder="0" />
               </div>
               <div>

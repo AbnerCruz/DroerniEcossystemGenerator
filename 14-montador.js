@@ -86,12 +86,15 @@ function MontadorDNA({ onUsar, onCancelar, showToast }) {
      bactéria, magia baixa, sem apêndice) não têm o que fazer aqui. */
   const [g, setG] = useState(() => buildSpecies(null, {}, false, false).g);
 
-  /* v36 — mesma correção do editor de espécie (ver 05-ui-especie.js):
-     editar UM campo não pode resortear a tela inteira. Ver o comentário lá
-     para o diagnóstico completo. */
-  const aplicarEdicao = (novosOverrides) => {
-    const candidato = { ...g, ...novosOverrides };
-    setG(normalizarGenoma(candidato, false));
+  const [dnaColado, setDnaColado] = useState("");
+  const [avisoColagem, setAvisoColagem] = useState(null);
+
+  /* v37 — ver 05-ui-especie.js para o diagnóstico completo: a edição aplica
+     só o campo tocado, sobre o genoma da tela, com normalização ESTÁVEL
+     (mesma edição -> mesmo resultado). É o que impede o arrasto do slider de
+     embaralhar o resto da criatura. */
+  const aplicarEdicao = (chave, valor) => {
+    setG((atual) => normalizarGenomaEstavel({ ...atual, [chave]: valor }, false));
   };
   const gerarDoZero = (novos, baseManual) => {
     const built = buildSpecies(null, { ...(baseManual ?? presetAtualManual()), ...novos }, false, false);
@@ -106,9 +109,86 @@ function MontadorDNA({ onUsar, onCancelar, showToast }) {
     gerarDoZero({}, base); // troca de preset é recomeço deliberado, não edição
   };
   const setCampo = (chave, valor) => {
-    const novos = { ...overrides, [chave]: valor };
-    setOverrides(novos);
-    aplicarEdicao(novos);
+    setOverrides((o) => ({ ...o, [chave]: valor }));
+    aplicarEdicao(chave, valor);
+  };
+
+  /* ------------------------------------------------------------
+     v37 — COLAR UM DNA PARA EDITAR
+     ------------------------------------------------------------
+     Pedido: "implementar a possibilidade de colar um DNA na construção
+     manual para editar ele."
+
+     Não precisou de parser novo: `parseAlvoDLDoCode` já lê o código DRN2
+     COMPLETO desde a v26 (os quatro campos concatenados sem separador são
+     desambiguados casando com os valores reais das tabelas, não por posição
+     de caractere). Ele é a mesma leitura que a busca por DNA-alvo usa, o
+     que garante por construção que colar aqui e colar lá entendem o mesmo
+     código do mesmo jeito.
+
+     O código lido entra como conjunto de overrides — ou seja, todo gene que
+     veio no código fica FIXADO. Isso importa: sem isso, "resortear o que não
+     foi fixado" jogaria fora o DNA que o usuário acabou de colar. Depois da
+     leitura, `normalizarGenoma` fecha as lacunas (um código pode omitir
+     blocos, como ASA e CDA quando a espécie não os tem) e aplica as travas.
+
+     Relatamos quantos genes o código trouxe e quantos a trava teve de
+     ajustar — se o código veio de uma versão antiga ou foi editado à mão,
+     é aí que o usuário vê. */
+  const colarDNA = () => {
+    const texto = dnaColado.trim();
+    if (!texto) return;
+    if (!ehCodigoDRN2(texto)) {
+      setAvisoColagem({ erro: true, texto: "Isso não parece um código DRN2. Ele começa com \"DRN2-\" e traz blocos como TAX:, MOR:, LOC:." });
+      return;
+    }
+    /* `genomaDeCodigoDRN2` já existe no motor desde a v27 e é EXATAMENTE a
+       reconstrução que este botão precisa — não escrevi uma nova. Ela
+       resolve três coisas que uma leitura ingênua erra, e eu errei antes de
+       encontrá-la (medido: 66% dos códigos não voltavam idênticos):
+
+       - genes DERIVADOS (socSenciencia vem de socSencienciaBruta): escrever
+         o valor visível não adianta, porque a normalização recalcula a
+         partir da fonte. Ela ajusta a fonte pelo delta, em rodadas.
+       - campos-ESPELHO (memInf guarda o estado em memInfRaw): idem.
+       - ANOMALIAS: a quantidade é derivada de `extremos`; só QUAIS são pode
+         ser fixado.
+
+       Usar a mesma função da busca por DNA garante, por construção, que
+       colar aqui e colar na busca entendem o mesmo código do mesmo jeito. */
+    let reconstruido;
+    try { reconstruido = genomaDeCodigoDRN2(texto, false); }
+    catch { reconstruido = null; }
+    if (!reconstruido) {
+      setAvisoColagem({ erro: true, texto: "O código foi lido, mas não trouxe nenhum gene reconhecível." });
+      return;
+    }
+    /* Os genes que vieram no código ficam FIXADOS como override — senão
+       "resortear o que não foi fixado" jogaria fora o DNA recém-colado.
+       Ficam de fora os derivados e o `memInf`, que o motor recalcula
+       sozinho e que fixados apareceriam como "ajustados pela trava" sem
+       nada de errado ter acontecido. */
+    const lido = parseAlvoDLDoCode(texto);
+    const overridesNovos = {};
+    let ajustados = 0;
+    for (const [k, v] of Object.entries(lido)) {
+      if (v === undefined || v === "" || k.startsWith("__")) continue;
+      if (GENES_SEMPRE_DERIVADOS.has(k) || k === "memInf") continue;
+      overridesNovos[k] = reconstruido[k];
+      if (String(reconstruido[k]) !== String(v)) ajustados++;
+    }
+    setG(reconstruido);
+    setOverrides(overridesNovos);
+    setPreset("livre");
+    const total = Object.keys(overridesNovos).length;
+    const fiel = serialize(reconstruido) === texto.trim();
+    setAvisoColagem({
+      erro: false,
+      texto: `DNA carregado: ${total} gene(s) lidos e fixados.` +
+        (fiel ? " O código reconstruído bate exatamente com o colado."
+              : ajustados ? ` ${ajustados} gene(s) foram ajustados pelas travas de coerência — o código pedia algo que a classe/reino não permite.`
+              : " Alguns campos derivados podem diferir do código original."),
+    });
   };
   const resortear = () => gerarDoZero(overrides); // mantém overrides, resorteia o resto do zero
 
@@ -118,13 +198,16 @@ function MontadorDNA({ onUsar, onCancelar, showToast }) {
   const pesoCal = useMemo(() => calcularPesoCalorias(g), [g]);
   const code = useMemo(() => serialize(g), [g]);
 
+  /* v37 — chamava `recalcular`, que não existe desde a v36: o botão
+     "corrigir" dos avisos de coerência lançava ReferenceError. Mesmo bug
+     estava no editor de espécie (05-ui-especie.js), corrigido junto. */
   const aplicarCorrecao = (issue) => {
     const g2 = clonarGenoma(g);
     issue.corrigir(g2);
     const novos = { ...overrides };
     for (const k of Object.keys(g2)) if (g2[k] !== g[k]) novos[k] = g2[k];
     setOverrides(novos);
-    recalcular(novos);
+    setG(normalizarGenomaEstavel(g2, false));
   };
 
   const copiarCodigo = () => { navigator.clipboard?.writeText(code); showToast("DNA copiado."); };
@@ -137,6 +220,31 @@ function MontadorDNA({ onUsar, onCancelar, showToast }) {
         Depois de usar, o resultado cai na busca, de onde a trilha reversa reconstrói
         a linhagem inteira desde uma bactéria até ele.
       </p>
+
+      {/* v37 — colar um DNA existente para editar */}
+      <div className="rounded border border-stone-800 p-2.5 space-y-1.5">
+        <label className="text-[10px] uppercase text-stone-500 font-mono">Colar um DNA para editar</label>
+        <textarea value={dnaColado} onChange={(e) => { setDnaColado(e.target.value); setAvisoColagem(null); }} rows={2}
+          placeholder="DRN2-TAX:An.REP-MOR:gr.5.bi..."
+          className="w-full text-[10px] font-mono bg-stone-950 border border-stone-800 rounded px-2 py-1.5 text-stone-300 placeholder-stone-600 focus:border-emerald-700 focus:outline-none" />
+        <div className="flex gap-2">
+          <button onClick={colarDNA} disabled={!dnaColado.trim()}
+            className={`text-[11px] font-mono uppercase border rounded px-3 py-1.5 ${dnaColado.trim() ? "border-emerald-800 text-emerald-400 hover:bg-emerald-950/30" : "border-stone-800 text-stone-600"}`}>
+            <Check size={12} className="inline -mt-0.5 mr-1" />Carregar DNA
+          </button>
+          <button onClick={() => { setDnaColado(code); setAvisoColagem(null); }}
+            className="text-[11px] font-mono uppercase text-stone-500 hover:text-stone-300 border border-stone-800 rounded px-3 py-1.5">
+            usar o atual
+          </button>
+        </div>
+        {avisoColagem && (
+          <p className={`text-[10px] ${avisoColagem.erro ? "text-red-400" : "text-emerald-500"}`}>{avisoColagem.texto}</p>
+        )}
+        <p className="text-[10px] text-stone-600">
+          Todo gene que vier no código fica fixado, então "resortear" não o descarta.
+          Serve tanto para retomar uma criatura anotada quanto para partir de uma espécie que já existe no mundo.
+        </p>
+      </div>
 
       <div>
         <label className="text-[10px] uppercase text-stone-500 font-mono">Ponto de partida</label>

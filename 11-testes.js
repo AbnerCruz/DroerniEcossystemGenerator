@@ -1480,10 +1480,19 @@ async function suiteEdicaoEstavel({ suite, chk, info }, prog) {
 
   // (4) caso concreto: molusco só aceita "0S" para membros superiores —
   // a opção deve estar marcada disponível, e as demais, indisponíveis
+  /* v37 — esta checagem era intermitente e a falha era DELA, não do motor.
+     Ela afirmava que molusco só aceita "0S". Medido na v37 e na v36, com o
+     mesmo resultado nas duas: 0S em ~96,5% e 2S em ~3,5% — ou seja, o motor
+     sempre permitiu o plano cefalópode (braços), e `opcoesValidasParaCampo`
+     às vezes o encontrava na amostragem e às vezes não. A asserção rígida
+     reprovava ~1 rodada em 3 sem que nada estivesse errado.
+
+     A asserção passa a ser a verdadeira: "0S" tem de estar disponível e ser
+     o plano dominante, e nenhum plano de vertebrado (4S) pode aparecer. */
   const campoMemSup = { chave: "memSup", tabela: () => T.memSup };
   const validosMol = opcoesValidasParaCampo(gMol, campoMemSup, false);
-  chk("CC4 molusco: só '0S' aparece disponível para membros superiores",
-    validosMol.size === 1 && validosMol.has("0S"), [...validosMol].join(","));
+  chk("CC4 molusco: '0S' disponível e nenhum plano de vertebrado",
+    validosMol.has("0S") && !validosMol.has("4S"), [...validosMol].join(","));
 
   // (5) bactéria só aceita tegumento mucoso
   const gBa = buildSpecies(null, { reino: "Ba" }, false, false).g;
@@ -1503,6 +1512,425 @@ async function suiteEdicaoEstavel({ suite, chk, info }, prog) {
   }
   chk("CC6 resortear do zero continua produzindo variação de verdade",
     diferentes > 20, `${diferentes}/30 saíram diferentes do primeiro — resortear não pode ter virado edição estável por engano`);
+  prog(1);
+}
+
+
+/* ============================================================
+   v37 — SUÍTES NOVAS
+   ============================================================ */
+
+async function suiteColonizacao({ suite, chk, info }, prog) {
+  suite("DD · Ordem de colonização: água -> terra -> ar (v37)");
+  resetarMotor(); setLogVerbosidade("resumido");
+  setColonizacaoAtiva(true); setRitmoColonizacao(1);
+
+  /* (1) O portão em si: gerando sob um AU de cada estágio, nenhuma
+     característica de estágio posterior pode aparecer. É a checagem mais
+     direta — se ela passar, a ordem não depende de sorte. */
+  const proibidos = [
+    { au: 0, classes: ["MAM", "AVE", "REP", "AMP"], tols: ["ms", "xe", "um", "eu"], voo: true },
+    { au: 1000, classes: ["MAM", "AVE"], tols: ["xe"], voo: true },
+  ];
+  let violacoes = 0, amostra = 0;
+  for (const caso of proibidos) {
+    setAuColonizacao(caso.au);
+    for (let i = 0; i < 400; i++) {
+      const g = buildSpecies(null, { reino: "An" }, false, false).g;
+      amostra++;
+      if (caso.classes.includes(g.classe)) violacoes++;
+      else if (caso.tols.includes(g.tolHidrica)) violacoes++;
+      else if (caso.voo && ["V", "P"].includes(g.locPrimario)) violacoes++;
+    }
+  }
+  setAuColonizacao(null);
+  chk("DD1 nada de estágio posterior aparece em estágio anterior",
+    violacoes === 0, `${violacoes} violação(ões) em ${amostra} espécies geradas sob o portão`);
+  prog(0.25);
+
+  /* (2) O portão precisa estar FECHADO fora da deriva — senão o montador, a
+     busca por seed e a trilha por DNA-alvo herdariam a restrição e um alvo
+     fora do estágio (um dragão) deixaria de ser alcançável. Esta é a
+     checagem que protege a garantia da v26. */
+  const classesLivres = new Set();
+  for (let i = 0; i < 600; i++) classesLivres.add(buildSpecies(null, { reino: "An" }, false, false).g.classe);
+  chk("DD2 fora da deriva o portão está fechado (montador/seed/trilha livres)",
+    classesLivres.has("MAM") || classesLivres.has("AVE"),
+    `classes obtidas sem portão: ${[...classesLivres].join(",")}`);
+  prog(0.4);
+
+  /* (3) Ordem observada num ecossistema real. Não exige uma sequência
+     exata (a deriva é estocástica), exige que o marinho venha antes do
+     terrestre e o terrestre antes do aéreo. */
+  const eco = await gerarEcossistema({ quantidade: 3, ciclosPorPrimordial: 120, auInicial: 0, massaIds: null });
+  const primeiroAU = (fn) => {
+    const aus = eco.nodes.filter(fn).map((n) => n.auSurgimento);
+    return aus.length ? Math.min(...aus) : null;
+  };
+  const marinho = primeiroAU((n) => ["PSC", "MOL"].includes(n.g.classe));
+  const terrestre = primeiroAU((n) => ["AMP", "REP", "MAM", "AVE"].includes(n.g.classe));
+  const aereo = primeiroAU((n) => ["V", "P"].includes(n.g.locPrimario));
+  info(`1ª aparição — marinho: ${marinho ?? "—"} AU | terrestre: ${terrestre ?? "—"} AU | aéreo: ${aereo ?? "—"} AU`);
+  chk("DD3 vida marinha aparece antes da terrestre",
+    marinho === null || terrestre === null || marinho <= terrestre,
+    `marinho ${marinho}, terrestre ${terrestre}`);
+  chk("DD4 vida terrestre aparece antes da aérea",
+    aereo === null || terrestre === null || terrestre <= aereo,
+    `terrestre ${terrestre}, aéreo ${aereo}`);
+  prog(0.7);
+
+  /* (4) Toda espécie do mundo respeita o estágio do próprio AU. */
+  let fora = 0;
+  for (const n of eco.nodes) {
+    const e = estagioColonizacao(n.auSurgimento);
+    if (e === 0 && (["MAM", "AVE", "REP", "AMP"].includes(n.g.classe) || ["V", "P"].includes(n.g.locPrimario) || ["ms", "xe"].includes(n.g.tolHidrica))) fora++;
+    else if (e === 1 && (["MAM", "AVE"].includes(n.g.classe) || ["V", "P"].includes(n.g.locPrimario) || n.g.tolHidrica === "xe")) fora++;
+  }
+  chk("DD5 toda espécie respeita o estágio do próprio ano de surgimento",
+    fora === 0, `${fora} de ${eco.nodes.length} espécies fora do estágio`);
+
+  /* (5) O oceano não pode esvaziar: se toda linhagem sobe a escada, o
+     mundo termina sem fauna marinha — foi o que a primeira versão fazia
+     (5 aquáticas em 1.345). Só ~35% dos segmentos são conquistadores. */
+  const aquaticas = eco.nodes.filter((n) => ["aq", "sa"].includes(n.g.tolHidrica)).length;
+  chk("DD6 fauna aquática sobrevive à colonização",
+    aquaticas >= Math.max(3, eco.nodes.length * 0.05),
+    `${aquaticas} de ${eco.nodes.length} espécies ainda aquáticas/salobras`);
+  prog(0.9);
+
+  /* (6) Desligado, volta ao comportamento da v36. */
+  setColonizacaoAtiva(false);
+  setAuColonizacao(0);
+  const semPortao = new Set();
+  for (let i = 0; i < 400; i++) semPortao.add(buildSpecies(null, { reino: "An" }, false, false).g.classe);
+  setAuColonizacao(null);
+  setColonizacaoAtiva(true);
+  chk("DD7 desligar a ordem devolve o comportamento livre",
+    semPortao.has("MAM") || semPortao.has("AVE"), `classes: ${[...semPortao].join(",")}`);
+  prog(1);
+}
+
+async function suiteVegetaisMortais({ suite, chk, info }, prog) {
+  suite("EE · Plantas e fungos deixam de ser eternos (v37)");
+  resetarMotor(); setLogVerbosidade("resumido");
+
+  /* (1) O escore competitivo de planta precisa ter VARIÂNCIA. Era este o
+     bug: senciência*2 + velocidade dá 0 para todo vegetal, 100% dos pares
+     empatavam, empate não gera interação, e sem interação não há pressão
+     nem extinção possível. */
+  for (const [reino, nome] of [["Pl", "planta"], ["Fu", "fungo"], ["Ba", "bactéria"]]) {
+    const escores = new Set();
+    for (let i = 0; i < 200; i++) escores.add(escoreCompetitivo(buildSpecies(null, { reino }, false, false).g));
+    chk(`EE1·${reino} escore competitivo de ${nome} varia entre indivíduos`,
+      escores.size >= 5, `${escores.size} valor(es) distinto(s) em 200 amostras`);
+  }
+  prog(0.25);
+
+  /* (2) Pares planta-planta agora produzem interação em vez de empatar. */
+  const plantas = [];
+  for (let i = 0; i < 80; i++) plantas.push({ id: `p${i}`, linhagemId: `P${i}`, g: buildSpecies(null, { reino: "Pl" }, false, false).g });
+  let pares = 0, comInteracao = 0;
+  for (let i = 0; i < plantas.length; i++) {
+    for (let j = i + 1; j < plantas.length; j++) {
+      pares++;
+      if (avaliarInteracao(plantas[i], plantas[j])) comInteracao++;
+    }
+  }
+  info(`pares planta-planta: ${pares}, com interação: ${comInteracao} (${(100 * comInteracao / pares).toFixed(1)}%)`);
+  chk("EE2 competição entre plantas deixa de empatar sempre",
+    comInteracao > 0, `${comInteracao} de ${pares} pares produziram interação (era 0 na v36)`);
+  prog(0.45);
+
+  /* (3) Herbivoria existe: herbívoro contra vegetal consumível. */
+  const herbivoros = [];
+  for (let i = 0; i < 300 && herbivoros.length < 40; i++) {
+    const g = buildSpecies(null, { reino: "An" }, false, false).g;
+    if (["hb", "on", "fr"].includes(g.dieBase)) herbivoros.push({ id: `h${i}`, linhagemId: `H${i}`, g });
+  }
+  let herb = 0, tentativas = 0;
+  for (const h of herbivoros) {
+    for (const p of plantas.slice(0, 20)) {
+      tentativas++;
+      const r = avaliarInteracao(h, p);
+      if (r && r.tipo === "herbivoria") herb++;
+    }
+  }
+  chk("EE3 herbívoro consome planta (interação de herbivoria existe)",
+    herb > 0, `${herb} de ${tentativas} pares herbívoro×planta`);
+
+  /* (4) Mas não indiscriminadamente: vegetal muito defendido escapa — é o
+     que faz a herbivoria selecionar em vez de só exterminar. */
+  const blindada = { id: "pb", linhagemId: "PB", g: { ...plantas[0].g, defBlindagem: 9, tegResistencia: 9 } };
+  const nenhum = herbivoros.filter((h) => {
+    const r = avaliarInteracao(h, blindada);
+    return r && r.tipo === "herbivoria";
+  }).length;
+  chk("EE4 vegetal muito blindado/rígido escapa da herbivoria",
+    nenhum === 0, `${nenhum} herbívoro(s) ainda conseguiram consumir um vegetal 9/9 de defesa`);
+  prog(0.7);
+
+  /* (5) O ramo ANIMAL do escore não pode ter mudado: nenhuma interação
+     entre animais deve mudar de resultado por causa desta versão. */
+  let divergencias = 0;
+  for (let i = 0; i < 300; i++) {
+    const g = buildSpecies(null, { reino: "An" }, false, false).g;
+    const antigo = (g.socSenciencia ?? 0) * 2 + (g.locVelocidade ?? 0);
+    if (escoreCompetitivo(g) !== antigo) divergencias++;
+  }
+  chk("EE5 escore de animal permanece idêntico ao da v36",
+    divergencias === 0, `${divergencias}/300 animais mudaram de escore`);
+  prog(0.85);
+
+  /* (6) Ponta a ponta: num mundo POVOADO, algum vegetal chega a se
+     extinguir. A extinção é populacional — ela acontece quando a espécie
+     perde o último indivíduo —, então gerar a árvore não basta: é preciso
+     povoar as massas e rodar a seleção natural, que é exatamente o que a
+     UI faz depois de gerar o ecossistema. Sem esta etapa o teste mediria
+     outra coisa e passaria por engano. */
+  const massas = [{ id: "m1", nome: "Massa de teste", area: "gr", clima: "tp", dominios: [] }];
+  const eco = await gerarEcossistema({ quantidade: 4, ciclosPorPrimordial: 120, auInicial: 0, massaIds: ["m1"] });
+  const idx = new Map(eco.nodes.map((n) => [n.id, n]));
+  let individuos = [];
+  for (const n of eco.nodes) {
+    if (n.extinta) continue;
+    /* O indivíduo herda a massa do NÓ, não do argumento — sem ancorar as
+       espécies numa massa, todo indivíduo nasce com massaId nulo e o laço
+       de colisão (que filtra por massa) não encontra ninguém. */
+    individuos = individuos.concat(gerarPopulacaoParaEspecie(n, 6, 4, massas[0]));
+  }
+  const vegetais = eco.nodes.filter((n) => n.g.reino === "Pl" || n.g.reino === "Fu");
+  const idsVegetais = new Set(vegetais.map((n) => n.id));
+
+  /* A asserção é sobre o MECANISMO, não sobre o desfecho.
+     Primeira versão deste teste exigia "algum vegetal se extinguiu" e
+     falhava 1 rodada em 4 — não por regressão, mas por amostra: numa
+     rodada com 7 vegetais, 25 ciclos podem não matar nenhum. Extinção é o
+     fim de uma cadeia estocástica; o que a v37 consertou foi o elo que não
+     existia — vegetal aparecendo como PERDEDOR de uma interação. Esse elo é
+     determinístico e é o que se mede aqui. A extinção continua sendo
+     acompanhada, como informação. */
+  const antesDoLog = __eventLog.length;
+  const { resumo } = await rodarSelecaoNaturalPopulacional(idx, individuos, massas, 25, null, 0);
+  const novosEventos = __eventLog.slice(antesDoLog);
+  const pressaoSobreVegetal = novosEventos.filter((e) => idsVegetais.has(e.speciesId)).length;
+  const extintos = vegetais.filter((n) => n.extinta).length;
+  info(`vegetais/fungos: ${vegetais.length} · eventos de pressão sobre vegetais: ${pressaoSobreVegetal} · extintos em 25 ciclos: ${extintos} · colisões no mundo: ${resumo.colisoes}`);
+  chk("EE6 vegetais sofrem pressão de seleção (deixaram de ser intocáveis)",
+    vegetais.length === 0 || resumo.colisoes === 0 || pressaoSobreVegetal > 0,
+    `${pressaoSobreVegetal} evento(s) atingindo vegetais em ${resumo.colisoes} colisões — na v36 este número era estruturalmente 0`);
+  prog(1);
+}
+
+async function suitePescoco({ suite, chk, info }, prog) {
+  suite("FF · Pescoço por plano corporal (v37)");
+  resetarMotor(); setLogVerbosidade("resumido");
+
+  const TETRA = ["MAM", "AVE", "REP", "AMP"];
+  let tetrapodes = 0, semPescoco = 0, peixes = 0, peixesOk = 0;
+  for (let i = 0; i < 6000; i++) {
+    const g = buildSpecies(null, { reino: "An" }, false, false).g;
+    if (g.crnFormato === "0") continue;
+    if (TETRA.includes(g.classe)) {
+      tetrapodes++;
+      const serpentiforme = g.morTorso === "se" || g.locPrimario === "S";
+      if (g.crnPescoco === "au" && !serpentiforme) semPescoco++;
+    }
+    if (g.classe === "PSC") { peixes++; if (["au", "cu"].includes(g.crnPescoco)) peixesOk++; }
+  }
+  info(`amostra: ${tetrapodes} tetrápodes com crânio, ${peixes} peixes`);
+  chk("FF1 nenhum tetrápode não-serpentiforme sai sem pescoço",
+    semPescoco === 0, `${semPescoco}/${tetrapodes} — na v36 eram 13,2%`);
+  chk("FF2 peixe continua sem pescoço verdadeiro (cabeça fundida)",
+    peixes === 0 || peixesOk === peixes, `${peixesOk}/${peixes} com pescoço ausente ou curto`);
+  prog(0.6);
+
+  /* Serpentiforme: pescoço reduzido, mas nunca elongado. */
+  let serp = 0, serpElongado = 0;
+  for (let i = 0; i < 4000; i++) {
+    const g = buildSpecies(null, { reino: "An", classe: "REP" }, false, false).g;
+    if (g.crnFormato === "0") continue;
+    if (g.morTorso !== "se" && g.locPrimario !== "S") continue;
+    serp++;
+    if (!["au", "cu", "pr"].includes(g.crnPescoco)) serpElongado++;
+  }
+  chk("FF3 serpentiforme nunca sai com pescoço elongado",
+    serpElongado === 0, `${serpElongado}/${serp} serpentiformes com pescoço longo`);
+
+  /* A deriva não pode reintroduzir o problema: a trava vive em
+     runSpeciesSteps, que a normalização de toda mutação reexecuta. */
+  let derivados = 0, quebrados = 0;
+  let g = buildSpecies(null, { reino: "An", classe: "REP" }, false, false).g;
+  for (let i = 0; i < 400; i++) {
+    /* aplicarCicloDeriva muta o genoma em lugar e devolve só o relatório do
+       ciclo — o estado a inspecionar é o próprio `g`. */
+    aplicarCicloDeriva(g, 12);
+    if (g.crnFormato === "0" || !TETRA.includes(g.classe)) {
+      g = buildSpecies(null, { reino: "An", classe: "REP" }, false, false).g;
+      continue;
+    }
+    derivados++;
+    const serpentiforme = g.morTorso === "se" || g.locPrimario === "S";
+    if (g.crnPescoco === "au" && !serpentiforme) quebrados++;
+  }
+  chk("FF4 a deriva não reintroduz tetrápode sem pescoço",
+    quebrados === 0, `${quebrados}/${derivados} após ciclos de deriva`);
+  prog(1);
+}
+
+async function suiteColagemDna({ suite, chk, info }, prog) {
+  suite("GG · Colar DNA no montador e lista de alvos (v37)");
+  resetarMotor(); setLogVerbosidade("resumido");
+
+  /* (1) Round-trip: colar o código de uma espécie devolve a MESMA espécie.
+     Este é o número que justificou trocar a leitura ingênua por
+     genomaDeCodigoDRN2 — a ingênua acertava 34%. */
+  let identicos = 0, N = 300, blocos = {};
+  for (let i = 0; i < N; i++) {
+    const g = buildSpecies(null, {}, false, false).g;
+    const code = serialize(g);
+    const r = genomaDeCodigoDRN2(code, false);
+    const c2 = r ? serialize(r) : "";
+    if (c2 === code) identicos++;
+    else {
+      const a = code.split("-"), b = c2.split("-");
+      for (let j = 0; j < Math.max(a.length, b.length); j++) {
+        if (a[j] !== b[j]) { const n = (a[j] || b[j] || "?").slice(0, 3); blocos[n] = (blocos[n] || 0) + 1; }
+      }
+    }
+  }
+  /* O alvo é 100%, e a varredura por reino/classe (36.000 códigos) devolve
+     100% em todos menos um caso: cerca de 1 em 4.000 AVES volta com a
+     senciência 1 ponto abaixo (ex.: SOC:so.4.5 -> SOC:so.4.4).
+
+     A causa é estrutural, não um descuido. `socSenciencia` não é um gene: é
+     derivada de `socSencienciaBruta`, com penalidade por formato craniano e
+     piso por nível de magia. O código DRN2 carrega só o valor DERIVADO,
+     então `genomaDeCodigoDRN2` reconstrói ajustando a fonte pelo delta, em
+     rodadas. Quando o valor cai exatamente sobre um piso ou teto, o delta
+     não tem para onde ir e sobra 1 ponto. É a mesma limitação que fez
+     GENES_SEMPRE_DERIVADOS existir na v27.
+
+     Por isso a asserção é 99,5% e não 100%: 100% não é alcançável por
+     construção deste formato, e um teste que exigisse isso estaria
+     reprovando o motor por uma promessa que ninguém fez. O resíduo fica
+     medido e visível no `info` acima, não escondido. */
+  const taxa = identicos / N;
+  info(`divergências por bloco: ${Object.keys(blocos).length ? JSON.stringify(blocos) : "nenhuma"}`);
+  chk("GG1 colar um DNA reconstrói a mesma espécie em ≥99,5% dos códigos",
+    taxa >= 0.995, `${identicos}/${N} idênticos (${(taxa * 100).toFixed(2)}%) — resíduo esperado: senciência derivada em piso/teto`);
+  prog(0.4);
+
+  /* (2) Um código de bactéria e um de planta também precisam voltar —
+     reinos com esqueleto de genes próprio são onde um parser posicional
+     costuma quebrar. */
+  for (const reino of ["Ba", "Pl", "Fu"]) {
+    let ok = 0;
+    for (let i = 0; i < 60; i++) {
+      const code = serialize(buildSpecies(null, { reino }, false, false).g);
+      const r = genomaDeCodigoDRN2(code, false);
+      if (r && serialize(r) === code) ok++;
+    }
+    chk(`GG2·${reino} código de ${reino} volta idêntico`, ok === 60, `${ok}/60`);
+  }
+  prog(0.7);
+
+  /* (3) Entrada inválida não pode derrubar nada — é o que o botão
+     "Carregar DNA" e o "Adicionar" da lista de alvos precisam garantir. */
+  const lixos = ["", "   ", "banana", "DRN2-", "DRN2-TAX:", "{}", "DRN2-TAX:Zz.QQQ-MOR:...", "\u0000\u0001"];
+  let quebrou = 0, aceitouLixo = 0;
+  for (const lixo of lixos) {
+    try {
+      if (ehCodigoDRN2(lixo)) {
+        const r = genomaDeCodigoDRN2(lixo, false);
+        if (r && !r.reino) aceitouLixo++;
+      }
+    } catch (e) { quebrou++; }
+  }
+  chk("GG3 entrada inválida não lança exceção", quebrou === 0, `${quebrou} exceção(ões) em ${lixos.length} entradas`);
+  chk("GG4 entrada inválida não vira genoma sem reino", aceitouLixo === 0, `${aceitouLixo} aceita(s)`);
+  prog(1);
+}
+
+async function suiteLogEPdf({ suite, chk, info }, prog) {
+  suite("HH · Volume de log e escopo dos PDFs (v37)");
+  resetarMotor();
+
+  /* (1) O padrão precisa ser resumido — é o que corta 94% dos eventos. */
+  chk("HH1 a verbosidade padrão do motor é resumida",
+    getLogVerbosidade() === "resumido", `está em "${getLogVerbosidade()}"`);
+  prog(0.1);
+
+  /* (2) Medição comparativa numa mesma carga. */
+  const medir = async (modo) => {
+    resetarMotor(); setLogVerbosidade(modo);
+    const t0 = msAgora();
+    const r = await gerarEcossistema({ quantidade: 3, ciclosPorPrimordial: 100, auInicial: 0, massaIds: null });
+    const ms = msAgora() - t0;
+    const log = __eventLog;
+    return { especies: r.nodes.length, eventos: log.length, ms, log };
+  };
+  const det = await medir("detalhado");
+  const res = await medir("resumido");
+  info(`detalhado: ${det.eventos} eventos / ${det.especies} espécies · resumido: ${res.eventos} eventos / ${res.especies} espécies`);
+  const porEspecieDet = det.eventos / Math.max(1, det.especies);
+  const porEspecieRes = res.eventos / Math.max(1, res.especies);
+  chk("HH2 o modo resumido gera muito menos evento por espécie",
+    porEspecieRes < porEspecieDet / 3,
+    `${porEspecieRes.toFixed(1)} vs ${porEspecieDet.toFixed(1)} eventos por espécie`);
+  prog(0.5);
+
+  /* (3) Os escopos de export precisam encolher de verdade e continuar
+     contendo o que muda a árvore. */
+  setLogVerbosidade("detalhado");
+  resetarMotor();
+  await gerarEcossistema({ quantidade: 2, ciclosPorPrimordial: 80, auInicial: 0, massaIds: null });
+  const log = __eventLog;
+  const marcos = filtrarHistorico(log, "marcos");
+  const estrutural = filtrarHistorico(log, "estrutural");
+  const completo = filtrarHistorico(log, "completo");
+  info(`marcos ${marcos.length} · estrutural ${estrutural.length} · completo ${completo.length}`);
+  chk("HH3 os escopos são progressivamente mais amplos",
+    marcos.length <= estrutural.length && estrutural.length <= completo.length,
+    `${marcos.length} / ${estrutural.length} / ${completo.length}`);
+  chk("HH4 o escopo 'marcos' preserva todas as especiações e extinções",
+    log.filter((e) => e.tipo === "especiacao" || e.tipo === "extincao").length ===
+    marcos.filter((e) => e.tipo === "especiacao" || e.tipo === "extincao").length,
+    "nenhum marco pode ser perdido pelo recorte");
+  chk("HH5 o recorte reduz mesmo o volume",
+    completo.length === 0 || marcos.length < completo.length,
+    `${marcos.length} de ${completo.length} eventos`);
+  prog(0.75);
+
+  /* (4) Estimativa de páginas: precisa ser monotônica e não absurda. */
+  const pMarcos = estimarPaginasHistorico(marcos);
+  const pCompleto = estimarPaginasHistorico(completo);
+  chk("HH6 a estimativa de páginas acompanha o volume",
+    pMarcos <= pCompleto, `${pMarcos} vs ${pCompleto} páginas`);
+  prog(0.9);
+
+  setLogVerbosidade("resumido");
+  prog(1);
+}
+
+async function suiteAu37({ suite, chk, info }, prog) {
+  suite("II · Unidade AU e formatação de tempo (v37)");
+  chk("II1 1 AU = 10.000 anos", AU_EM_ANOS === 1e4, `AU_EM_ANOS = ${AU_EM_ANOS}`);
+  /* A exibição precisa DERIVAR da constante. Se alguém voltar a escrever o
+     fator à mão, o erro de fator 1000 da v33 reaparece — esta checagem é o
+     que impede a regressão. */
+  const casos = [
+    { au: 0.05, contem: "anos" },
+    { au: 12, contem: "mil anos" },
+    { au: 926, contem: "mi anos" },
+  ];
+  let erros = [];
+  for (const c of casos) {
+    const txt = fmtAU(c.au);
+    if (!txt.includes(c.contem)) erros.push(`${c.au} AU -> "${txt}" (esperava conter "${c.contem}")`);
+  }
+  info(`0,05 AU = ${fmtAU(0.05)} · 12 AU = ${fmtAU(12)} · 926 AU = ${fmtAU(926)} · 3650 AU = ${fmtAU(3650)}`);
+  chk("II2 fmtAU escolhe a casa certa a partir de AU_EM_ANOS", erros.length === 0, erros.join(" | "));
+  chk("II3 o marco zero é rotulado como tal", fmtAU(0).includes("0"), fmtAU(0));
   prog(1);
 }
 
@@ -1530,6 +1958,12 @@ const SUITES_TESTE = [
   { id: "asas34", nome: "Asas, plano corporal e montador", fn: suiteAsasMontador, peso: 4, nivel: "completa" },
   { id: "tempotrilha", nome: "Tempo geológico e trilha gradual", fn: suiteTempoTrilha, peso: 5, nivel: "completa" },
   { id: "persistencia", nome: "Round-trip do projeto salvo", fn: suitePersistencia, peso: 2, nivel: "rapida" },
+  { id: "colonizacao37", nome: "Ordem de colonização (água→terra→ar)", fn: suiteColonizacao, peso: 6, nivel: "completa" },
+  { id: "vegetais37", nome: "Vegetais mortais e herbivoria", fn: suiteVegetaisMortais, peso: 5, nivel: "completa" },
+  { id: "pescoco37", nome: "Pescoço por plano corporal", fn: suitePescoco, peso: 3, nivel: "completa" },
+  { id: "colagem37", nome: "Colar DNA e lista de alvos", fn: suiteColagemDna, peso: 3, nivel: "rapida" },
+  { id: "logpdf37", nome: "Volume de log e escopo de PDF", fn: suiteLogEPdf, peso: 5, nivel: "completa" },
+  { id: "au37", nome: "Unidade AU e formatação", fn: suiteAu37, peso: 1, nivel: "rapida" },
   { id: "performance", nome: "Performance neste aparelho", fn: suitePerformance, peso: 5, nivel: "completa" },
 ];
 

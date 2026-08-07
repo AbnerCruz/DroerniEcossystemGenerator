@@ -31,19 +31,82 @@ function downloadZip(filename, files) {
 }
 
 /* ============================================================
-   1) HISTÓRICO COMPLETO (.pdf) — cronológico, um bloco por evento
+   1) HISTÓRICO (.pdf) — cronológico, um bloco por evento
    ============================================================ */
-function exportarHistoricoPdf(eventLog) {
-  const cab = [`${eventLog.length} evento(s) registrado(s).`, ""];
-  const corpo = eventLog.map((e) => {
+/* v37 — ESCOPO E ESTIMATIVA DE PÁGINAS.
+
+   Relato: "os logs estão muito grandes, o arquivo pdf de história está
+   chegando a milhares de páginas". Medido numa geração modesta (4
+   primordiais x 150 ciclos, modo detalhado): 14.435 eventos, 8,0 MB de
+   texto, ~2.070 páginas. Um PDF assim não é um documento, é um despejo.
+
+   Duas correções, e as duas são necessárias:
+
+   (a) O log em si encolheu — a verbosidade padrão passou a ser "resumido"
+       no motor (ver 01-core-motor.js), o que corta 94% dos eventos, que
+       eram `ciclo_deriva`.
+   (b) O export ganhou ESCOPO. O usuário escolhe o que vai no arquivo, e vê
+       a estimativa de páginas ANTES de baixar, em vez de descobrir depois.
+
+   Os escopos não são cortes arbitrários por tamanho: são recortes por
+   sentido. "Marcos" responde "o que aconteceu neste mundo"; "estrutural"
+   acrescenta as pressões que moveram a evolução; "completo" é o ciclo a
+   ciclo, para quem quer auditar a deriva gene a gene. Cortar pelo fim
+   (últimos N eventos) seria pior: entregaria o fim da história sem o
+   começo. */
+const ESCOPOS_HISTORICO = [
+  {
+    id: "marcos", label: "Marcos",
+    desc: "primordiais, especiações e extinções — o que muda a árvore",
+    tipos: new Set(["primordial", "especiacao", "especiacao-manual", "extincao"]),
+  },
+  {
+    id: "estrutural", label: "Estrutural",
+    desc: "marcos + seleção natural, migração e edições manuais",
+    tipos: new Set(["primordial", "especiacao", "especiacao-manual", "extincao",
+      "selecao_natural", "selecao_natural_populacao", "migracao", "edicao"]),
+  },
+  { id: "completo", label: "Completo", desc: "tudo, inclusive o ciclo a ciclo da deriva", tipos: null },
+];
+
+function filtrarHistorico(eventLog, escopoId) {
+  const escopo = ESCOPOS_HISTORICO.find((e) => e.id === escopoId) || ESCOPOS_HISTORICO[0];
+  if (!escopo.tipos) return eventLog;
+  return eventLog.filter((e) => escopo.tipos.has(e.tipo));
+}
+
+/* Estimativa de páginas do gerador de PDF interno (criarPdfTexto usa
+   Courier 9pt: ~92 caracteres por linha, ~58 linhas por página A4). Serve
+   para avisar antes, não precisa ser exata. */
+const CHARS_POR_LINHA_PDF = 92;
+const LINHAS_POR_PAGINA_PDF = 58;
+function estimarPaginasHistorico(eventos) {
+  let linhas = 4;
+  for (const e of eventos) {
+    const bruto = `${e.tipoLabel || ""} ${e.linhagemId || ""}\n${e.texto || ""}\n${e.code || ""}`;
+    linhas += Math.ceil(bruto.length / CHARS_POR_LINHA_PDF) + 2;
+  }
+  return Math.max(1, Math.ceil(linhas / LINHAS_POR_PAGINA_PDF));
+}
+
+function exportarHistoricoPdf(eventLog, escopoId = "estrutural") {
+  const escopo = ESCOPOS_HISTORICO.find((e) => e.id === escopoId) || ESCOPOS_HISTORICO[1];
+  const eventos = filtrarHistorico(eventLog, escopo.id);
+  const cab = [
+    `${eventos.length} evento(s) neste recorte, de ${eventLog.length} registrado(s).`,
+    `Escopo: ${escopo.label} — ${escopo.desc}.`,
+    "",
+  ];
+  const corpo = eventos.map((e) => {
     const hora = new Date(e.ts).toLocaleTimeString("pt-BR");
     return `[${hora}] #${e.seq} ${e.tipoLabel}\n  ${e.linhagemId}${e.primordialLinhagem && e.primordialLinhagem !== e.linhagemId ? ` (linhagem de ${e.primordialLinhagem})` : ""}\n  ${e.texto}${e.code ? `\n  DNA: ${e.code}` : ""}`;
   });
   downloadPdf(
-    `historico-droerni-${new Date().toISOString().slice(0, 10)}.pdf`,
+    `historico-droerni-${escopo.id}-${new Date().toISOString().slice(0, 10)}.pdf`,
     "HISTORICO DE ACOES - DROERNI ECOSSISTEMA",
     [...cab, ...corpo].join("\n\n")
   );
+  return { eventos: eventos.length, paginas: estimarPaginasHistorico(eventos) };
 }
 
 /* ============================================================
@@ -59,23 +122,46 @@ function habitatDoNo(node, massaIdx) {
   return massa ? readHabitatNaMassa(node.g, massa) : readHabitat(node.g);
 }
 
-function arvoreTextoNode(node, idx, prefixo, ehUltimo) {
+/* v37 — `opts` novo: profundidade máxima e "só vivas". Sem eles, a
+   descendência é impressa inteira, uma linha por espécie — com um mundo de
+   12.000 espécies (o teto atual) isso sozinho são 12.000 linhas antes de
+   qualquer outra coisa. O corte por profundidade é o que mantém o documento
+   legível como panorama; quem quer a árvore inteira escolhe "sem limite". */
+function arvoreTextoNode(node, idx, prefixo, ehUltimo, opts = {}, profundidade = 1) {
   const linhas = [];
   const ramo = ehUltimo ? "└─ " : "├─ ";
   const marcaExtincao = node.extinta ? ` [EXTINTA em ${fmtAU(node.auExtincao)}]` : ""; // Fase 1, item 4.2
   linhas.push(`${prefixo}${ramo}[${fmtAU(node.auSurgimento)}] ${node.linhagemId}${marcaExtincao}`);
-  const filhos = node.filhos.map((id) => idx.get(id)).filter(Boolean);
+  const limite = opts.profundidadeMax || Infinity;
+  let filhos = node.filhos.map((id) => idx.get(id)).filter(Boolean);
+  if (opts.soVivas) filhos = filhos.filter((f) => !f.extinta || (opts.vivasComDescendencia && opts.vivasComDescendencia.has(f.id)));
   const novoPrefixo = prefixo + (ehUltimo ? "   " : "│  ");
-  filhos.forEach((f, i) => linhas.push(...arvoreTextoNode(f, idx, novoPrefixo, i === filhos.length - 1)));
+  if (profundidade >= limite) {
+    if (filhos.length) linhas.push(`${novoPrefixo}└─ (+${contarSubarvore(node, idx)} descendente(s) — aumente a profundidade para ver)`);
+    return linhas;
+  }
+  filhos.forEach((f, i) => linhas.push(...arvoreTextoNode(f, idx, novoPrefixo, i === filhos.length - 1, opts, profundidade + 1)));
   return linhas;
 }
-function exportarHistoriaGlobalPdf(nodes, idx, massaIdx) {
+function contarSubarvore(node, idx) {
+  let total = 0;
+  const pilha = [...node.filhos];
+  let guard = 0;
+  while (pilha.length && guard++ < 50000) {
+    const f = idx.get(pilha.pop());
+    if (!f) continue;
+    total++;
+    for (const id of f.filhos) pilha.push(id);
+  }
+  return total;
+}
+function exportarHistoriaGlobalPdf(nodes, idx, massaIdx, opts = {}) {
   const trav = "-".repeat(11);
   const primordiais = nodes.filter((n) => n.isPrimordial);
   const blocos = primordiais.map((prim) => {
     const pc = calcularPesoCalorias(prim.g);
     const filhos = prim.filhos.map((id) => idx.get(id)).filter(Boolean);
-    const descendencia = filhos.flatMap((f, i) => arvoreTextoNode(f, idx, "   ", i === filhos.length - 1));
+    const descendencia = filhos.flatMap((f, i) => arvoreTextoNode(f, idx, "   ", i === filhos.length - 1, opts));
     return [
       `>> ${prim.linhagemId.toUpperCase()}`,
       `   DNA: ${prim.code}`,
@@ -93,12 +179,16 @@ function exportarHistoriaGlobalPdf(nodes, idx, massaIdx) {
     `Primordiais: ${primordiais.length} | Derivadas: ${nodes.length - primordiais.length} | Total: ${nodes.length}`,
     `Reinos: ${Object.entries(contagemReino).map(([k, v]) => `${REINO_LABEL[k] || k} (${v})`).join(", ")}`,
   ].join("\n");
-  const texto = ["PRIMORDIAIS", trav, "", blocos.join("\n\n"), "", estat].join("\n");
+  const nota = opts.profundidadeMax
+    ? [`Recorte: descendência até ${opts.profundidadeMax} nível(is) por primordial${opts.soVivas ? ", só linhagens vivas" : ""}.`, ""]
+    : [];
+  const texto = ["PRIMORDIAIS", trav, "", ...nota, blocos.join("\n\n"), "", estat].join("\n");
   downloadPdf(
     `historia-global-droerni-${new Date().toISOString().slice(0, 10)}.pdf`,
     "HISTORIA EVOLUTIVA - DROERNI",
     texto
   );
+  return { linhas: texto.split("\n").length, paginas: Math.max(1, Math.ceil(texto.split("\n").length / LINHAS_POR_PAGINA_PDF)) };
 }
 
 /* ============================================================
@@ -139,6 +229,94 @@ function exportarFichaUnicaMd(node, idx, massaIdx) {
 function exportarFichasObsidianZip(nodes, idx, massaIdx) {
   const files = nodes.map((n) => ({ name: `${nomeArquivoSeguro(n.linhagemId)}-${n.id}.md`, content: fichaObsidianMd(n, idx, massaIdx) }));
   downloadZip(`fichas-obsidian-droerni-${new Date().toISOString().slice(0, 10)}.zip`, files);
+}
+
+
+
+/* ============================================================
+   v37 — PAINEL DE EXPORTAÇÃO COM ESCOPO E ESTIMATIVA
+   ============================================================
+   Os três botões viraram um painel porque o problema relatado não era o
+   formato do arquivo, era o TAMANHO dele: "o arquivo pdf de história está
+   chegando a milhares de páginas". Um botão que só baixa não dá ao usuário
+   como evitar isso — ele descobre depois de esperar a geração inteira.
+
+   O painel mostra a estimativa de páginas ANTES, e ela reage à escolha do
+   escopo, então dá para ver o custo de cada recorte sem baixar nada. */
+function PainelExportar({ eventLog, nodes, idx, massaIdx, showToast }) {
+  const [escopo, setEscopo] = useState("estrutural");
+  const [profundidade, setProfundidade] = useState("4");
+  const [soVivas, setSoVivas] = useState(false);
+
+  const previa = useMemo(() => {
+    const eventos = filtrarHistorico(eventLog, escopo);
+    return { eventos: eventos.length, paginas: estimarPaginasHistorico(eventos) };
+  }, [eventLog, escopo]);
+
+  const profNum = profundidade === "0" ? 0 : Math.max(1, Number(profundidade) || 4);
+
+  const baixarHistorico = () => {
+    const r = exportarHistoricoPdf(eventLog, escopo);
+    showToast(`Histórico exportado: ${r.eventos} evento(s), ~${r.paginas} página(s).`);
+  };
+  const baixarHistoria = () => {
+    const r = exportarHistoriaGlobalPdf(nodes, idx, massaIdx, {
+      profundidadeMax: profNum || undefined,
+      soVivas,
+      vivasComDescendencia: soVivas ? idsVisiveisSoVivas(nodes, idx) : null,
+    });
+    showToast(`História global exportada: ~${r.paginas} página(s).`);
+  };
+
+  return (
+    <Section title="Exportar" accent="text-stone-500">
+      <div className="space-y-3">
+        <div>
+          <label className="text-[10px] uppercase text-stone-500 font-mono">Escopo do histórico</label>
+          <div className="flex flex-wrap gap-1.5 mt-1">
+            {ESCOPOS_HISTORICO.map((e) => (
+              <button key={e.id} onClick={() => setEscopo(e.id)}
+                className={`px-2.5 py-1.5 rounded border text-[11px] ${escopo === e.id
+                  ? "border-emerald-700 bg-emerald-950/30 text-emerald-200"
+                  : "border-stone-800 text-stone-400 hover:border-stone-600"}`}>
+                {e.label}
+              </button>
+            ))}
+          </div>
+          <p className="text-[10px] text-stone-600 mt-1">
+            {(ESCOPOS_HISTORICO.find((e) => e.id === escopo) || {}).desc}.
+          </p>
+          <p className={`text-[10px] mt-0.5 ${previa.paginas > 300 ? "text-amber-500" : "text-stone-500"}`}>
+            {previa.eventos} evento(s) · ~{previa.paginas} página(s)
+            {previa.paginas > 300 ? " — arquivo muito longo; considere um escopo menor." : ""}
+          </p>
+        </div>
+
+        <div className="grid grid-cols-2 gap-2 items-end">
+          <div>
+            <label className="text-[10px] uppercase text-stone-500 font-mono">Profundidade da árvore</label>
+            <select value={profundidade} onChange={(e) => setProfundidade(e.target.value)}
+              className="bg-stone-950 border border-stone-800 rounded px-2 py-1.5 text-xs text-stone-200 w-full">
+              <option value="2">2 níveis</option>
+              <option value="4">4 níveis</option>
+              <option value="8">8 níveis</option>
+              <option value="0">Sem limite</option>
+            </select>
+          </div>
+          <label className="flex items-center gap-1.5 text-[11px] text-stone-400 pb-1.5">
+            <input type="checkbox" checked={soVivas} onChange={(e) => setSoVivas(e.target.checked)} className="accent-emerald-600" />
+            só linhagens vivas
+          </label>
+        </div>
+
+        <div className="flex flex-wrap gap-2">
+          <button onClick={baixarHistorico} className="text-[11px] font-mono uppercase text-stone-400 hover:text-emerald-400 border border-stone-800 rounded px-3 py-1.5"><Download size={12} className="inline -mt-0.5 mr-1" />Histórico (.pdf)</button>
+          <button onClick={baixarHistoria} className="text-[11px] font-mono uppercase text-stone-400 hover:text-emerald-400 border border-stone-800 rounded px-3 py-1.5"><Download size={12} className="inline -mt-0.5 mr-1" />História Global (.pdf)</button>
+          <button onClick={() => exportarFichasObsidianZip(nodes, idx, massaIdx)} className="text-[11px] font-mono uppercase text-stone-400 hover:text-emerald-400 border border-stone-800 rounded px-3 py-1.5"><Download size={12} className="inline -mt-0.5 mr-1" />Fichas Obsidian (.zip)</button>
+        </div>
+      </div>
+    </Section>
+  );
 }
 
 /* ============================================================

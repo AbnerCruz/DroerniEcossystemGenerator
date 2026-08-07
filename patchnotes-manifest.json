@@ -1,5 +1,11 @@
 [
   {
+    "id": "v37",
+    "titulo": "v37 — A vida começa na água: colonização ordenada, herbivoria, sliders estáveis",
+    "arquivo": "patchnotes-v37.md",
+    "data": "2026-08-07"
+  },
+  {
     "id": "v36",
     "titulo": "v36 — Edição estável: escolhas não se perdem, opções incoerentes ficam desabilitadas",
     "arquivo": "patchnotes-v36.md",

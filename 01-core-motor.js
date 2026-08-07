@@ -210,12 +210,12 @@ function categoricalStep(cur, key, table, opts = {}) {
     if (cur.manual[key] !== undefined && idxValores.has(cur.manual[key])) {
       value = cur.manual[key];
     } else if (opts.bias && opts.bias.length) {
-      const n1 = nums[Math.floor(Math.random() * nums.length)];
-      const n2 = nums[Math.floor(Math.random() * nums.length)];
+      const n1 = nums[Math.floor(rnd() * nums.length)];
+      const n2 = nums[Math.floor(rnd() * nums.length)];
       const l1 = pick(table, n1).value, l2 = pick(table, n2).value;
       value = opts.bias.includes(l1) ? l1 : l2;
     } else {
-      value = pick(table, nums[Math.floor(Math.random() * nums.length)]).value;
+      value = pick(table, nums[Math.floor(rnd() * nums.length)]).value;
     }
   } else if (cur.mode === "decode") {
     if (cur.manual[key] !== undefined && idxValores.has(cur.manual[key])) {
@@ -256,9 +256,9 @@ function scalarStep(cur, key, opts = {}) {
     const bruto = cur.manual[key];
     const manualValido = bruto !== undefined && info.posPorValor.has(Number(bruto));
     if (manualValido) value = Number(bruto);
-    else if (opts.bias === "high") value = TRIPLES[domain[Math.max(...[0, 1].map(() => Math.floor(Math.random() * domain.length)))]];
-    else if (opts.bias === "low") value = TRIPLES[domain[Math.min(...[0, 1].map(() => Math.floor(Math.random() * domain.length)))]];
-    else value = TRIPLES[domain[Math.floor(Math.random() * domain.length)]];
+    else if (opts.bias === "high") value = TRIPLES[domain[Math.max(...[0, 1].map(() => Math.floor(rnd() * domain.length)))]];
+    else if (opts.bias === "low") value = TRIPLES[domain[Math.min(...[0, 1].map(() => Math.floor(rnd() * domain.length)))]];
+    else value = TRIPLES[domain[Math.floor(rnd() * domain.length)]];
   } else if (cur.mode === "decode") {
     if (cur.manual[key] !== undefined) value = Number(cur.manual[key]);
     else { const base = BigInt(domain.length); const idx = Number(cur.seed % base); cur.seed /= base; value = TRIPLES[domain[idx]]; }
@@ -548,6 +548,12 @@ const CLASSES_TETRAPODES = new Set(["MAM", "AVE", "REP", "AMP"]);
    manualmente. */
 const CLASSES_ASA_INDEPENDENTE = new Set(["REP"]);
 
+/* v37 — classes sem pescoço verdadeiro: cabeça fundida ao tronco (peixe) ou
+   cápsula cefálica sem vértebras cervicais (molusco, artrópode). Para elas
+   "ausente"/"curto" é o valor CORRETO, não uma anomalia — a trava de pescoço
+   é assimétrica de propósito. */
+const SEM_PESCOCO_VERDADEIRO = ["PSC", "MOL", "INS"];
+
 /* Mescla duas restrições: `fixed` prevalece, `restrict` vira interseção,
    `exclude` vira união. Se a interseção esvaziar, mantém a mais específica
    (a da classe) — nunca devolve domínio vazio. */
@@ -588,7 +594,7 @@ function runSpeciesSteps(cur, isPrimordialIntent) {
   });
 
   // Passo 1 — TOL
-  categoricalStep(cur, "tolHidrica", T.tolHidrica);
+  categoricalStep(cur, "tolHidrica", T.tolHidrica, colonizOpts("tolHidrica")); // v37 — portão de colonização
   categoricalStep(cur, "tolTermica", T.tolTermica);
   const cicloBias = (g.tolHidrica === "xe" || g.tolTermica === "qt") ? ["no", "cr"] : undefined;
   categoricalStep(cur, "tolCiclo", T.tolCiclo, { bias: cicloBias });
@@ -605,7 +611,7 @@ function runSpeciesSteps(cur, isPrimordialIntent) {
     else if (g.tolHidrica === "sa") classeOptsHid = { restrict: ["AMP", "REP", "MAM", "MOL", "AVE"] };
     else if (g.tolHidrica === "xe") classeOptsHid = { exclude: ["PSC", "AMP", "MOL"] };
     else classeOptsHid = { exclude: ["PSC"] }; // peixe exige água
-    categoricalStep(cur, "classe", T.classeAn, classeOptsHid);
+    categoricalStep(cur, "classe", T.classeAn, mergeOpts(classeOptsHid, colonizOpts("classe"))); // v37 — portão de colonização
   }
   if (!g.classe) g.classe = cur.ctx.classe;
 
@@ -674,7 +680,7 @@ function runSpeciesSteps(cur, isPrimordialIntent) {
   else if (g.tolHidrica === "aq") locOpts = { restrict: ["N", "F", "O", "S"] };
   else if (g.isPrimordial) locOpts = { restrict: locBasico };
   if (g.morTorso === "se" && !locOpts.fixed && !locOpts.restrict) locOpts.bias = ["S"]; // corpo serpentino já decidido — a locomoção tende a acompanhar
-  categoricalStep(cur, "locPrimario", T.locPrim, mergeOpts(locOpts, classeOpts(g, "locPrimario")));
+  categoricalStep(cur, "locPrimario", T.locPrim, mergeOpts(mergeOpts(locOpts, classeOpts(g, "locPrimario")), colonizOpts("locPrimario"))); // v37 — portão de colonização
   const locSecOpts = (g.reino === "Pl" || g.reino === "Fu" || g.reino === "Ba") // Fase 1, item 4.1 — bactéria não tem modo secundário
     ? { fixed: "0" }
     : g.isPrimordial
@@ -707,7 +713,7 @@ function runSpeciesSteps(cur, isPrimordialIntent) {
     const opt = rawStep(cur, "memInfRaw", 100, {
       decodeFn: (r) => (r < 40 ? "2I" : r < 85 ? "4I" : "0I"),
       encodeFn: (v) => (v === "2I" ? 0 : v === "4I" ? 40 : 85),
-      randomizeFn: () => { const r = Math.floor(Math.random() * 100); return r < 40 ? "2I" : r < 85 ? "4I" : "0I"; },
+      randomizeFn: () => { const r = Math.floor(rnd() * 100); return r < 40 ? "2I" : r < 85 ? "4I" : "0I"; },
     });
     g.memInf = opt;
   }
@@ -854,7 +860,28 @@ function runSpeciesSteps(cur, isPrimordialIntent) {
   if (g.crnChifreQtd !== "0") categoricalStep(cur, "crnChifreForma", T.crnChifreForma); else g.crnChifreForma = "";
   categoricalStep(cur, "crnCrista", T.crnCrista, semCranio ? { restrict: ["0", "ap", "au"], exclude: g.isPrimordial ? ["ap", "au"] : [] } : g.isPrimordial ? { exclude: ["ap", "au"] } : {});
   if (!semCranio) {
-    const pescocoOpts = g.morTorso === "se" || g.locPrimario === "S" ? { bias: ["au", "cu"] } : {};
+    /* v37 — PESCOÇO POR PLANO CORPORAL.
+       Relato: "capturei a ocorrência de um réptil não serpentiforme que não
+       tem pescoço". Medido na v36: 13,2% dos répteis com crânio e tronco
+       não-serpentiforme saíam com crnPescoco="au". A tabela dava 15% a
+       "ausente" para QUALQUER animal com crânio, sem consultar a classe —
+       era o único gene craniano sem trava de classe.
+
+       A regra biológica é limpa e não precisa de exceção: um tetrápode tem
+       cabeça articulada sobre o tronco, sempre. O que varia é o comprimento.
+       Peixe, molusco e artrópode são o caso oposto — cabeça fundida ou
+       cápsula cefálica sem pescoço verdadeiro —, e para eles "ausente"
+       continua sendo o valor certo. Serpentiforme (tronco "se" ou locomoção
+       "S") é o meio-termo que já existia: pescoço reduzido, mas o viés vira
+       trava, porque uma serpente de pescoço "elongadíssimo" também não é
+       coisa que exista. */
+    const serpentiforme = g.morTorso === "se" || g.locPrimario === "S";
+    const TETRAPODES = ["MAM", "AVE", "REP", "AMP"];
+    let pescocoOpts;
+    if (SEM_PESCOCO_VERDADEIRO.includes(g.classe)) pescocoOpts = { restrict: ["au", "cu"] };
+    else if (serpentiforme) pescocoOpts = { restrict: ["au", "cu", "pr"] };
+    else if (TETRAPODES.includes(g.classe)) pescocoOpts = { exclude: ["au"] };
+    else pescocoOpts = {};
     categoricalStep(cur, "crnPescoco", T.crnPescoco, pescocoOpts);
   } else g.crnPescoco = "0";
 
@@ -947,7 +974,7 @@ function runSpeciesSteps(cur, isPrimordialIntent) {
     const supAtual = Number(String(g.memSup).replace("S", "")) || 0;
     if (supAtual > 0) asaOpts = { fixed: 0 };
   }
-  categoricalStep(cur, "asaQtd", T.asaQtd, mergeOpts(asaOpts, classeOpts(g, "asaQtd")));
+  categoricalStep(cur, "asaQtd", T.asaQtd, mergeOpts(mergeOpts(asaOpts, classeOpts(g, "asaQtd")), colonizOpts("asaQtd"))); // v37 — portão de colonização
   if (g.asaQtd !== 0) {
     categoricalStep(cur, "asaTipo", T.asaTipo, classeOpts(g, "asaTipo")); // Fase 2, item 5.3 — exclude ["et"] removido (valor não existe mais)
     /* v34 — asa de quem VOA como modo primário tem que funcionar. O teto por
@@ -1235,14 +1262,14 @@ function d6DeltaRaw(cur, key) {
   return rawStep(cur, key, 6, {
     decodeFn: (r) => (r <= 1 ? -1 : r >= 4 ? 1 : 0),
     encodeFn: (d) => (d === -1 ? 0 : d === 1 ? 4 : 2),
-    randomizeFn: () => { const r = Math.floor(Math.random() * 6); return r <= 1 ? -1 : r >= 4 ? 1 : 0; },
+    randomizeFn: () => { const r = Math.floor(rnd() * 6); return r <= 1 ? -1 : r >= 4 ? 1 : 0; },
   });
 }
 function d100CheckRaw(cur, key, threshold) {
   return rawStep(cur, key, 100, {
     decodeFn: (r) => r >= (100 - threshold),
     encodeFn: (b) => (b ? 99 : 0),
-    randomizeFn: () => Math.random() < threshold / 100,
+    randomizeFn: () => rnd() < threshold / 100,
   });
 }
 
@@ -1533,7 +1560,7 @@ function restaurarDominiosCustom(lista) {
 }
 
 let __idRegiaoCounter = 1;
-function novoIdRegiao() { return "rg" + __idRegiaoCounter++ + "_" + Math.random().toString(36).slice(2, 6); }
+function novoIdRegiao() { return "rg" + __idRegiaoCounter++ + "_" + rnd().toString(36).slice(2, 6); }
 
 /* Cria uma massa de terra dentro de uma era. dominios: subconjunto de
    DOMINIOS_CLIMATICOS presente ali — controla quais dos 27 biomas do
@@ -1585,7 +1612,7 @@ function criarMassaDeTerra(nome, dominios, biomasExcluidos) {
   const biomasValidos = biomasDaMassa(massa);
   massa.divisoesBiomas = Array.from({ length: DIVISOES_POR_MASSA }, (_, i) => ({
     id: i,
-    biomaNome: biomasValidos.length ? biomasValidos[Math.floor(Math.random() * biomasValidos.length)].nome : null,
+    biomaNome: biomasValidos.length ? biomasValidos[Math.floor(rnd() * biomasValidos.length)].nome : null,
   }));
   return massa;
 }
@@ -1671,7 +1698,7 @@ const NOMES_MASSA_SORTEIO = [
 
 function sorteioPonderado(lista) {
   const total = lista.reduce((a, x) => a + x.peso, 0);
-  let n = Math.random() * total;
+  let n = rnd() * total;
   for (const x of lista) { n -= x.peso; if (n <= 0) return x; }
   return lista[lista.length - 1];
 }
@@ -1690,13 +1717,13 @@ function gerarGeografiaAleatoria(quantidade, opts = {}) {
   for (let i = 0; i < n; i++) {
     const faixa = sorteioPonderado(FAIXAS_LATITUDINAIS);
     const dominios = new Set(faixa.dominios);
-    for (const opc of faixa.opcionais) if (Math.random() < opc.chance) dominios.add(opc.dom);
-    if (permitirExtremos && Math.random() < CHANCE_DOMINIO_EXTREMO) dominios.add("Extremos e Mágicos");
+    for (const opc of faixa.opcionais) if (rnd() < opc.chance) dominios.add(opc.dom);
+    if (permitirExtremos && rnd() < CHANCE_DOMINIO_EXTREMO) dominios.add("Extremos e Mágicos");
 
     let nome;
     do {
       nome = nomesDisponiveis.length
-        ? nomesDisponiveis.splice(Math.floor(Math.random() * nomesDisponiveis.length), 1)[0]
+        ? nomesDisponiveis.splice(Math.floor(rnd() * nomesDisponiveis.length), 1)[0]
         : `Massa ${i + 1}`;
     } while (usados.has(nome) && nomesDisponiveis.length);
     usados.add(nome);
@@ -1712,7 +1739,7 @@ function gerarGeografiaAleatoria(quantidade, opts = {}) {
       const maxExcluir = Math.floor(doDominio.length / 2);
       for (const b of doDominio) {
         if (biomasExcluidos.length >= maxExcluir) break;
-        if (Math.random() < excluirBiomasChance) biomasExcluidos.push(b.nome);
+        if (rnd() < excluirBiomasChance) biomasExcluidos.push(b.nome);
       }
     }
 
@@ -1756,7 +1783,7 @@ function editarMassa(massa, { nome, dominios, biomasExcluidos } = {}) {
   massa.divisoesBiomas = Array.from({ length: total }, (_, i) => {
     const anterior = massa.divisoesBiomas?.[i];
     if (anterior && anterior.biomaNome && nomesValidos.has(anterior.biomaNome)) return anterior;
-    return { id: i, biomaNome: lista.length ? lista[Math.floor(Math.random() * lista.length)].nome : null };
+    return { id: i, biomaNome: lista.length ? lista[Math.floor(rnd() * lista.length)].nome : null };
   });
   return massa;
 }
@@ -1770,7 +1797,7 @@ function resortearBiomasDaMassa(massa) {
   const total = massa.divisoesBiomas?.length || DIVISOES_POR_MASSA;
   massa.divisoesBiomas = Array.from({ length: total }, (_, i) => ({
     id: i,
-    biomaNome: lista.length ? lista[Math.floor(Math.random() * lista.length)].nome : null,
+    biomaNome: lista.length ? lista[Math.floor(rnd() * lista.length)].nome : null,
   }));
   return massa;
 }
@@ -1853,7 +1880,7 @@ function dividirEra(eraAtual, novoNomeEra, novasMassasPorAntiga, auDivisao) {
 function herdarMassaNaDivisao(massaAntigaId, mapaAntigaParaNovas) {
   const opcoes = mapaAntigaParaNovas[massaAntigaId];
   if (!opcoes || !opcoes.length) return null;
-  return opcoes[Math.floor(Math.random() * opcoes.length)];
+  return opcoes[Math.floor(rnd() * opcoes.length)];
 }
 
 /* Biomas específicos (do Códice) que uma massa de terra consegue oferecer:
@@ -2536,7 +2563,53 @@ function describeCreatureProse(g) {
    MOTOR DE DERIVA E ESPECIAÇÃO — Parte V do documento DRN2
    ============================================================ */
 
-function rollD(n) { return 1 + Math.floor(Math.random() * n); }
+/* ============================================================
+   v37 — FONTE DE ALEATORIEDADE INDIRETA (`rnd`)
+   ============================================================
+   Todo `Math.random()` do motor virou `rnd()`. A troca é mecânica e não
+   muda nenhum resultado por si só — ela existe para que uma chamada possa,
+   quando precisa, rodar o motor sob um gerador DETERMINÍSTICO.
+
+   Motivo (relato v37): "ao mexer os sliders às vezes resorteia uma
+   configuração". `normalizarGenoma` roda o motor em modo `randomize` com o
+   genoma inteiro como `manual`: todo gene que continua válido é mantido, e
+   todo gene que a edição invalidou é RESORTEADO. Isso é o comportamento
+   certo — o problema é que o sorteio era diferente a cada chamada, e um
+   slider dispara uma chamada por valor intermediário do arrasto. Arrastar
+   de 3 para 7 disparava cinco normalizações, cada uma resorteando de novo
+   os genes dependentes, e o usuário via a tela "embaralhar sozinha".
+
+   Com `comRngDeterminista`, a mesma edição sobre o mesmo genoma dá sempre o
+   mesmo resultado — arrastar o slider de volta para 3 devolve exatamente a
+   configuração que estava lá. Fora desse caminho, `rnd` continua sendo
+   `Math.random` e nada muda.
+   ============================================================ */
+let __rngAtual = null;
+function rnd() { return __rngAtual ? __rngAtual() : Math.random(); }
+
+/* PRNG determinístico simples (mulberry32) semeado por um hash do estado.
+   Não precisa de qualidade criptográfica: precisa ser estável. */
+function __hash32(str) {
+  let h = 2166136261 >>> 0;
+  const s = String(str);
+  for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; }
+  return h >>> 0;
+}
+function __mulberry32(a) {
+  return function () {
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+function comRngDeterminista(chave, fn) {
+  const anterior = __rngAtual;
+  __rngAtual = __mulberry32(__hash32(chave));
+  try { return fn(); } finally { __rngAtual = anterior; }
+}
+
+function rollD(n) { return 1 + Math.floor(rnd() * n); }
 function roll3d4menos3() { return rollD(4) + rollD(4) + rollD(4) - 3; }
 
 const PRESSAO_TABELA = [
@@ -2600,10 +2673,10 @@ const PESO_SALTO_REINO_BA = 0.85;
 
 function sortGeneAlvo(estrato, g) {
   if (estrato === "I") {
-    if (g && g.reino === "Ba" && Math.random() < PESO_SALTO_REINO_BA) return "reino";
+    if (g && g.reino === "Ba" && rnd() < PESO_SALTO_REINO_BA) return "reino";
     let n; do { n = rollD(12); } while (n > 11); return ESTRATO_I[n - 1];
   }
-  if (estrato === "II") { let n; do { n = rollD(14) + (Math.random() < 0.5 ? 0 : 14); } while (n > 26); return ESTRATO_II[n - 1]; }
+  if (estrato === "II") { let n; do { n = rollD(14) + (rnd() < 0.5 ? 0 : 14); } while (n > 26); return ESTRATO_II[n - 1]; }
   let n; do { n = rollD(20); } while (n > 18); return ESTRATO_III[n - 1];
 }
 
@@ -2623,12 +2696,12 @@ function rerollGeneCategorico(g, key, fonte) {
   if (!nums.length) return false;
   let novoValor;
   if (Array.isArray(bias) && bias.length) {
-    const n1 = nums[Math.floor(Math.random() * nums.length)];
-    const n2 = nums[Math.floor(Math.random() * nums.length)];
+    const n1 = nums[Math.floor(rnd() * nums.length)];
+    const n2 = nums[Math.floor(rnd() * nums.length)];
     const l1 = pick(table, n1).value, l2 = pick(table, n2).value;
     novoValor = bias.includes(l1) ? l1 : (bias.includes(l2) ? l2 : l1);
   } else {
-    novoValor = pick(table, nums[Math.floor(Math.random() * nums.length)]).value;
+    novoValor = pick(table, nums[Math.floor(rnd() * nums.length)]).value;
   }
   if (novoValor === g[key]) return false;
   g[key] = novoValor;
@@ -2926,7 +2999,7 @@ async function buscarTrilhaParaAlvo(nodeOrigem, alvoCodigo, onProgress) {
       gAtual = gTentativa; orcamento = r.orcamentoRestante; melhorDL = novoDL;
       trilha.push({ ...r.genesAlterados, fase: "deriva", valores: instantaneoDeGenes(gAtual, r.genesAlterados) });
       semMelhoraSeguidas = 0;
-    } else if (novoDL === melhorDL && mexeu && Math.random() < 0.15) {
+    } else if (novoDL === melhorDL && mexeu && rnd() < 0.15) {
       // movimento lateral: atravessa platô sem piorar
       gAtual = gTentativa; orcamento = r.orcamentoRestante;
       trilha.push({ ...r.genesAlterados, fase: "deriva-lateral", valores: instantaneoDeGenes(gAtual, r.genesAlterados) });
@@ -3236,7 +3309,7 @@ function materializarTrilha(resultado, opts = {}) {
        tomaria esse lugar, e todo mundo que lê `novos[novos.length - 1]`
        esperando o alvo (a UI, os exports, a bateria) pegaria a espécie
        errada. */
-    if (!ultimo && Math.random() < ramosLaterais) {
+    if (!ultimo && rnd() < ramosLaterais) {
       const gIrma = clonarGenoma(g);
       gIrma.isPrimordial = false;
       aplicarCicloDeriva(gIrma, 0, null);
@@ -3453,13 +3526,25 @@ function aplicarTrilhaImportada(g, textoTrilha) {
    1000 gerações (Parte V do documento). anosGeracao vem da tabela de
    maturação (0-9); o resultado já sai em AU, pronto para somar
    direto ao auSurgimento — sem conversões extras no chamador. */
-/* UNIDADE CANÔNICA DO CALENDÁRIO. 1 AU = 1.000.000 de anos, contados a
-   partir do marco zero (criação do universo). O motor sempre calculou
-   nessa escala, mas a interface e os exports rotulavam AU como "bi anos"
-   e multiplicavam por 1e9 — um fator 1000 de erro entre o que o motor
-   computava e o que o usuário lia. A constante existe para que exibição
-   e export derivem daqui, em vez de repetir o número em cada arquivo. */
-const AU_EM_ANOS = 1e6;
+/* UNIDADE CANÔNICA DO CALENDÁRIO — v37: 1 AU = 10.000 anos (era 1.000.000).
+
+   Pedido: "vamos mudar a ordem de grandeza da unidade AU de milhões para
+   milhares, pois a evolução está atingindo a casa dos bilhões". Uma
+   simulação longa acumulava milhares de AU, e a milhão de anos por AU isso
+   lia como bilhões de anos — mais que a idade do universo em alguns casos.
+   Baixando a unidade duas ordens, a MESMA simulação passa a se estender por
+   dezenas de milhões de anos, que é a escala que o mundo pede.
+
+   Isto é uma mudança de UNIDADE, não de modelo: nenhum número interno de AU
+   muda, nenhuma calibração de ciclo muda, nenhuma espécie muda de idade
+   relativa. O que muda é quantos anos vale 1 AU — e como todo lugar que
+   exibe ou exporta anos deriva desta constante (fmtAU, ficha Obsidian),
+   trocar aqui basta e é reversível trocando de volta.
+
+   Códigos e projetos antigos continuam válidos: `auSurgimento` é gravado
+   em AU, não em anos. Um projeto da v36 reimportado na v37 lê os mesmos
+   AU, agora rotulados na escala nova. */
+const AU_EM_ANOS = 1e4;
 const DURACAO_GERACAO_ANOS = { 0: 0.01, 1: 0.1, 2: 1, 3: 3, 4: 10, 5: 30, 6: 100, 7: 300, 8: 1000, 9: 3000 };
 
 /* v33 — TEMPO GEOLÓGICO.
@@ -3515,6 +3600,175 @@ function setEscalaTempo(v) {
   return false;
 }
 function getEscalaTempo() { return ESCALA_TEMPO; }
+
+/* ============================================================
+   v37 — ORDEM DE COLONIZAÇÃO: ÁGUA -> TERRA -> AR
+   ============================================================
+   Pedido: "eu gostaria que a ordem de especiação ocorresse conforme foi na
+   realidade, com a vida começando na água, depois peixes, algas (e criaturas
+   marinhas no geral) e se expandindo a partir dali para a terra e o ar".
+
+   Até a v36 nada ordenava isso: `tolHidrica`, `classe` e `locPrimario` eram
+   sorteados livremente desde o primeiro ciclo, então um mundo podia produzir
+   uma ave antes de um peixe, e uma planta xerófila no ciclo em que a vida
+   ainda deveria ser inteiramente aquática.
+
+   O portão é por ANO ABSOLUTO (AU), não por profundidade de linhagem, e a
+   razão importa: colonização é um evento do MUNDO, não de um ramo. Duas
+   linhagens independentes que chegam à terra chegam na mesma janela
+   geológica, como aconteceu de verdade. Fosse por profundidade, um ramo
+   precoce sairia voando enquanto outro ainda estivesse na água.
+
+   Três estágios:
+     0 · AQUÁTICO      — tudo na água. Bactéria, alga, peixe, molusco e
+                         artrópode marinho. Sem voo, sem tolerância seca.
+     1 · COLONIZAÇÃO   — margem e terra firme. Entram anfíbio e réptil,
+                         locomoção terrestre, tolerâncias úmida e mesófila.
+                         Voo ainda não.
+     2 · PLENO         — sem restrição: ave, mamífero, voo, xerofilia.
+
+   O portão vale APENAS para a deriva estocástica da geração de ecossistema.
+   Ele NÃO vale para o montador, a busca por seed, a edição manual nem a
+   convergência dirigida da trilha por DNA-alvo — porque essas existem
+   justamente para produzir um alvo escolhido, e um portão ali quebraria a
+   garantia, mantida desde a v26, de que a trilha bate 100% no alvo. Um
+   dragão pedido por DNA-alvo continua saindo exatamente como pedido; o que
+   o portão organiza é o que o mundo produz SOZINHO.
+   ============================================================ */
+let __colonizacaoAtiva = true;
+let __ritmoColonizacao = 1;      // multiplicador dos marcos (Configurações)
+let __auColonizacaoAtual = null; // AU do ciclo em curso; null = portão fechado (sem restrição)
+
+/* Marcos em AU, antes de escala e ritmo. Calibrados contra uma geração
+   padrão medida (4 primordiais x 150 ciclos): AU mediano 926, máximo 3.650.
+   Com estes valores, ~22% da linha do tempo é exclusivamente aquática, a
+   colonização da terra ocupa a faixa seguinte e o voo aparece no último
+   terço — a ordem fica visível sem que uma rodada curta fique presa na água. */
+const MARCOS_COLONIZACAO = { terrestre: 800, aereo: 1600 };
+const RITMOS_COLONIZACAO = [
+  { id: 0.5, label: "Precoce (½×)", desc: "terra e ar chegam cedo" },
+  { id: 1, label: "Padrão (1×)", desc: "água até ~800 AU, voo a partir de ~1.600 AU" },
+  { id: 2, label: "Tardio (2×)", desc: "estase aquática longa, como na Terra" },
+];
+function setColonizacaoAtiva(v) { __colonizacaoAtiva = !!v; return __colonizacaoAtiva; }
+function getColonizacaoAtiva() { return __colonizacaoAtiva; }
+function setRitmoColonizacao(v) {
+  const n = Number(v);
+  if (Number.isFinite(n) && n > 0 && n <= 20) { __ritmoColonizacao = n; return true; }
+  return false;
+}
+function getRitmoColonizacao() { return __ritmoColonizacao; }
+function marcosColonizacao() {
+  const k = __ritmoColonizacao * ESCALA_TEMPO;
+  return { terrestre: MARCOS_COLONIZACAO.terrestre * k, aereo: MARCOS_COLONIZACAO.aereo * k };
+}
+function estagioColonizacao(au) {
+  const m = marcosColonizacao();
+  if (au < m.terrestre) return 0;
+  if (au < m.aereo) return 1;
+  return 2;
+}
+const ESTAGIO_LABEL = ["Aquático", "Colonização da terra", "Pleno (terra e ar)"];
+
+/* Abre o portão para um AU dado (usado pela deriva) e fecha depois. Mesmo
+   padrão de estado mutável já usado por ESCALA_TEMPO e DOMINIOS_CUSTOM. */
+function setAuColonizacao(au) { __auColonizacaoAtual = (au === null || au === undefined) ? null : Number(au); }
+function getAuColonizacao() { return __auColonizacaoAtual; }
+
+/* Restrições por gene no estágio vigente. Devolve {} quando o portão está
+   fechado — que é o caso de todo caminho manual/dirigido. */
+const COLONIZACAO_TRAVAS = [
+  { /* estágio 0 — aquático.
+       "eu" (eurihídrico = tolera qualquer regime hídrico) fica FORA daqui de
+       propósito, e isso foi medido: com ele liberado, ~30% do mundo nascia
+       eurihídrico e ficava preso, porque eurihídrico não está na escada de
+       colonização e portanto nunca subia degrau nenhum. Um organismo que já
+       tolera tudo também não descreve o estágio em que a vida só existe na
+       água. Ele entra a partir do estágio 1. */
+    tolHidrica: { restrict: ["aq", "sa"] },
+    classe: { restrict: ["PSC", "MOL", "INS"] },
+    locPrimario: { restrict: ["N", "F", "S", "O", "R", "Z", "C"] },
+    asaQtd: { fixed: 0 },
+  },
+  { // estágio 1 — colonização da terra
+    tolHidrica: { restrict: ["aq", "sa", "um", "ms", "eu"] },
+    classe: { restrict: ["PSC", "MOL", "INS", "AMP", "REP"] },
+    locPrimario: { exclude: ["V", "P"] },
+    asaQtd: { fixed: 0 },
+  },
+  {}, // estágio 2 — pleno, sem restrição
+];
+function colonizOpts(gene) {
+  if (!__colonizacaoAtiva || __auColonizacaoAtual === null) return {};
+  return COLONIZACAO_TRAVAS[estagioColonizacao(__auColonizacaoAtual)][gene] || {};
+}
+
+/* ------------------------------------------------------------
+   v37 — A CONQUISTA PRECISA DE UM EMPURRÃO, NÃO SÓ DE UMA PERMISSÃO
+   ------------------------------------------------------------
+   Primeira versão do portão só LIBERAVA valores conforme o estágio avança.
+   Medido: não bastava. Em 3 rodadas seguidas de 4x150 ciclos, 0 voadores,
+   0 xerófilos e 0 aves — o mundo inteiro ficava preso na água. A causa é
+   que `tolHidrica` e `classe` são genes de Estrato I e `tolHidrica` ainda
+   tem um guard próprio (só muta sob pressão "Bioma aquático"/"Bioma
+   árido"). Depois de fixados no estágio 0, quase nunca voltavam a ser
+   sorteados — a permissão chegava, mas ninguém a usava.
+
+   Comparação medida, mesma carga:
+     portão só permissivo : 692 aquáticas, 0 xerófilas, 0 voadores, 5 MAM
+     sem portão nenhum    : 647 xerófilas, 6 voadores, 167 AVE — mas em
+                            ordem nenhuma (ave antes de peixe)
+
+   Nenhum dos dois é o que foi pedido. A colonização é um EVENTO, e eventos
+   precisam acontecer: quando o mundo entra num estágio novo e a linhagem
+   ainda está no anterior, ela ganha uma chance por ciclo de subir um degrau
+   — da água para a margem, da margem para a terra firme, do árido depois.
+   Um degrau por vez, nunca dois, para que a passagem tenha espécies
+   intermediárias em vez de virar salto. */
+const ESCADA_HIDRICA = ["aq", "sa", "um", "ms", "xe"];
+const ESCADA_CLASSE = { PSC: ["AMP"], MOL: ["INS"], INS: ["AMP"], AMP: ["REP"], REP: ["MAM", "AVE"] };
+/* Até que degrau cada estágio permite chegar. Índices de ESCADA_HIDRICA. */
+const TETO_HIDRICO_POR_ESTAGIO = [0, 3, 4];
+const CLASSES_POR_ESTAGIO = [["PSC", "MOL", "INS"], ["PSC", "MOL", "INS", "AMP", "REP"], null];
+const CHANCE_COLONIZACAO_HIDRICA = 0.05;
+const CHANCE_COLONIZACAO_CLASSE = 0.04;
+
+/* Nem toda linhagem sai da água — senão o oceano esvazia. Medido na
+   primeira tentativa: com a escada valendo para todas, o mundo terminava
+   com 5 espécies aquáticas em 1.345. O peixe continua existindo depois de o
+   anfíbio existir; o que a colonização produz é um RAMO novo, não a mudança
+   de todo mundo. Cada segmento de linhagem sorteia uma vez se é ramo
+   conquistador; os que não são ficam onde estão, e é deles que sai a fauna
+   marinha remanescente. */
+const PROB_LINHAGEM_CONQUISTADORA = 0.35;
+function sorteiaLinhagemConquistadora() { return rnd() < PROB_LINHAGEM_CONQUISTADORA; }
+
+function avancarColonizacao(g, estagio, ehConquistadora) {
+  if (!__colonizacaoAtiva || estagio <= 0 || !ehConquistadora) return null;
+  let mudou = null;
+  const iAtual = ESCADA_HIDRICA.indexOf(g.tolHidrica);
+  const teto = TETO_HIDRICO_POR_ESTAGIO[estagio];
+  if (iAtual >= 0 && iAtual < teto && rnd() < CHANCE_COLONIZACAO_HIDRICA) {
+    g.tolHidrica = ESCADA_HIDRICA[iAtual + 1];
+    mudou = { gene: "tolHidrica", valor: g.tolHidrica };
+  }
+  /* A classe só sobe quando a tolerância já saiu da água obrigatória — um
+     anfíbio não nasce dentro de um peixe estritamente aquático, ele nasce
+     na margem. Essa ordem é o que produz a sequência peixe -> anfíbio ->
+     réptil -> mamífero/ave em vez de saltos aleatórios. */
+  const permitidas = CLASSES_POR_ESTAGIO[estagio];
+  const proximas = ESCADA_CLASSE[g.classe];
+  if (g.reino === "An" && g.tolHidrica !== "aq" && proximas && rnd() < CHANCE_COLONIZACAO_CLASSE) {
+    const opcoes = permitidas ? proximas.filter((c) => permitidas.includes(c)) : proximas;
+    if (opcoes.length) {
+      g.classe = opcoes[Math.floor(rnd() * opcoes.length)];
+      mudou = { gene: "classe", valor: g.classe };
+    }
+  }
+  if (mudou) Object.assign(g, normalizarGenoma(g, false));
+  return mudou;
+}
+
 
 function duracaoCicloDeriva(g) {
   const mat = Number(g.repMaturacao ?? 2);
@@ -3627,6 +3881,23 @@ function normalizarGenoma(g, isPrimordial) {
   return cur.ctx;
 }
 
+/* v37 — NORMALIZAÇÃO ESTÁVEL, para a edição manual.
+   Mesma função acima, rodada sob um RNG semeado pelo próprio genoma
+   candidato. Consequências que resolvem o relato do slider:
+
+   - a mesma edição sobre o mesmo genoma dá SEMPRE o mesmo resultado;
+   - arrastar o slider e voltar devolve exatamente a configuração anterior,
+     porque o candidato volta a ser o mesmo e a semente também;
+   - dois arrastos que passam pelo mesmo valor intermediário não divergem.
+
+   Continua sendo o motor de verdade decidindo o que sobrevive à trava —
+   só o sorteio dos genes que a edição invalidou deixa de ser um dado novo
+   a cada frame do arrasto. */
+function normalizarGenomaEstavel(g, isPrimordial) {
+  const chave = JSON.stringify(g, Object.keys(g).sort()) + "|" + (isPrimordial ? 1 : 0);
+  return comRngDeterminista(chave, () => normalizarGenoma(g, isPrimordial));
+}
+
 /* Fase 3 — genes por táxon só existem para a classe/reino a que pertencem
    (o resto das espécies carrega `undefined` nesses campos, ver Passo 16.5
    de runSpeciesSteps). Sem este mapa, a deriva podia sortear um valor pra
@@ -3666,7 +3937,7 @@ function aplicarCicloDeriva(g, orcamentoAtual, fonteFixa) {
        orcamentoRestante). Alguns ciclos de baixa pressão em sequência
        acabam financiando um salto estrutural, que é o comportamento
        descrito na Parte V do documento. */
-    const r = Math.random();
+    const r = rnd();
     const estrato = r < 0.12 ? "I" : r < 0.55 ? "II" : "III";
     if (orcamento < CUSTO_ESTRATO[estrato]) break; // não cabe: poupa o saldo
 
@@ -3770,11 +4041,25 @@ let __eventLog = []; // array global de eventos, populado durante geração/deri
    já que os genes acumulados aparecem de qualquer forma no evento de
    especiação (via codeAntes/code). Afeta só o que é logado a partir
    daqui; eventos já emitidos não são apagados. */
-let __logVerbosidade = "detalhado"; // "detalhado" | "resumido"
+/* v37 — O PADRÃO PASSOU A SER "RESUMIDO".
+   Relato: "os logs estão muito grandes, o arquivo pdf de historia está
+   chegando a milhares de páginas" + "a performance está péssima". Medido
+   numa geração modesta (4 primordiais x 150 ciclos):
+
+     detalhado : 14.435 eventos | 8,0 MB de texto | ~2.070 páginas | 1.976 ms
+     resumido  :    745 eventos | 0,4 MB          |   ~107 páginas | 1.474 ms
+
+   94% do log eram eventos `ciclo_deriva`, e eles não são de graça: o modo
+   detalhado serializa o DNA DUAS vezes por ciclo (antes e depois) só para
+   escrever a linha — daí os 25% de tempo a mais. O ciclo a ciclo continua
+   disponível (Configurações > "Log detalhado"), mas deixa de ser o padrão:
+   o que muda a árvore — primordial, especiação, extinção, seleção natural —
+   é logado sempre, nos dois modos. */
+let __logVerbosidade = "resumido"; // "detalhado" | "resumido"
 function setLogVerbosidade(modo) { __logVerbosidade = modo === "resumido" ? "resumido" : "detalhado"; }
 function getLogVerbosidade() { return __logVerbosidade; }
 
-function resetEventLog() { __eventLog = []; __logCounter = 1; __logVerbosidade = "detalhado"; }
+function resetEventLog() { __eventLog = []; __logCounter = 1; } // v37 — o reset não mexe mais na verbosidade: ela é preferência do usuário, não conteúdo do mundo
 
 /* v33 — zera TODO o estado mutável do motor. Existe por causa do botão
    "resetar tudo": limpar só o estado do React deixaria os contadores de id
@@ -3791,6 +4076,7 @@ function resetarMotor() {
   __idRegiaoCounter = 1;
   __idEraCounter = 1;
   __primordialCounter = 0; // v34 — senão o mundo novo começa em "7"
+  __auColonizacaoAtual = null; // v37 — portão de colonização sempre fechado fora da deriva
 }
 
 /* Restaura o log importado. Os contadores (idCounter/logCounter) são
@@ -3862,7 +4148,7 @@ function formatarLinhaLog(e) {
    ============================================================ */
 
 let __idCounter = 1;
-function novoId() { return "sp" + (__idCounter++) + "_" + Math.random().toString(36).slice(2, 7); }
+function novoId() { return "sp" + (__idCounter++) + "_" + rnd().toString(36).slice(2, 7); }
 
 /* v26, correção #9 — o motor chamava sortNomeIndividuo(), definida em
    04-ui-fases.js. Funcionava só porque os scripts compartilham o escopo
@@ -3871,14 +4157,21 @@ function novoId() { return "sp" + (__idCounter++) + "_" + Math.random().toString
    passa a viver aqui, no motor, que é quem precisa dele; a camada de UI
    continua podendo chamar o mesmo nome (é a mesma função global). */
 function sortNomeIndividuo() {
-  const s = CONS[Math.floor(Math.random() * CONS.length)] + VOG[Math.floor(Math.random() * VOG.length)] +
-    CONS[Math.floor(Math.random() * CONS.length)] + VOG[Math.floor(Math.random() * VOG.length)] +
-    CONS[Math.floor(Math.random() * CONS.length)];
+  const s = CONS[Math.floor(rnd() * CONS.length)] + VOG[Math.floor(rnd() * VOG.length)] +
+    CONS[Math.floor(rnd() * CONS.length)] + VOG[Math.floor(rnd() * VOG.length)] +
+    CONS[Math.floor(rnd() * CONS.length)];
   return s.charAt(0).toUpperCase() + s.slice(1).toLowerCase();
 }
 
 function criarPrimordial(manual, auInicial, massaId) {
-  const built = buildSpecies(null, manual || {}, true);
+  /* v37 — o primordial nasce sob o portão de colonização do próprio AU em
+     que surge. Com auInicial 0 isso é o estágio aquático: a vida começa na
+     água, que é o pedido. `finally` fecha o portão mesmo se buildSpecies
+     lançar, para não deixar restrição vazando para o montador. */
+  setAuColonizacao(auInicial ?? 0);
+  let built;
+  try { built = buildSpecies(null, manual || {}, true); }
+  finally { setAuColonizacao(null); }
   const id = novoId();
   const segs = proximoPrimordialSegs();
   const node = {
@@ -3974,7 +4267,7 @@ function avancarCicloNaLinhagem(linhagemState) {
 function especiar(mae, linhagemState) {
   const g2 = { ...linhagemState.g, isPrimordial: false };
   const id = novoId();
-  const cdDuracaoAU = duracaoCicloDeriva(mae.g); // AU = 1 milhão de anos (ver AU_EM_ANOS)
+  const cdDuracaoAU = duracaoCicloDeriva(mae.g); // AU: ver AU_EM_ANOS
   const auAcumulado = linhagemState.ciclosDecorridos * cdDuracaoAU;
   /* Antes: Math.max(1, Math.round(auAcumulado)). Duas coisas quebravam.
      (1) O piso de 1 AU dominava o cálculo: com maturação típica, 20 ciclos
@@ -4208,7 +4501,7 @@ async function derivarLinhagem(nodeInicial, ciclosAlvo, registrarNo, onProgress)
      máximo: o que é limitado é quantas avançam por rodada (concorrência) e
      quanto trabalho total a chamada inteira pode gastar (orçamento global).
      Ninguém é extinto para caber. */
-  const pool = [{ maeAtual: nodeInicialComPrimordial, state: novaLinhagemState(nodeInicialComPrimordial), ciclosRestantes: ciclosAlvo }];
+  const pool = [{ maeAtual: nodeInicialComPrimordial, state: novaLinhagemState(nodeInicialComPrimordial), ciclosRestantes: ciclosAlvo, conquistadora: sorteiaLinhagemConquistadora() }];
 
   const concorrencia = Math.max(1, CONCORRENCIA_DERIVA);
   /* Orçamento global de passos de ciclo. É exatamente o pior caso do teto
@@ -4243,7 +4536,35 @@ async function derivarLinhagem(nodeInicial, ciclosAlvo, registrarNo, onProgress)
       if (todasFilhas.length >= MAX_ESPECIES_POR_DERIVACAO) break;
       orcamentoPassos--;
 
-      const { especiou } = avancarCicloNaLinhagem(linhagem.state);
+      /* v37 — abre o portão de colonização no AU em que este ciclo está
+         acontecendo.
+
+         A duração do ciclo vem do genoma da MÃE (`maeAtual.g`), não do
+         genoma que está derivando (`state.g`), e isso não é detalhe: é
+         exatamente a conta que `especiar` usa para datar a filha
+         (`duracaoCicloDeriva(mae.g) * ciclosDecorridos`). Na primeira
+         versão eu usei o genoma em deriva, e as duas contas divergiam
+         sempre que o reino mudava no meio do caminho — um ciclo de
+         bactéria custa ordens de grandeza mais que um de animal. O
+         resultado media: 2 espécies em 4.228 nasciam com classe de estágio
+         posterior ao próprio AU, porque o portão tinha sido aberto num AU
+         adiantado enquanto a filha era datada num AU anterior. Usando a
+         mesma fonte das duas contas, a divergência deixa de existir por
+         construção, não por sorte. */
+      const auCiclo = linhagem.maeAtual.auSurgimento
+        + linhagem.state.ciclosDecorridos * duracaoCicloDeriva(linhagem.maeAtual.g);
+      setAuColonizacao(auCiclo);
+      let especiou;
+      try {
+        /* v37 — chance de conquista de ambiente ANTES do ciclo de deriva.
+           Quando ela dispara, o degrau novo entra no genoma e o ciclo
+           seguinte já deriva em cima dele. */
+        const conquista = avancarColonizacao(linhagem.state.g, estagioColonizacao(auCiclo), linhagem.conquistadora);
+        if (conquista) linhagem.state.acumEstratoII.add(conquista.gene);
+        ({ especiou } = avancarCicloNaLinhagem(linhagem.state));
+        if (conquista) especiou = true; // conquista de ambiente sempre vale uma espécie nova
+      }
+      finally { setAuColonizacao(null); }
       linhagem.ciclosRestantes -= 1;
       linhagem.state.idadeRodadas = (linhagem.state.idadeRodadas || 0) + 1;
       if (!especiou) continue;
@@ -4260,6 +4581,7 @@ async function derivarLinhagem(nodeInicial, ciclosAlvo, registrarNo, onProgress)
          seguindo em frente com o genoma novo. */
       linhagem.maeAtual = filhaComPrimordial;
       linhagem.state = novaLinhagemState(filhaComPrimordial, linhagem.state.fontePressaoFixa);
+      linhagem.conquistadora = sorteiaLinhagemConquistadora(); // v37 — resorteado a cada especiação
 
       /* E a população-mãe pode sobreviver como linhagem-irmã independente —
          é daqui que saem espécies irmãs, primas e tias, ou seja, a
@@ -4267,11 +4589,12 @@ async function derivarLinhagem(nodeInicial, ciclosAlvo, registrarNo, onProgress)
          o teto e era perdida em silêncio na maioria das vezes (medido no
          comentário da própria v31: 97%); agora ela simplesmente entra no
          pool, porque o pool não tem tamanho máximo. */
-      if (Math.random() < PROB_SOBREVIVENCIA_MAE && linhagem.ciclosRestantes > 0) {
+      if (rnd() < PROB_SOBREVIVENCIA_MAE && linhagem.ciclosRestantes > 0) {
         nascidosNestaRodada.push({
           maeAtual: maeAnterior,
           state: novaLinhagemState(maeAnterior, linhagem.state.fontePressaoFixa),
           ciclosRestantes: linhagem.ciclosRestantes,
+          conquistadora: sorteiaLinhagemConquistadora(),
         });
       }
     }
@@ -4702,6 +5025,89 @@ function ehPresaAnimal(g) { return g.reino === "An"; }
 function ehPresaVulneravel(g) {
   return (g.defBlindagem ?? 0) <= 3 && (g.locVelocidade ?? 0) <= 4;
 }
+
+/* ============================================================
+   v37 — HERBIVORIA, E O FIM DAS PLANTAS ETERNAS
+   ============================================================
+   Relato: "a longevidade das plantas está bugada? Ela possui predadores?
+   verificar caso de plantas eternas".
+
+   Medido, e a longevidade NÃO estava bugada: `repLongevidade` sai com a
+   distribuição 3d4-3 normal, igual a qualquer outro reino. A eternidade
+   vinha de dois buracos somados no laço de seleção natural, e cada um
+   sozinho já bastaria:
+
+   1) PREDAÇÃO EXCLUÍA VEGETAIS. `ehPresaAnimal` restringe presa ao reino
+      An desde a v29 — correção certa na época (um carnívoro "predava" um
+      arbusto), mas ela fechou a porta sem abrir a outra: comer planta é
+      herbivoria, e herbivoria não existia como interação. Nenhum herbívoro
+      jamais pressionou uma planta.
+
+   2) COMPETIÇÃO ENTRE PLANTAS SEMPRE EMPATAVA. O vencedor de nicho era
+      decidido por `socSenciencia * 2 + locVelocidade`. Planta é séssil
+      (locVelocidade travado em 0 pelo reino) e não tem senciência: medido,
+      1.405 de 1.405 pares planta-vs-planta pontuaram 0 contra 0. Empate
+      retorna `null` — nenhuma interação, nenhuma pressão, nenhuma morte.
+
+   Somados: planta e fungo não podiam perder nada. Não podiam sofrer deriva
+   por pressão, não podiam perder indivíduos, não podiam se extinguir.
+   Eternas — exatamente como relatado.
+
+   A correção tem as duas metades.
+   ============================================================ */
+
+/* Metade 1 — herbivoria/fungivoria como interação de primeira classe.
+   Um herbívoro não "caça": ele consome biomassa vegetal e pressiona a
+   planta na direção de defesa (toxina, rigidez, blindagem), que é o que a
+   fonte de pressão de predação já embute. Insetívoro NÃO conta: come
+   inseto, não folha. Onívoro e frugívoro contam. */
+const DIETAS_HERBIVORAS = ["hb", "on", "fr"];
+const DIETAS_FUNGIVORAS = ["de", "on", "qm"];
+function ehHerbivoroViavel(g) {
+  return g.reino === "An" && DIETAS_HERBIVORAS.includes(g.dieBase);
+}
+function ehFungivoroViavel(g) {
+  return g.reino === "An" && DIETAS_FUNGIVORAS.includes(g.dieBase);
+}
+/* Vegetal comestível: sem defesa química nem estrutural que baste. Uma
+   planta muito tóxica ou muito rígida escapa — que é o mecanismo real pelo
+   qual a herbivoria SELECIONA em vez de só matar. */
+function ehVegetalConsumivel(g) {
+  if (g.reino !== "Pl" && g.reino !== "Fu") return false;
+  if (g.defEstrategia === "to" && (g.defBlindagem ?? 0) >= 5) return false;
+  return (g.defBlindagem ?? 0) <= 6 && (g.tegResistencia ?? 0) <= 7;
+}
+
+/* Metade 2 — escore competitivo POR REINO.
+   Senciência e velocidade descrevem o que decide uma disputa entre
+   animais, e só isso. Uma planta disputa luz, água e substrato; um fungo
+   disputa substrato e alcance de micélio; uma bactéria disputa taxa de
+   divisão e tolerância. Cada reino ganha os eixos que de fato o ordenam —
+   e todos eles têm variância real, ao contrário do escore anterior, que
+   era constante zero fora do reino animal.
+
+   O ramo animal é IDÊNTICO ao anterior de propósito: nenhuma interação
+   entre animais muda de resultado por causa desta versão. */
+function escoreCompetitivo(g) {
+  const porteN = (T.porte.find((r) => r.value === g.porte) || {}).n ?? 2;
+  if (g.reino === "An") return (g.socSenciencia ?? 0) * 2 + (g.locVelocidade ?? 0);
+  if (g.reino === "Pl") {
+    /* Altura é a moeda da competição por luz; fotossíntese é a eficiência
+       com que essa luz vira biomassa; longevidade e prole decidem quem
+       ocupa o espaço e quem o mantém. */
+    return porteN * 3 + (g.fotossinteseIntensidade ?? 0) + Math.floor((g.repLongevidade ?? 0) / 2)
+      + Math.floor((g.repProle ?? 0) / 2) + Math.floor((g.tegResistencia ?? 0) / 3);
+  }
+  if (g.reino === "Fu") {
+    return porteN * 2 + (g.redeMicelialAlcance ?? 0) + Math.floor((g.repProle ?? 0) / 2)
+      + Math.floor((g.repLongevidade ?? 0) / 3);
+  }
+  /* Bactéria: divide rápido (maturação baixa vence), prole numerosa,
+     tolerância ampla. Já tinha alguma variância; ganha eixos próprios. */
+  return (9 - (g.repMaturacao ?? 0)) + (g.repProle ?? 0)
+    + (g.tolHidrica === "eu" ? 2 : 0) + (g.tolTermica === "eu" ? 2 : 0)
+    + Math.floor((g.tegResistencia ?? 0) / 3);
+}
 /* v29 — competição é disputa por RECURSO, não por modo de andar. A regra
    antiga exigia dieta E locomoção primária idênticas; num mundo todo
    bacteriano (deriva N/F, dieta "de") isso batia quase sempre, mas assim
@@ -4730,14 +5136,33 @@ function avaliarInteracao(nodeA, nodeB) {
   if (ehPredadorViavel(gB) && ehPresaVulneravel(gA) && ehPresaAnimal(gA) && gB.dieBase !== "hb" && gB.dieBase !== "de") {
     return { perdedora: nodeA, vencedora: nodeB, tipo: "predacao", motivo: `${nodeB.linhagemId} (armado, agressivo) predaria ${nodeA.linhagemId} (pouco blindada e lenta)` };
   }
-  // competição por nicho: mesma dieta, mesma locomoção primária — quem tem
-  // mais senciência OU mais velocidade domina o recurso primeiro
+  /* v37 — herbivoria/fungivoria. Vem DEPOIS da predação (um carnívoro que
+     também é onívoro caça primeiro) e ANTES da competição, porque consumir
+     o outro é sempre a interação mais forte das duas. */
+  if (ehHerbivoroViavel(gA) && ehVegetalConsumivel(gB)) {
+    return { perdedora: nodeB, vencedora: nodeA, tipo: "herbivoria", motivo: `${nodeA.linhagemId} consome a biomassa de ${nodeB.linhagemId}, que não tem defesa química nem estrutural suficiente` };
+  }
+  if (ehHerbivoroViavel(gB) && ehVegetalConsumivel(gA)) {
+    return { perdedora: nodeA, vencedora: nodeB, tipo: "herbivoria", motivo: `${nodeB.linhagemId} consome a biomassa de ${nodeA.linhagemId}, que não tem defesa química nem estrutural suficiente` };
+  }
+  if (gB.reino === "Fu" && ehFungivoroViavel(gA) && ehVegetalConsumivel(gB)) {
+    return { perdedora: nodeB, vencedora: nodeA, tipo: "herbivoria", motivo: `${nodeA.linhagemId} consome ${nodeB.linhagemId} (fungivoria)` };
+  }
+  if (gA.reino === "Fu" && ehFungivoroViavel(gB) && ehVegetalConsumivel(gA)) {
+    return { perdedora: nodeA, vencedora: nodeB, tipo: "herbivoria", motivo: `${nodeB.linhagemId} consome ${nodeA.linhagemId} (fungivoria)` };
+  }
+  // competição por nicho: mesma base alimentar no mesmo meio — o escore que
+  // decide o vencedor agora é o do REINO de cada uma (ver escoreCompetitivo)
   if (compartilhamNicho(gA, gB)) {
-    const scoreA = (gA.socSenciencia ?? 0) * 2 + (gA.locVelocidade ?? 0);
-    const scoreB = (gB.socSenciencia ?? 0) * 2 + (gB.locVelocidade ?? 0);
+    const scoreA = escoreCompetitivo(gA);
+    const scoreB = escoreCompetitivo(gB);
     if (scoreA !== scoreB) {
       const [venc, perd] = scoreA > scoreB ? [nodeA, nodeB] : [nodeB, nodeA];
-      return { perdedora: perd, vencedora: venc, tipo: "competicao", motivo: `${venc.linhagemId} e ${perd.linhagemId} disputam o mesmo nicho (dieta e locomoção iguais) — ${venc.linhagemId} tem vantagem cognitiva/de velocidade` };
+      const eixo = venc.g.reino === "An" ? "vantagem cognitiva/de velocidade"
+        : venc.g.reino === "Pl" ? "vantagem de porte e eficiência fotossintética"
+        : venc.g.reino === "Fu" ? "vantagem de alcance micelial e esporulação"
+        : "vantagem de taxa de divisão e tolerância";
+      return { perdedora: perd, vencedora: venc, tipo: "competicao", motivo: `${venc.linhagemId} e ${perd.linhagemId} disputam o mesmo nicho (mesma base alimentar no mesmo meio) — ${venc.linhagemId} tem ${eixo}` };
     }
   }
   return null;
@@ -4792,14 +5217,14 @@ function simularSelecaoNatural(nodes, idx, au, massaId) {
   const interacoesPorPerdedora = new Map();
   for (const resultado of escolhidasPorVencedora) {
     const atual = interacoesPorPerdedora.get(resultado.perdedora.id);
-    const prioridade = (r) => (r.tipo === "predacao" ? 2 : 1);
+    const prioridade = (r) => (r.tipo === "predacao" || r.tipo === "herbivoria" ? 2 : 1);
     if (!atual || prioridade(resultado) > prioridade(atual)) interacoesPorPerdedora.set(resultado.perdedora.id, resultado);
   }
 
   const aplicadas = [];
   for (const [, interacao] of interacoesPorPerdedora) {
     const alvo = interacao.perdedora;
-    const fonte = interacao.tipo === "predacao" ? PRESSAO_PREDACAO : PRESSAO_COMPETICAO;
+    const fonte = (interacao.tipo === "predacao" || interacao.tipo === "herbivoria") ? PRESSAO_PREDACAO : PRESSAO_COMPETICAO;
     const codeAntes = alvo.code;
     const linhagemState = novaLinhagemState(alvo, fonte);
     /* Antes: um único aplicarCicloDeriva com orçamento 0 — cada aplicação
@@ -4834,7 +5259,7 @@ function simularSelecaoNatural(nodes, idx, au, massaId) {
     aplicadas.push({ ...interacao, genesAlterados, totalGenes, codeAntes, codeDepois: alvo.code });
     emitirEvento({
       tipo: "selecao_natural",
-      tipoLabel: interacao.tipo === "predacao" ? "PRESSÃO DE PREDAÇÃO" : "PRESSÃO DE COMPETIÇÃO",
+      tipoLabel: interacao.tipo === "predacao" ? "PRESSÃO DE PREDAÇÃO" : interacao.tipo === "herbivoria" ? "PRESSÃO DE HERBIVORIA" : "PRESSÃO DE COMPETIÇÃO",
       speciesId: alvo.id,
       linhagemId: alvo.linhagemId,
       primordialId: alvo.primordialId,
@@ -4883,14 +5308,14 @@ function gerarPopulacaoParaEspecie(node, quantidade = TAMANHO_POPULACAO_INICIAL,
     poolMarginal = massa.divisoesBiomas.filter((d) => habitat.marginal.includes(d.biomaNome)).map((d) => d.id);
   }
   const sortearDivisao = () => {
-    if (poolPrimary && poolPrimary.length) return poolPrimary[Math.floor(Math.random() * poolPrimary.length)];
-    if (poolMarginal && poolMarginal.length) return poolMarginal[Math.floor(Math.random() * poolMarginal.length)];
-    return Math.floor(Math.random() * divisoes);
+    if (poolPrimary && poolPrimary.length) return poolPrimary[Math.floor(rnd() * poolPrimary.length)];
+    if (poolMarginal && poolMarginal.length) return poolMarginal[Math.floor(rnd() * poolMarginal.length)];
+    return Math.floor(rnd() * divisoes);
   };
   for (let i = 0; i < quantidade; i++) {
     const r = buildIndividual(node.g, null);
     individuos.push({
-      id: "ind" + (__idCounter++) + "_" + Math.random().toString(36).slice(2, 6),
+      id: "ind" + (__idCounter++) + "_" + rnd().toString(36).slice(2, 6),
       especieId: node.id,
       nome: sortNomeIndividuo(),
       ind: r.ind, code: r.code, individualSeed: r.individualSeed,
@@ -4953,7 +5378,13 @@ const CHANCE_MORTE_ULTIMO = 0.2;       // chance de o último indivíduo de uma 
 const CAPACIDADE_POR_DIVISAO = 90;
 
 function rodarCicloSelecaoIndividual(idx, individuals, massas, auAtual = 0) {
-  const eventos = { colisoes: 0, nascimentos: 0, mortes: 0, migracoes: 0, extincoes: 0 };
+  /* v37 — `tocadas` acompanha quais espécies de fato mudaram neste ciclo.
+     A UI clonava TODOS os nós depois da seleção natural só para o React
+     enxergar as mutações in-place; com milhares de espécies isso troca a
+     referência de todo nó e anula o React.memo da v34 — a árvore inteira
+     repintava a cada rodada. Com o conjunto exato, só os nós alterados
+     trocam de referência. */
+  const eventos = { colisoes: 0, nascimentos: 0, mortes: 0, migracoes: 0, extincoes: 0, tocadas: new Set() };
   // cópia rasa ÚNICA por ciclo; daqui pra frente tudo é mutação in-place
   const individualsOut = individuals.slice();
   const novos = [];
@@ -4977,7 +5408,7 @@ function rodarCicloSelecaoIndividual(idx, individuals, massas, auAtual = 0) {
          prevalece sobre competição — mesmo critério que simularSelecaoNatural
          já usava na versão por AU. */
       const piorPorPerdedora = new Map();
-      const prioridade = (r) => (r.tipo === "predacao" ? 2 : 1);
+      const prioridade = (r) => (r.tipo === "predacao" || r.tipo === "herbivoria" ? 2 : 1);
       let avaliadas = 0;
       for (let i = 0; i < especiesPresentes.length; i++) {
         for (let j = i + 1; j < especiesPresentes.length; j++) {
@@ -4997,7 +5428,7 @@ function rodarCicloSelecaoIndividual(idx, individuals, massas, auAtual = 0) {
         const { motivo, tipo } = interacao;
         eventos.colisoes++;
 
-        const fonte = tipo === "predacao" ? PRESSAO_PREDACAO : PRESSAO_COMPETICAO;
+        const fonte = (tipo === "predacao" || tipo === "herbivoria") ? PRESSAO_PREDACAO : PRESSAO_COMPETICAO;
         const codeAntes = perdedoraNode.code;
         const linhagemState = novaLinhagemState(perdedoraNode, fonte);
         let orcamentoInteracao = 0;
@@ -5011,10 +5442,11 @@ function rodarCicloSelecaoIndividual(idx, individuals, massas, auAtual = 0) {
         }
         Object.assign(perdedoraNode.g, linhagemState.g);
         perdedoraNode.code = serialize(perdedoraNode.g);
+        eventos.tocadas.add(perdedoraNode.id);
         const totalGenes = genesAlterados.I.length + genesAlterados.II.length + genesAlterados.III.length;
         emitirEvento({
           tipo: "selecao_natural_populacao",
-          tipoLabel: tipo === "predacao" ? "PRESSÃO DE PREDAÇÃO · POPULAÇÃO" : "PRESSÃO DE COMPETIÇÃO · POPULAÇÃO",
+          tipoLabel: tipo === "predacao" ? "PRESSÃO DE PREDAÇÃO · POPULAÇÃO" : tipo === "herbivoria" ? "PRESSÃO DE HERBIVORIA · POPULAÇÃO" : "PRESSÃO DE COMPETIÇÃO · POPULAÇÃO",
           speciesId: perdedoraNode.id, linhagemId: perdedoraNode.linhagemId,
           primordialId: perdedoraNode.primordialId, primordialLinhagem: idx.get(perdedoraNode.primordialId)?.linhagemId || perdedoraNode.linhagemId,
           texto: `${motivo}. Colisão de populações na divisão ${divisao} de ${massa.nome}: ${totalGenes} gene(s) alterado(s) por pressão de indivíduos rivais.`,
@@ -5033,7 +5465,7 @@ function rodarCicloSelecaoIndividual(idx, individuals, massas, auAtual = 0) {
            vários ciclos. A extinção continua acontecendo; deixa de ser
            instantânea. */
         const numAfetados = indsPerdedora.length <= 1
-          ? (Math.random() < CHANCE_MORTE_ULTIMO ? 1 : 0)
+          ? (rnd() < CHANCE_MORTE_ULTIMO ? 1 : 0)
           : Math.floor(indsPerdedora.length / 2);
         const afetados = indsPerdedora.slice(0, numAfetados);
         const numMigram = Math.floor(afetados.length / 2);
@@ -5046,7 +5478,7 @@ function rodarCicloSelecaoIndividual(idx, individuals, massas, auAtual = 0) {
 
         const vizinhas = queMigram.length ? divisoesVizinhas(divisao, DIVISOES_POR_MASSA) : [];
         if (queMigram.length && vizinhas.length) {
-          const destino = vizinhas[Math.floor(Math.random() * vizinhas.length)];
+          const destino = vizinhas[Math.floor(rnd() * vizinhas.length)];
           for (const i of queMigram) i.divisao = destino;
           eventos.migracoes += queMigram.length;
           emitirEvento({
@@ -5109,7 +5541,7 @@ function rodarCicloSelecaoIndividual(idx, individuals, massas, auAtual = 0) {
     if (!node || node.extinta) continue;
     const prole = Number(node.g.repProle ?? 4);
     const chance = 0.10 + 0.05 * prole; // repProle 0 -> 10%, repProle 9 -> 55%
-    if (Math.random() >= chance) continue;
+    if (rnd() >= chance) continue;
     const novo = gerarPopulacaoParaEspecie(node, 1, DIVISOES_POR_MASSA, massaPorId.get(massaId) || null)[0];
     novo.divisao = Number(divisaoStr); novo.massaId = massaId === "null" ? null : massaId;
     novos.push(novo);
@@ -5134,6 +5566,7 @@ function rodarCicloSelecaoIndividual(idx, individuals, massas, auAtual = 0) {
     node.auExtincao = Math.max(auAtual, node.auSurgimento);
     node.motivoExtincao = "populacional";
     eventos.extincoes++;
+    eventos.tocadas.add(node.id); // v37 — extinção também muda o nó
     emitirEvento({
       tipo: "extincao",
       tipoLabel: "EXTINÇÃO",
@@ -5166,6 +5599,7 @@ function rodarCicloSelecaoIndividual(idx, individuals, massas, auAtual = 0) {
 async function rodarSelecaoNaturalPopulacional(idx, individuals, massas, ciclos, onProgress, auInicial = 0) {
   let individualsAtual = individuals;
   const resumo = { colisoes: 0, nascimentos: 0, mortes: 0, migracoes: 0, extincoes: 0 }; // v26: +extincoes
+  const tocadas = new Set(); // v37 — ids das espécies alteradas, para o clone seletivo na UI
   let ultimoCorte = agoraMs();
   for (let c = 0; c < ciclos; c++) {
     // v26 — o AU corrente é repassado ao ciclo pra datar mortes e extinções
@@ -5177,10 +5611,11 @@ async function rodarSelecaoNaturalPopulacional(idx, individuals, massas, ciclos,
     resumo.mortes += eventos.mortes;
     resumo.migracoes += eventos.migracoes; // Fase 2, item 5.5
     resumo.extincoes += eventos.extincoes; // v26, correção #3
+    for (const id of eventos.tocadas) tocadas.add(id); // v37
     if (onProgress) onProgress((c + 1) / ciclos);
     if (agoraMs() - ultimoCorte > 12) { await cederControle(); ultimoCorte = agoraMs(); }
   }
-  return { individuals: individualsAtual, resumo, auAvancado: ciclos * duracaoCicloSelecao() };
+  return { individuals: individualsAtual, resumo, tocadas, auAvancado: ciclos * duracaoCicloSelecao() };
 }
 
 /* ============================================================

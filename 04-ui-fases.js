@@ -21,6 +21,8 @@ function Info(props) { return <Icon {...props}><circle cx="12" cy="12" r="10" />
 function Lock(props) { return <Icon {...props}><rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></Icon>; }
 function AlertTriangle(props) { return <Icon {...props}><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" /></Icon>; }
 function User(props) { return <Icon {...props}><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></Icon>; }
+/* v37 — ícone da seção "Ordem de colonização" (Configurações). */
+function Waves(props) { return <Icon {...props}><path d="M2 6c.6.5 1.2 1 2.5 1C7 7 7 5 9.5 5c2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1" /><path d="M2 12c.6.5 1.2 1 2.5 1 2.5 0 2.5-2 5-2 2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1" /><path d="M2 18c.6.5 1.2 1 2.5 1 2.5 0 2.5-2 5-2 2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1" /></Icon>; }
 function FileText(props) { return <Icon {...props}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /></Icon>; }
 
 /* ============================================================
@@ -71,17 +73,21 @@ function CampoNumero({ value, onChange, placeholder, step, className }) {
    precisava de fmtKg e a camada de UI carrega depois, então o motor estaria
    dependendo da UI outra vez (mesma classe do bug #9 da v26). Continuam
    globais, então nada muda para quem as chama aqui. */
-/* 1 AU = 1 milhão de anos (AU_EM_ANOS no motor). Isto rotulava "bi anos",
-   inflando toda a cronologia em 1000x. Abaixo de 1000 AU mostra em
-   milhões; acima, converte para bilhões, que é como o usuário pensa a
-   escala grande. Fração de AU aparece com casas suficientes para não
-   colapsar duas espécies próximas no mesmo rótulo. */
+/* v37 — O RÓTULO PASSOU A DERIVAR DE `AU_EM_ANOS`, EM VEZ DE REPETI-LA.
+   Antes esta função tinha os fatores 1e6/1000 escritos à mão, o que
+   significava que mudar a unidade no motor deixava a exibição mentindo —
+   exatamente o bug de fator 1000 que a v33 já tinha corrigido uma vez.
+   Agora converte AU para anos pela constante e só então escolhe a casa
+   (anos / mil / mi / bi), então trocar a unidade no motor é uma linha só e
+   a tela acompanha sozinha. */
 function fmtAU(au) {
   if (au === 0) return "AU 0 (marco zero)";
-  if (au < 0.001) return `${(au * 1e6).toLocaleString("pt-BR", { maximumFractionDigits: 0 })} anos`;
-  if (au < 1) return `${(au * 1000).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} mil anos`;
-  if (au < 1000) return `${au.toLocaleString("pt-BR", { maximumFractionDigits: 2 })} mi anos`;
-  return `${(au / 1000).toLocaleString("pt-BR", { maximumFractionDigits: 2 })} bi anos`;
+  const anos = au * AU_EM_ANOS;
+  const fmt = (v, casas) => v.toLocaleString("pt-BR", { maximumFractionDigits: casas });
+  if (anos < 1000) return `${fmt(anos, anos < 10 ? 2 : 0)} anos`;
+  if (anos < 1e6) return `${fmt(anos / 1e3, 1)} mil anos`;
+  if (anos < 1e9) return `${fmt(anos / 1e6, 2)} mi anos`;
+  return `${fmt(anos / 1e9, 2)} bi anos`;
 }
 
 /* ============================================================

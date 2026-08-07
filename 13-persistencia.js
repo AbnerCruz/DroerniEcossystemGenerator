@@ -136,9 +136,18 @@ async function lerSessaoSalva() {
 
 async function apagarSessaoSalva() { return dbApagar(CHAVE_SESSAO); }
 
-/* Preferências (hoje só a escala de tempo) vivem numa chave separada de
-   propósito: resetar o mundo não deve zerar a configuração do usuário. */
-async function salvarPreferencias() { return dbGravar(CHAVE_PREFS, { escalaTempo: getEscalaTempo() }); }
+/* Preferências vivem numa chave separada de propósito: resetar o mundo não
+   deve zerar a configuração do usuário.
+   v37 — entraram duas: o modo de log (que agora tem custo de performance
+   real e não só de tamanho de arquivo) e o ritmo de colonização. */
+async function salvarPreferencias() {
+  return dbGravar(CHAVE_PREFS, {
+    escalaTempo: getEscalaTempo(),
+    logVerbosidade: getLogVerbosidade(),
+    colonizacaoAtiva: getColonizacaoAtiva(),
+    ritmoColonizacao: getRitmoColonizacao(),
+  });
+}
 async function lerPreferencias() {
   const bruto = await dbLer(CHAVE_PREFS);
   if (!bruto) return null;
@@ -234,6 +243,7 @@ function IndicadorSalvamento({ ultimoSalvamento, onAbrir }) {
 function PainelConfiguracoes({
   onFechar, ultimoSalvamento, onSalvarAgora, onApagarSalvamento,
   onResetarTudo, escalaTempo, onMudarEscala, totais, showToast,
+  logDetalhado, onMudarLog, colonizacaoAtiva, onMudarColonizacao, ritmoColonizacao, onMudarRitmo,
   onAbrirPatchnotes, onAbrirTestes, barraProjeto,
 }) {
   const [confirmandoReset, setConfirmandoReset] = useState(false);
@@ -325,6 +335,64 @@ function PainelConfiguracoes({
             </div>
             <p className="text-[11px] text-stone-600 leading-relaxed">
               Vale para o que for gerado daqui em diante; espécies já datadas mantêm o AU delas.
+            </p>
+          </section>
+
+          {/* v37 — ORDEM DE COLONIZAÇÃO */}
+          <section className="space-y-2">
+            <h3 className="font-data text-[11px] uppercase tracking-wider text-stone-500 flex items-center gap-1.5"><Waves size={12} /> Ordem de colonização</h3>
+            <p className="text-xs text-stone-400 leading-relaxed">
+              Faz a vida começar na água e se expandir de lá para a terra e o ar, como
+              aconteceu de verdade: bactérias, algas e criaturas marinhas primeiro;
+              anfíbios e répteis quando a terra abre; aves, mamíferos e voo por último.
+            </p>
+            <label className="flex items-start gap-2 text-xs text-stone-300 px-3 py-2 rounded border border-stone-800">
+              <input type="checkbox" checked={colonizacaoAtiva} onChange={(e) => onMudarColonizacao(e.target.checked)} className="accent-emerald-600 mt-0.5" />
+              <span>
+                Respeitar a ordem água → terra → ar
+                <span className="block text-[11px] text-stone-500">
+                  Desligado, tudo pode surgir em qualquer momento — é como o app se comportava até a v36.
+                </span>
+              </span>
+            </label>
+            {colonizacaoAtiva && (
+              <div className="space-y-1.5">
+                {RITMOS_COLONIZACAO.map((r) => (
+                  <button key={r.id} onClick={() => onMudarRitmo(r.id)}
+                    className={`w-full text-left px-3 py-2 rounded border text-xs ${Number(ritmoColonizacao) === Number(r.id)
+                      ? "border-emerald-700 bg-emerald-950/30 text-emerald-200"
+                      : "border-stone-800 text-stone-300 hover:border-stone-600"}`}>
+                    <div className="font-medium">{r.label}</div>
+                    <div className="text-[11px] text-stone-500">{r.desc}</div>
+                  </button>
+                ))}
+              </div>
+            )}
+            <p className="text-[11px] text-stone-600 leading-relaxed">
+              Vale só para a deriva automática. O montador, a busca por seed e a trilha
+              por DNA-alvo continuam livres — senão um alvo fora do estágio (um dragão,
+              por exemplo) deixaria de ser alcançável.
+            </p>
+          </section>
+
+          {/* v37 — VERBOSIDADE DO LOG */}
+          <section className="space-y-2">
+            <h3 className="font-data text-[11px] uppercase tracking-wider text-stone-500 flex items-center gap-1.5"><FileText size={12} /> Detalhe do log</h3>
+            <label className="flex items-start gap-2 text-xs text-stone-300 px-3 py-2 rounded border border-stone-800">
+              <input type="checkbox" checked={logDetalhado} onChange={(e) => onMudarLog(e.target.checked)} className="accent-emerald-600 mt-0.5" />
+              <span>
+                Registrar a deriva ciclo a ciclo
+                <span className="block text-[11px] text-stone-500">
+                  Desligado (padrão), o log guarda o que muda a árvore: primordiais,
+                  especiações, extinções, seleção natural e migração.
+                </span>
+              </span>
+            </label>
+            <p className="text-[11px] text-stone-600 leading-relaxed">
+              Medido numa geração de 4 primordiais × 150 ciclos: ligado são 14.435 eventos
+              e cerca de 2.070 páginas de PDF; desligado, 745 eventos e ~107 páginas — e
+              25% mais rápido, porque o modo detalhado serializa o DNA duas vezes por ciclo
+              só para escrever a linha.
             </p>
           </section>
 

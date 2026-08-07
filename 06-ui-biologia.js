@@ -29,6 +29,31 @@ function BarraProgresso({ fracao, label }) {
   );
 }
 
+
+/* ------------------------------------------------------------
+   v37 — CLONE SELETIVO DEPOIS DA SELEÇÃO NATURAL
+   ------------------------------------------------------------
+   O motor muta os genomas em lugar (padrão do app inteiro), então a UI
+   precisava trocar referências para o React enxergar a mudança. A forma
+   usada era `prev.map(n => ({ ...n }))` — clona TODOS os nós.
+
+   Com centenas ou milhares de espécies isso é caro duas vezes: aloca um
+   objeto por espécie, e — pior — troca a referência de `node` em todo nó da
+   árvore, o que anula o `React.memo` que a v34 colocou justamente em
+   `NodeArvore` para não repintar a árvore inteira. Ou seja: a otimização da
+   v34 estava sendo desfeita a cada rodada de seleção natural, que é
+   exatamente o momento em que o app tem mais nós na tela.
+
+   `rodarSelecaoNaturalPopulacional` passou a devolver o conjunto exato de
+   espécies alteradas (`tocadas`). Só essas trocam de referência; o resto do
+   array é preservado como está, e as subárvores intactas não repintam.
+   Nenhuma mudança de comportamento: um nó não alterado tem, por definição,
+   o mesmo conteúdo antes e depois. */
+function clonarSoAsTocadas(nodes, tocadas) {
+  if (!tocadas || !tocadas.size) return nodes;
+  return nodes.map((n) => (tocadas.has(n.id) ? { ...n } : n));
+}
+
 function ModalGerarEcossistema({ eraAtual, onGerar, onFechar, gerando, progresso, progressoLabel }) {
   const [qtd, setQtd] = useState("5");
   /* v32 — os padrões subiram de 15-35 para 120-200 ciclos. Medido nesta
@@ -41,9 +66,36 @@ function ModalGerarEcossistema({ eraAtual, onGerar, onFechar, gerando, progresso
   const [ciclosMin, setCiclosMin] = useState("120");
   const [ciclosMax, setCiclosMax] = useState("200");
   const [concorrencia, setConcorrencia] = useState(String(getConcorrenciaDeriva()));
-  /* v32 — trilhas dirigidas geradas JUNTO com os primordiais, em vez de
-     precisarem de uma segunda operação isolada. Um DNA-alvo por linha. */
-  const [alvosTexto, setAlvosTexto] = useState("");
+  /* v37 — A LISTA DE DNAs-ALVO VIROU UMA LISTA DE VERDADE.
+
+     Pedido: "a implementação desejada é colar um DNA e clicar em um botão
+     de adicionar, e fazer isso sucessivamente, ao invés de ir colocando os
+     dnas em uma única chamada separados apenas por quebra de linha."
+
+     A textarea de uma linha por alvo (v32) era ruim exatamente onde este
+     app é usado: no celular, colar um código DRN2 longo no fim de um campo
+     multilinha sem apagar a quebra de linha anterior é uma operação de
+     precisão. Além disso ela não dava retorno nenhum — só ao gerar se
+     descobria que um dos códigos era inválido, e não qual.
+
+     Agora: um campo, um botão "Adicionar", uma lista com o que já entrou e
+     um X por item. A validação acontece no momento de adicionar, com o
+     motivo na tela, e duplicatas são recusadas — colar o mesmo alvo duas
+     vezes geraria duas linhagens idênticas sem o usuário perceber. */
+  const [alvoEntrada, setAlvoEntrada] = useState("");
+  const [alvos, setAlvos] = useState([]);
+  const [erroAlvo, setErroAlvo] = useState(null);
+
+  const adicionarAlvo = () => {
+    const codigo = alvoEntrada.trim();
+    if (!codigo) return;
+    if (!ehCodigoDRN2(codigo)) { setErroAlvo("Isso não parece um código DRN2 (começa com \"DRN2-\" e traz blocos como TAX:, MOR:)."); return; }
+    if (alvos.includes(codigo)) { setErroAlvo("Esse DNA já está na lista."); return; }
+    setAlvos((a) => [...a, codigo]);
+    setAlvoEntrada("");
+    setErroAlvo(null);
+  };
+  const removerAlvo = (i) => setAlvos((a) => a.filter((_, j) => j !== i));
 
   /* Ciclos deixaram de ter um teto artificial. Ele existia só pra evitar
      travar a aba — mas limitar ciclos limita quantas chances de
@@ -57,11 +109,9 @@ function ModalGerarEcossistema({ eraAtual, onGerar, onFechar, gerando, progresso
   const cMin = Math.max(0, Number(ciclosMin) || 0);
   const cMax = Math.max(cMin, Number(ciclosMax) || cMin);
 
-  const alvos = alvosTexto.split("\n").map((x) => x.trim()).filter(Boolean);
-  const alvosValidos = alvos.filter((a) => ehCodigoDRN2(a));
   const gerar = () => {
     setConcorrenciaDeriva(Number(concorrencia) || 64);
-    onGerar(n, cMin, cMax, alvosValidos);
+    onGerar(n, cMin, cMax, alvos);
   };
 
   return (
@@ -97,13 +147,33 @@ function ModalGerarEcossistema({ eraAtual, onGerar, onFechar, gerando, progresso
             </div>
 
             <div>
-              <label className="text-[10px] uppercase text-stone-500 font-mono">DNAs-alvo para gerar junto (opcional, 1 por linha)</label>
-              <textarea value={alvosTexto} onChange={(e) => setAlvosTexto(e.target.value)} rows={2}
-                placeholder={"DRN2-TAX:An.REP.Xyz-MOR:...\nDRN2-TAX:An.AVE.Abc-MOR:..."}
-                className="w-full text-[10px] font-mono bg-stone-950 border border-stone-800 rounded px-2 py-1.5 text-stone-300 placeholder-stone-600 focus:border-emerald-700 focus:outline-none" />
-              <p className="text-[10px] text-stone-600 mt-0.5">
+              <label className="text-[10px] uppercase text-stone-500 font-mono">DNAs-alvo para gerar junto (opcional)</label>
+              <div className="flex gap-1.5 mt-1">
+                <input value={alvoEntrada}
+                  onChange={(e) => { setAlvoEntrada(e.target.value); setErroAlvo(null); }}
+                  onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); adicionarAlvo(); } }}
+                  placeholder="Cole um DRN2 e toque em Adicionar"
+                  className="flex-1 min-w-0 text-[10px] font-mono bg-stone-950 border border-stone-800 rounded px-2 py-1.5 text-stone-300 placeholder-stone-600 focus:border-emerald-700 focus:outline-none" />
+                <button onClick={adicionarAlvo} disabled={!alvoEntrada.trim()}
+                  className={`shrink-0 text-[11px] font-mono uppercase border rounded px-2.5 py-1.5 ${alvoEntrada.trim() ? "border-emerald-800 text-emerald-400 hover:bg-emerald-950/30" : "border-stone-800 text-stone-600"}`}>
+                  Adicionar
+                </button>
+              </div>
+              {erroAlvo && <p className="text-[10px] text-red-400 mt-1">{erroAlvo}</p>}
+              {alvos.length > 0 && (
+                <ul className="mt-1.5 space-y-1">
+                  {alvos.map((a, i) => (
+                    <li key={a} className="flex items-start gap-1.5 rounded border border-stone-800 bg-stone-900/40 px-2 py-1.5">
+                      <span className="text-[10px] font-mono text-emerald-600 shrink-0">{i + 1}.</span>
+                      <span className="flex-1 min-w-0 text-[9px] font-mono text-stone-400 break-all">{a}</span>
+                      <button onClick={() => removerAlvo(i)} className="shrink-0 text-stone-600 hover:text-red-400"><X size={12} /></button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <p className="text-[10px] text-stone-600 mt-1">
                 Cada alvo vira um ramo de uma linhagem própria, gerada na mesma leva dos
-                primordiais. {alvos.length > 0 && `${alvosValidos.length} de ${alvos.length} linha(s) são códigos DRN2 válidos.`}
+                primordiais. {alvos.length > 0 ? `${alvos.length} alvo(s) na lista.` : "Nenhum alvo — só os primordiais serão gerados."}
               </p>
             </div>
 
@@ -472,12 +542,12 @@ function PainelBiologia({ eras, nodes, setNodes, individuals, setIndividuals, an
     setProgressoLabel("Rodando seleção natural sobre as populações…");
     const idxNovo = buildIndex([...nodes, ...novos]);
     const CICLOS_AUTOMATICOS = 20;
-    const { individuals: individuosFinais, resumo, auAvancado } = await rodarSelecaoNaturalPopulacional(
+    const { individuals: individuosFinais, resumo, tocadas, auAvancado } = await rodarSelecaoNaturalPopulacional(
       idxNovo, [...individuals, ...novosIndividuos], eraAtual.massas, CICLOS_AUTOMATICOS, (f) => setProgresso(f)
     );
     setIndividuals(individuosFinais);
     setAnoAtual((a) => novos.reduce((m, no) => Math.max(m, no.auSurgimento), a) + auAvancado);
-    setNodes((prev) => prev.map((n) => ({ ...n }))); // força o React a ver os genomas mutados pela seleção natural
+    setNodes((prev) => clonarSoAsTocadas(prev, tocadas));
 
     setModalEcossistema(false);
     setGerando(false);
@@ -506,11 +576,11 @@ function PainelBiologia({ eras, nodes, setNodes, individuals, setIndividuals, an
   const rodarSelecaoNatural = async (ciclos) => {
     setRodandoSelecao(true); setProgressoSelecao(0);
     const idxAtual = buildIndex(nodes);
-    const { individuals: individuosFinais, resumo, auAvancado } = await rodarSelecaoNaturalPopulacional(
+    const { individuals: individuosFinais, resumo, tocadas, auAvancado } = await rodarSelecaoNaturalPopulacional(
       idxAtual, individuals, eraAtual.massas, ciclos, (f) => setProgressoSelecao(f)
     );
     setIndividuals(individuosFinais);
-    setNodes((prev) => prev.map((n) => ({ ...n })));
+    setNodes((prev) => clonarSoAsTocadas(prev, tocadas));
     setAnoAtual((a) => a + auAvancado);
     setModalSelecaoNatural(false);
     setRodandoSelecao(false);

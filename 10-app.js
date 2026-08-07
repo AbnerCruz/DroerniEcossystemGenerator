@@ -24,6 +24,10 @@ function App() {
   const [ultimoSalvamento, setUltimoSalvamento] = useState(null);
   const [restaurando, setRestaurando] = useState(true); // trava a gravação até a restauração terminar
   const [escalaTempo, setEscalaTempoState] = useState(getEscalaTempo());
+  // v37 — preferências novas: detalhe do log e ordem de colonização
+  const [logDetalhado, setLogDetalhadoState] = useState(getLogVerbosidade() === "detalhado");
+  const [colonizacaoAtiva, setColonizacaoAtivaState] = useState(getColonizacaoAtiva());
+  const [ritmoColonizacao, setRitmoColonizacaoState] = useState(getRitmoColonizacao());
   // v27 — a busca pode ser aberta já preenchida (ex.: pelo botão "Abrir na
   // busca" dentro do painel do indivíduo, que joga o DNA dele no campo)
   const [seedSearchTexto, setSeedSearchTexto] = useState("");
@@ -242,6 +246,15 @@ function App() {
     (async () => {
       const prefs = await lerPreferencias();
       if (prefs && setEscalaTempo(prefs.escalaTempo)) setEscalaTempoState(getEscalaTempo());
+      if (prefs && typeof prefs.logVerbosidade === "string") {
+        setLogVerbosidade(prefs.logVerbosidade);
+        setLogDetalhadoState(getLogVerbosidade() === "detalhado");
+      }
+      if (prefs && typeof prefs.colonizacaoAtiva === "boolean") {
+        setColonizacaoAtiva(prefs.colonizacaoAtiva);
+        setColonizacaoAtivaState(getColonizacaoAtiva());
+      }
+      if (prefs && setRitmoColonizacao(prefs.ritmoColonizacao)) setRitmoColonizacaoState(getRitmoColonizacao());
       const salvo = await lerSessaoSalva();
       if (!cancelado && salvo) {
         restaurarEventLog(salvo.dados.eventLog, salvo.dados.contadores?.idCounter, salvo.dados.contadores?.logCounter);
@@ -256,6 +269,25 @@ function App() {
     })();
     return () => { cancelado = true; };
   }, []);
+
+  const mudarLogDetalhado = (v) => {
+    setLogVerbosidade(v ? "detalhado" : "resumido");
+    setLogDetalhadoState(getLogVerbosidade() === "detalhado");
+    salvarPreferencias();
+    showToast(v ? "Log detalhado: a deriva será registrada ciclo a ciclo." : "Log resumido: só o que muda a árvore será registrado.");
+  };
+  const mudarColonizacao = (v) => {
+    setColonizacaoAtiva(v);
+    setColonizacaoAtivaState(getColonizacaoAtiva());
+    salvarPreferencias();
+    showToast(v ? "Ordem de colonização ativa: a vida começa na água." : "Ordem de colonização desligada.");
+  };
+  const mudarRitmoColonizacao = (v) => {
+    if (!setRitmoColonizacao(v)) return;
+    setRitmoColonizacaoState(getRitmoColonizacao());
+    salvarPreferencias();
+    showToast(`Ritmo de colonização: ${(RITMOS_COLONIZACAO.find((r) => Number(r.id) === Number(v)) || {}).label || v}.`);
+  };
 
   const mudarEscalaTempo = (v) => {
     if (!setEscalaTempo(v)) return;
@@ -414,7 +446,7 @@ function App() {
           <div className="w-9 h-9 shrink-0 rounded-full border border-emerald-700 flex items-center justify-center text-emerald-500"><GitBranch size={18} /></div>
           <div className="min-w-0">
             <h1 className="font-display text-lg sm:text-xl font-semibold tracking-tight text-stone-100 leading-none">Droerni · Ecossistema DRN2</h1>
-            <p className="font-data text-[10px] text-stone-500 tracking-wider truncate">v36 · edição não perde escolhas, travas ficam visíveis na tela</p>
+            <p className="font-data text-[10px] text-stone-500 tracking-wider truncate">v37 · a vida começa na água · sliders estáveis · logs enxutos</p>
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
@@ -461,13 +493,7 @@ function App() {
               idx={idx}
             />
             {nodes.length > 0 && (
-              <Section title="Exportar" accent="text-stone-500">
-                <div className="flex flex-wrap gap-2">
-                  <button onClick={() => exportarHistoricoPdf(eventLog)} className="text-[11px] font-mono uppercase text-stone-400 hover:text-emerald-400 border border-stone-800 rounded px-3 py-1.5"><Download size={12} className="inline -mt-0.5 mr-1" />Histórico (.pdf)</button>
-                  <button onClick={() => exportarHistoriaGlobalPdf(nodes, idx, massaIdx)} className="text-[11px] font-mono uppercase text-stone-400 hover:text-emerald-400 border border-stone-800 rounded px-3 py-1.5"><Download size={12} className="inline -mt-0.5 mr-1" />História Global (.pdf)</button>
-                  <button onClick={() => exportarFichasObsidianZip(nodes, idx, massaIdx)} className="text-[11px] font-mono uppercase text-stone-400 hover:text-emerald-400 border border-stone-800 rounded px-3 py-1.5"><Download size={12} className="inline -mt-0.5 mr-1" />Fichas Obsidian (.zip)</button>
-                </div>
-              </Section>
+              <PainelExportar eventLog={eventLog} nodes={nodes} idx={idx} massaIdx={massaIdx} showToast={showToast} />
             )}
             <PainelLog eventLog={eventLog} />
           </>
@@ -524,6 +550,12 @@ function App() {
           onResetarTudo={resetarTudo}
           escalaTempo={escalaTempo}
           onMudarEscala={mudarEscalaTempo}
+          logDetalhado={logDetalhado}
+          onMudarLog={mudarLogDetalhado}
+          colonizacaoAtiva={colonizacaoAtiva}
+          onMudarColonizacao={mudarColonizacao}
+          ritmoColonizacao={ritmoColonizacao}
+          onMudarRitmo={mudarRitmoColonizacao}
           totais={{ especies: nodes.length, individuos: individuals.length, eras: eras.length }}
           showToast={showToast}
           onAbrirPatchnotes={() => { setConfigAberto(false); setPatchnotesAberto(true); }}
@@ -547,7 +579,7 @@ function App() {
 
       {patchnotesAberto && <PainelPatchnotes onFechar={() => setPatchnotesAberto(false)} />}
 
-      <footer className="max-w-4xl mx-auto px-4 sm:px-6 pb-10 pt-4 text-[10px] text-stone-700 font-data">DRN2 v36 · Droerni — edição estável, opções incoerentes desabilitadas</footer>
+      <footer className="max-w-4xl mx-auto px-4 sm:px-6 pb-10 pt-4 text-[10px] text-stone-700 font-data">DRN2 v37 · Droerni — colonização ordenada, herbivoria, AU = 10 mil anos</footer>
     </div>
   );
 }
