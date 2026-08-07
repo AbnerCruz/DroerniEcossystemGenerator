@@ -21,7 +21,7 @@
    até onde ir — a bateria completa leva minutos num celular.
    ============================================================ */
 
-const TESTES_VERSAO = "v32";
+const TESTES_VERSAO = "v38";
 
 /* ---------- micro-framework ---------- */
 function criarColetor() {
@@ -1934,6 +1934,87 @@ async function suiteAu37({ suite, chk, info }, prog) {
   prog(1);
 }
 
+
+/* ============================================================
+   v38 — Suíte HH: genes por táxon dentro do código DRN2 (bloco TXN)
+   ============================================================
+   O bug que esta suíte cobre: os 36 genes da Fase 3 eram gerados mas
+   nunca serializados. Copiar o código e colar de volta ressorteava
+   todos eles — um mamífero endotérmico voltava ectotérmico, sem que
+   nada no código visível tivesse mudado. Invisível para quem edita.
+   ============================================================ */
+async function suiteGenesTaxon({ suite, chk, info }, prog) {
+  suite("HH · Genes por táxon no código (v38)");
+  resetarMotor(); setLogVerbosidade("resumido");
+
+  /* (1) Round-trip por gene de táxon, cobrindo todos os grupos. */
+  let divergencias = 0, testadas = 0;
+  const porCampo = {}, porGrupo = {};
+  const N = 500;
+  for (let i = 0; i < N; i++) {
+    const g = buildSpecies(null, {}, false, false).g;
+    const genes = genesTaxonDe(g.classe);
+    if (!genes.length) continue;
+    testadas++;
+    porGrupo[g.classe] = (porGrupo[g.classe] || 0) + 1;
+    const g2 = genomaDeCodigoDRN2(serialize(g), false);
+    for (const k of genes) {
+      if (String(g[k]) !== String(g2 ? g2[k] : undefined)) {
+        divergencias++;
+        porCampo[k] = (porCampo[k] || 0) + 1;
+      }
+    }
+    if (i % 60 === 0) { prog && prog(i / N); await respirar(); }
+  }
+  chk("Genes de táxon sobrevivem ao round-trip do código", divergencias === 0,
+    `${testadas} espécies com bloco TXN, ${divergencias} divergência(s)${divergencias ? " — " + JSON.stringify(porCampo) : ""}`);
+  info("Grupos de táxon cobertos pela amostra", JSON.stringify(porGrupo));
+
+  /* (2) O bloco TXN é de fato escrito para toda espécie que tem genes
+     de táxon — e NÃO é escrito para quem não tem. */
+  let faltando = 0, sobrando = 0;
+  for (let i = 0; i < 200; i++) {
+    const g = buildSpecies(null, {}, false, false).g;
+    const temBloco = /-TXN:/.test(serialize(g));
+    const deveTer = genesTaxonDe(g.classe).length > 0;
+    if (deveTer && !temBloco) faltando++;
+    if (!deveTer && temBloco) sobrando++;
+  }
+  chk("Bloco TXN presente exatamente quando a classe tem genes de táxon",
+    faltando === 0 && sobrando === 0, `faltando=${faltando} sobrando=${sobrando}`);
+
+  /* (3) Retrocompatibilidade: um código anterior à v38 (sem bloco TXN)
+     continua decodificando sem erro. O comportamento antigo — genes de
+     táxon sorteados — é o esperado ali, porque a informação de fato não
+     está no código. */
+  const antigo = "DRN2-TAX:An.MAM-MOR:md.3.bi.0.pr-LOC:B.0.4-MEM:2S.2I.0X.mo.pr-TEG:Pe.Mrr4.ls.4-CRN:0.0.hu.pr-FAC:rd.pl.2rd.mx-DIE:on.7.0-MAG:A0-SEN:6.2.5.6.0-REP:vv.1.3.7-TOL:ms.tp.di-SOC:ba.3.9-DEF:0.2.fu";
+  const gAntigo = genomaDeCodigoDRN2(antigo, false);
+  chk("Código pré-v38 (sem TXN) ainda decodifica", !!gAntigo && gAntigo.classe === "MAM",
+    gAntigo ? `classe=${gAntigo.classe}` : "não decodificou");
+
+  /* (4) Os genes de táxon entram no DL — senão "bate 100%" continuaria
+     significando "bate em tudo menos neles". */
+  const noDL = TODOS_GENES_TAXON.filter((k) => DL_PESOS[k] !== undefined).length;
+  chk("Genes de táxon contam na distância genômica (DL)",
+    noDL === TODOS_GENES_TAXON.length, `${noDL}/${TODOS_GENES_TAXON.length} em DL_PESOS`);
+
+  /* (5) Genes categóricos de valor numérico (tentaculosQtd) voltam como
+     número, não string — foi a única divergência residual do round-trip
+     antes da coerção por tipo de tabela. */
+  let molTestados = 0, molTipoErrado = 0;
+  for (let i = 0; i < 400 && molTestados < 25; i++) {
+    const g = buildSpecies(null, { reino: "An", classe: "MOL" }, false, false).g;
+    if (g.classe !== "MOL") continue;
+    molTestados++;
+    const g2 = genomaDeCodigoDRN2(serialize(g), false);
+    if (g2 && typeof g2.tentaculosQtd !== "number") molTipoErrado++;
+  }
+  chk("Categórico numérico volta como número (tentaculosQtd)",
+    molTipoErrado === 0, `${molTestados} moluscos, ${molTipoErrado} com tipo errado`);
+
+  prog && prog(1);
+}
+
 const SUITES_TESTE = [
   { id: "seed", nome: "Seed e determinismo", fn: suiteSeed, peso: 2, nivel: "rapida" },
   { id: "fuzz", nome: "Fuzzing de entrada", fn: suiteFuzz, peso: 1, nivel: "rapida" },
@@ -1964,6 +2045,7 @@ const SUITES_TESTE = [
   { id: "colagem37", nome: "Colar DNA e lista de alvos", fn: suiteColagemDna, peso: 3, nivel: "rapida" },
   { id: "logpdf37", nome: "Volume de log e escopo de PDF", fn: suiteLogEPdf, peso: 5, nivel: "completa" },
   { id: "au37", nome: "Unidade AU e formatação", fn: suiteAu37, peso: 1, nivel: "rapida" },
+  { id: "genestaxon38", nome: "Genes por táxon no código (TXN)", fn: suiteGenesTaxon, peso: 4, nivel: "rapida" },
   { id: "performance", nome: "Performance neste aparelho", fn: suitePerformance, peso: 5, nivel: "completa" },
 ];
 

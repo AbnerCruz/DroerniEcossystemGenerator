@@ -1228,6 +1228,48 @@ function runSpeciesSteps(cur, isPrimordialIntent) {
   return g;
 }
 
+/* ============================================================
+   v38 — BLOCO TXN: os genes por táxon entram no código DRN2.
+
+   Bug corrigido: os 36 genes da Fase 3 (glandulaMamaria, termorregulacao,
+   gestacao, dentesTipo, pelagemDensidade, escamaTipo, folhaTipo, …) eram
+   sorteados em runSpeciesSteps mas NUNCA escritos por serialize(). Só
+   existiam em memória enquanto a espécie estava aberta.
+
+   Consequência prática: copiar o código de uma espécie e colar de volta
+   (que é o fluxo normal de busca por DNA, trilha reversa e montador)
+   RESSORTEAVA esses genes do zero. Um mamífero de endotermia plena e
+   gestação placentária longa voltava como ectotérmico de gestação curta,
+   sem que nada no código visível tivesse mudado — invisível para quem
+   edita, e impossível de corrigir editando, porque o campo não estava lá.
+
+   A ordem é derivada de `classe` (que já é unívoca: VEG/FUN/MIC para os
+   reinos não-animais, e as 7 classes animais), então o bloco não precisa
+   de rótulo por gene — TAX vem antes no código e diz qual lista ler.
+   Códigos anteriores à v38 continuam válidos: sem bloco TXN, o parser
+   simplesmente não declara esses genes e eles seguem sendo sorteados,
+   que é o comportamento antigo.
+   ============================================================ */
+const GENES_TAXON_POR_CLASSE = {
+  MAM: ["glandulaMamaria", "pelagemDensidade", "dentesTipo", "termorregulacao", "gestacao"],
+  AVE: ["bicoFormato", "penaFuncao", "ovoCasca", "migratorio"],
+  REP: ["escamaTipo", "venenoAparato", "regeneracaoCauda", "ectotermiaDependencia"],
+  AMP: ["metamorfose", "peleToxinas", "respiracaoCutanea"],
+  PSC: ["nadadeiraConfiguracao", "respiracaoBranquial", "bexigaNatatoria"],
+  INS: ["metamorfoseTipo", "patasQtdEspecializada", "venenoOuFerroao", "coloniaTipo"],
+  MOL: ["concha", "tentaculosQtd", "tintaDefensiva"],
+  VEG: ["raizTipo", "folhaTipo", "reproducaoEstrutura", "fotossinteseIntensidade"],
+  FUN: ["corpoFrutiferoTipo", "redeMicelialAlcance", "esporoDispersao"],
+  MIC: ["paredeCelularTipo", "metabolismoTipo", "formaColonia"],
+};
+/* Toda chave de táxon que existe em qualquer grupo — usada para estender
+   DL_PESOS sem repetir a lista à mão. */
+const TODOS_GENES_TAXON = Object.values(GENES_TAXON_POR_CLASSE).flat();
+
+function genesTaxonDe(classe) {
+  return GENES_TAXON_POR_CLASSE[classe] || [];
+}
+
 function serialize(g) {
   const parts = [];
   parts.push(`TAX:${g.reino}.${g.classe}`);
@@ -1246,6 +1288,12 @@ function serialize(g) {
   parts.push(`TOL:${g.tolHidrica}.${g.tolTermica}.${g.tolCiclo}`);
   parts.push(`SOC:${g.socEstrutura}.${g.socAgressividade}.${g.socSenciencia}`);
   parts.push(`DEF:${g.defArma}.${g.defBlindagem}.${g.defEstrategia}`);
+  /* v38 — genes por táxon. Só entra se a espécie de fato tem algum deles
+     preenchido (fora do grupo eles são `undefined`, ver Passo 16.5). */
+  const genesTx = genesTaxonDe(g.classe);
+  if (genesTx.length && genesTx.some((k) => g[k] !== undefined && g[k] !== null && g[k] !== "")) {
+    parts.push(`TXN:${genesTx.map((k) => (g[k] === undefined || g[k] === null ? "" : g[k])).join(".")}`);
+  }
   if (g.anomalias?.length) parts.push(`ANO:${g.anomalias.join(",")}`);
   return "DRN2-" + parts.join("-");
 }
@@ -2754,6 +2802,11 @@ const DL_PESOS = (() => {
     "socEstrutura", "socAgressividade", "socSenciencia",
     "defArma", "defBlindagem", "defEstrategia",
   ]);
+  /* v38 — os genes por táxon agora são escritos no código (bloco TXN), e
+     portanto passam a contar na distância genômica. Sem isso, "DL = 0"
+     voltaria a significar "bate em tudo MENOS nos genes de táxon" — que é
+     exatamente a divergência silenciosa que o bloco TXN veio corrigir. */
+  for (const k of TODOS_GENES_TAXON) noCodigo.add(k);
   for (const k of noCodigo) {
     pesos[k] = ESTRATO_I.includes(k) ? CUSTO_ESTRATO.I : ESTRATO_II.includes(k) ? CUSTO_ESTRATO.II : CUSTO_ESTRATO.III;
   }
@@ -2866,6 +2919,27 @@ function parseAlvoDLDoCode(codigo) {
   if (segs.TOL) { alvo.tolHidrica = segs.TOL[0]; alvo.tolTermica = segs.TOL[1]; alvo.tolCiclo = segs.TOL[2]; }
   if (segs.SOC) { alvo.socEstrutura = segs.SOC[0]; alvo.socAgressividade = num(segs.SOC[1]); alvo.socSenciencia = num(segs.SOC[2]); }
   if (segs.DEF) { alvo.defArma = segs.DEF[0]; alvo.defBlindagem = num(segs.DEF[1]); alvo.defEstrategia = segs.DEF[2]; }
+
+  /* v38 — genes por táxon. A lista é derivada da classe lida em TAX, então
+     o bloco é posicional e não-ambíguo. Escalares voltam como número (é o
+     que calcularDL e normalizarGenoma esperam); categóricos, como string.
+     Campo vazio = gene ausente naquele espécime, e não é declarado. */
+  if (segs.TXN && alvo.classe) {
+    const genesTx = genesTaxonDe(alvo.classe);
+    genesTx.forEach((k, i) => {
+      const bruto = segs.TXN[i];
+      if (bruto === undefined || bruto === "") return;
+      if (ESCALAR_KEYS.has(k)) { alvo[k] = num(bruto) ?? bruto; return; }
+      /* Alguns genes categóricos têm valores NUMÉRICOS na tabela
+         (tentaculosQtd: 0/2/8/10/99). Devolvê-los como string faz
+         fixarEspelhoRaw não achar o valor no índice da tabela e o gene
+         voltar ressorteado — mesmo sintoma que este bloco veio curar.
+         Então a coerção segue o tipo real da tabela, não o nome do gene. */
+      const tabela = GENE_TABLE_MAP[k];
+      const numerica = tabela && tabela.every((r) => typeof r.value === "number");
+      alvo[k] = numerica ? (num(bruto) ?? bruto) : bruto;
+    });
+  }
 
   /* v26 — o bloco ANO faz parte do código DRN2 mas as anomalias são
      DERIVADAS (o gatilho é o contador `extremos`), então não entram no DL.

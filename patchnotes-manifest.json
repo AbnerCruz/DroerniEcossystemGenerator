@@ -1,5 +1,11 @@
 [
   {
+    "id": "v38",
+    "titulo": "v38 — Genes por táxon dentro do código DRN2 (bloco TXN)",
+    "arquivo": "patchnotes-v38.md",
+    "data": "2026-08-07"
+  },
+  {
     "id": "v37",
     "titulo": "v37 — A vida começa na água: colonização ordenada, herbivoria, sliders estáveis",
     "arquivo": "patchnotes-v37.md",
