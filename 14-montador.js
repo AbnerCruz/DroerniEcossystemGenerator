@@ -53,6 +53,31 @@ const PRESETS_MONTADOR = [
     },
   },
   {
+    /* v39 — o preset "Humanoide" acima chega a hominídeo e para ali: ele não
+       fixa nenhum dos 12 diagnósticos, então prognatismo, arcada e razão de
+       membros caem no sorteio e o resultado oscila entre sapiens e
+       australopiteco. Este preset fixa os doze e o tegumento nu — é o
+       Homo sapiens pleno, não um humanoide genérico. */
+    id: "humano", label: "Humano (Homo sapiens)",
+    manual: {
+      reino: "An", classe: "MAM", locPrimario: "B", memSup: "2S", memInf: "2I",
+      memApendices: "0X", memTerm: "mo", asaQtd: 0, cdaComp: "0",
+      crnFormato: "hu", facFocinho: "pl", facDenticao: "mx", facOlhosQtd: 2,
+      facOlhosTipo: "rd", facOrelha: "rd", memProp: "pr", morTorso: "pr",
+      tegTipo: "Cr", tegPadrao: "ls", crnChifreQtd: "0", crnCrista: "0", crnPescoco: "pr",
+      socSencienciaBruta: 9, socEstrutura: "ba", repModo: "vv", repProle: 1,
+      porte: "md", dieBase: "on", dieRestricao: "0", defEstrategia: "fu", defArma: "0",
+      tolHidrica: "ms", tolTermica: "tp", tolCiclo: "di", simetria: "bi",
+      senEspecial: "0", mag: "A0", repMaturacao: 7, repLongevidade: 7,
+      termorregulacao: "el", pelagemDensidade: 0, dentesTipo: "hc",
+      gestacao: "pl", glandulaMamaria: "fa",
+      // os 12 diagnósticos
+      facPrognatismo: "or", crnMento: "pj", crnToro: "au", crnAbobada: "gl",
+      facNariz: "pj", facEsclera: "vi", memRazao: "pn", memPreensao: "pc",
+      locPostura: "er", vocAparato: "ar", pelSudorese: 8, dimorfismo: 2,
+    },
+  },
+  {
     id: "quadrupede", label: "Quadrúpede terrestre",
     manual: { reino: "An", classe: "MAM", locPrimario: "Q", memSup: "0S", memInf: "4I", asaQtd: 0, porte: "md", tolHidrica: "ms" },
   },

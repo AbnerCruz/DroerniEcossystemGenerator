@@ -21,7 +21,7 @@
    até onde ir — a bateria completa leva minutos num celular.
    ============================================================ */
 
-const TESTES_VERSAO = "v38";
+const TESTES_VERSAO = "v39";
 
 /* ---------- micro-framework ---------- */
 function criarColetor() {
@@ -2015,6 +2015,161 @@ async function suiteGenesTaxon({ suite, chk, info }, prog) {
   prog && prog(1);
 }
 
+
+/* ============================================================
+   v39 — Suíte II: genes diagnósticos e âncora de gestalt
+   ============================================================
+   O relato: o DNA descrevia bem "primata bípede" e parava ali. Esta
+   suíte guarda as três pernas da correção: os genes existem e derivam,
+   as travas de coerência valem, e a prosa parou de sabotar o resultado.
+   ============================================================ */
+async function suiteDiagnosticos({ suite, chk, info }, prog) {
+  suite("II · Genes diagnósticos e gestalt (v39)");
+  resetarMotor(); setLogVerbosidade("resumido");
+
+  const DIAG = ["facPrognatismo", "crnMento", "crnToro", "crnAbobada", "facNariz",
+    "facEsclera", "memRazao", "memPreensao", "locPostura", "vocAparato",
+    "pelSudorese", "dimorfismo"];
+
+  /* (1) Existem em todo mamífero e em nenhum não-mamífero. O escopo é
+     "toda a classe MAM" justamente para a deriva poder caminhar até o
+     rosto humano; se os genes só existissem sob crânio humanoide, nenhuma
+     linhagem poderia evoluir NA DIREÇÃO dele. */
+  let mam = 0, mamIncompleto = 0, naoMam = 0, vazamento = 0;
+  for (let i = 0; i < 400; i++) {
+    const g = buildSpecies(null, {}, false, false).g;
+    if (g.classe === "MAM") {
+      mam++;
+      if (DIAG.some((k) => g[k] === undefined)) mamIncompleto++;
+    } else {
+      naoMam++;
+      if (DIAG.some((k) => g[k] !== undefined)) vazamento++;
+    }
+    if (i % 60 === 0) { prog && prog(i / 900); await respirar(); }
+  }
+  chk("Todo mamífero carrega os 12 diagnósticos", mamIncompleto === 0, `${mam} mamíferos, ${mamIncompleto} incompletos`);
+  chk("Nenhum não-mamífero carrega diagnósticos", vazamento === 0, `${naoMam} não-mamíferos, ${vazamento} vazamentos`);
+
+  /* (2) Coerência: preensão e razão de membros exigem os membros. */
+  let semBraco = 0, incoerentes = 0;
+  for (let i = 0; i < 300; i++) {
+    const g = buildSpecies(null, { reino: "An", classe: "MAM" }, false, false).g;
+    if (g.classe !== "MAM") continue;
+    const sup = Number(String(g.memSup).replace("S", "")) || 0;
+    if (sup === 0) {
+      semBraco++;
+      if (g.memPreensao !== "ne") incoerentes++;
+    }
+    if (g.locPrimario === "Q" && g.locPostura !== "qu") incoerentes++;
+    if (g.locPrimario === "B" && g.locPostura === "qu") incoerentes++;
+  }
+  chk("Preensão e postura coerentes com membros e locomoção", incoerentes === 0,
+    `${semBraco} sem membros superiores, ${incoerentes} incoerência(s)`);
+
+  /* (3) O viés do crânio humanoide funciona, mas NÃO trava: um crânio
+     humanoide deve produzir sapiens com muito mais frequência que um
+     crânio qualquer, sem que o traço arcaico se torne impossível. */
+  const pontuar = (g) => (g.facPrognatismo === "or") + (g.crnMento === "pj") +
+    (g.crnToro === "au") + (g.crnAbobada === "gl") + (g.facNariz === "pj") +
+    (g.facEsclera === "vi");
+  let somaHu = 0, nHu = 0, somaOutro = 0, nOutro = 0, arcaicoPossivel = 0;
+  for (let i = 0; i < 400; i++) {
+    const gh = buildSpecies(null, { reino: "An", classe: "MAM", crnFormato: "hu" }, false, false).g;
+    if (gh.classe === "MAM" && gh.crnFormato === "hu") {
+      somaHu += pontuar(gh); nHu++;
+      if (pontuar(gh) <= 2) arcaicoPossivel++;
+    }
+    const go = buildSpecies(null, { reino: "An", classe: "MAM", crnFormato: "br" }, false, false).g;
+    if (go.classe === "MAM") { somaOutro += pontuar(go); nOutro++; }
+    if (i % 60 === 0) { prog && prog(0.35 + i / 900); await respirar(); }
+  }
+  const mediaHu = nHu ? somaHu / nHu : 0, mediaOutro = nOutro ? somaOutro / nOutro : 0;
+  chk("Crânio humanoide enviesa para traços sapiens", mediaHu > mediaOutro + 0.8,
+    `média humanoide ${mediaHu.toFixed(2)} vs outros ${mediaOutro.toFixed(2)} (de 6)`);
+  chk("O viés não é trava: traço arcaico continua possível", arcaicoPossivel > 0,
+    `${arcaicoPossivel}/${nHu} crânios humanoides saíram arcaicos`);
+
+  /* (4) Round-trip: os 12 sobrevivem ao código (bloco TXN da v38). */
+  let divergencias = 0, testados = 0;
+  for (let i = 0; i < 200; i++) {
+    const g = buildSpecies(null, { reino: "An", classe: "MAM" }, false, false).g;
+    if (g.classe !== "MAM") continue;
+    testados++;
+    const g2 = genomaDeCodigoDRN2(serialize(g), false);
+    for (const k of DIAG) if (String(g[k]) !== String(g2 ? g2[k] : undefined)) divergencias++;
+  }
+  chk("Diagnósticos sobrevivem ao round-trip do código", divergencias === 0,
+    `${testados} mamíferos, ${divergencias} divergência(s)`);
+
+  /* (5) A prosa parou de sabotar: nem "focinho" em crânio humanoide, nem
+     "revestido por pelo"/"pelagem" quando o tegumento é nu. */
+  let focinhoEmHumanoide = 0, pelagemEmNu = 0, amostras = 0;
+  for (let i = 0; i < 200; i++) {
+    const g = buildSpecies(null, { reino: "An", classe: "MAM" }, false, false).g;
+    if (g.classe !== "MAM") continue;
+    amostras++;
+    const prosa = describeCreatureProse(g);
+    if (g.crnFormato === "hu" && /focinho/i.test(prosa)) focinhoEmHumanoide++;
+    if (["Cr", "Mu"].includes(g.tegTipo) && /pelagem de densidade|revestido por couro|revestido por mucosa/i.test(prosa)) pelagemEmNu++;
+  }
+  chk('Crânio humanoide não usa a palavra "focinho"', focinhoEmHumanoide === 0, `${amostras} amostras, ${focinhoEmHumanoide} ocorrência(s)`);
+  chk("Tegumento nu não é descrito com pelagem", pelagemEmNu === 0, `${pelagemEmNu} contradição(ões)`);
+
+  /* (6) A âncora de gestalt: sapiens pleno é reconhecido, e um genoma
+     arcaico NÃO recebe a âncora de humano moderno. */
+  const humano = buildSpecies(null, (PRESETS_MONTADOR.find((x) => x.id === "humano") || {}).manual || {}, false, false).g;
+  const promptHumano = gerarPromptImagem(humano, null, null);
+  chk("Preset Humano dispara a âncora de Homo sapiens", /fully modern human being/.test(promptHumano),
+    promptHumano.slice(0, 90));
+  chk("Âncora humana nega explicitamente símio e hominídeo",
+    /NOT an ape/.test(promptHumano) && /NOT Australopithecus/.test(promptHumano));
+
+  const arcaico = buildSpecies(null, {
+    reino: "An", classe: "MAM", crnFormato: "hu", locPrimario: "B", memSup: "2S", memInf: "2I",
+    tegTipo: "Pe", facPrognatismo: "pr", crnMento: "au", crnToro: "ma", crnAbobada: "ba",
+    facNariz: "pl", facEsclera: "oc", memRazao: "br", memPreensao: "fo", locPostura: "fa",
+    vocAparato: "si", tolHidrica: "ms",
+  }, false, false).g;
+  chk("Genoma arcaico NÃO recebe a âncora de humano moderno",
+    !/fully modern human being/.test(gerarPromptImagem(arcaico, null, null)));
+
+  /* (7) Genes de alto sinal dos outros reinos. */
+  let pl = 0, fu = 0, ba = 0, faltando = 0;
+  for (let i = 0; i < 300; i++) {
+    const g = buildSpecies(null, {}, false, false).g;
+    if (g.reino === "Pl") { pl++; if (g.arquiteturaCresc === undefined) faltando++; }
+    if (g.reino === "Fu") { fu++; if (g.modoTrofico === undefined) faltando++; }
+    if (g.reino === "Ba") { ba++; if (g.motilidade === undefined || g.respiracaoO2 === undefined) faltando++; }
+  }
+  chk("Planta, fungo e bactéria têm os genes novos", faltando === 0,
+    `Pl ${pl}, Fu ${fu}, Ba ${ba}; ${faltando} faltando`);
+  info("Amostra por reino não-animal", `Pl=${pl} Fu=${fu} Ba=${ba}`);
+
+  /* (8) A deriva alcança os genes novos — se não alcançar, eles são
+     decoração e nenhuma linhagem pode evoluir na direção do humano. */
+  const tocados = new Set();
+  for (let r = 0; r < 12; r++) {
+    /* Parte de um mamífero, não do primordial: uma bactéria fica bactéria
+       na maior parte dos ciclos, e o teste mediria o portão de reino em
+       vez de mediria o alcance da deriva nos diagnósticos. */
+    const gm = buildSpecies(null, { reino: "An", classe: "MAM" }, false, false).g;
+    if (gm.classe !== "MAM") continue;
+    for (let c = 0; c < 60; c++) {
+      const res = aplicarCicloDeriva(gm, 0);
+      for (const est of ["I", "II", "III"]) {
+        for (const k of (res.genesAlterados?.[est] || [])) if (DIAG.includes(k)) tocados.add(k);
+      }
+      if (gm.classe !== "MAM") break; // trocou de classe: os genes deixam de existir
+    }
+    prog && prog(0.8 + r / 60);
+    await respirar();
+  }
+  chk("A deriva alcança os genes diagnósticos", tocados.size >= 6,
+    `${tocados.size}/12 tocados — ${[...tocados].join(", ") || "nenhum"}`);
+
+  prog && prog(1);
+}
+
 const SUITES_TESTE = [
   { id: "seed", nome: "Seed e determinismo", fn: suiteSeed, peso: 2, nivel: "rapida" },
   { id: "fuzz", nome: "Fuzzing de entrada", fn: suiteFuzz, peso: 1, nivel: "rapida" },
@@ -2046,6 +2201,7 @@ const SUITES_TESTE = [
   { id: "logpdf37", nome: "Volume de log e escopo de PDF", fn: suiteLogEPdf, peso: 5, nivel: "completa" },
   { id: "au37", nome: "Unidade AU e formatação", fn: suiteAu37, peso: 1, nivel: "rapida" },
   { id: "genestaxon38", nome: "Genes por táxon no código (TXN)", fn: suiteGenesTaxon, peso: 4, nivel: "rapida" },
+  { id: "diagnosticos39", nome: "Genes diagnósticos e gestalt", fn: suiteDiagnosticos, peso: 6, nivel: "rapida" },
   { id: "performance", nome: "Performance neste aparelho", fn: suitePerformance, peso: 5, nivel: "completa" },
 ];
 

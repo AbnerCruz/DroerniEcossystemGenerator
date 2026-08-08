@@ -355,6 +355,40 @@ const T = {
   dentesTipo: [{ max: 34, value: "ho", label: "Homodonte" }, { max: 67, value: "he", label: "Heterodonte simples" }, { max: 100, value: "hc", label: "Heterodonte complexo (molares especializados)" }],
   termorregulacao: [{ max: 20, value: "er", label: "Ectotermia residual" }, { max: 55, value: "ep", label: "Endotermia parcial" }, { max: 100, value: "el", label: "Endotermia plena" }],
   gestacao: [{ max: 30, value: "ma", label: "Marsupial" }, { max: 65, value: "pc", label: "Placentária curta" }, { max: 100, value: "pl", label: "Placentária longa" }],
+
+  /* ============================================================
+     v39 — GENES DIAGNÓSTICOS DE MAMÍFERO
+     ============================================================
+     Estes 12 genes existem por um motivo estreito e explícito: os genes
+     antigos descrevem bem "primata bípede" e param ali. Nenhum deles
+     separa Homo sapiens de um australopiteco — e era exatamente esse o
+     degrau que faltava.
+
+     São os traços que a antropologia usa como diagnósticos. Cada um tem
+     alto poder discriminante (separa sapiens de símio) e representação
+     visual direta (o gerador de imagem consegue desenhar). Genes sem uma
+     dessas duas propriedades foram deliberadamente deixados de fora: mais
+     genes aumentam resolução, não precisão, e cada um custa espaço de
+     seed, ciclo de deriva e uma exigência a mais na busca por DNA-alvo.
+
+     ESCOPO (decisão de projeto): valem para TODA a classe MAM, não só
+     para crânio humanoide. Travá-los em `crnFormato === "hu"` pareceria
+     mais limpo, mas quebraria a evolução gradual — os genes não
+     existiriam até o crânio já ser humanoide, e a linhagem nunca poderia
+     derivar EM DIREÇÃO a um rosto humano. O que o crânio humanoide faz é
+     ENVIESAR o sorteio (ver classeOptsDiagnostico), não criar o gene.
+     O botão continua na mesa; só a mola muda de tensão.
+     ============================================================ */
+  facPrognatismo: [{ max: 30, value: "or", label: "Ortognata (face vertical)" }, { max: 65, value: "me", label: "Mesognata (projeção leve)" }, { max: 100, value: "pr", label: "Prognata (face projetada)" }],
+  crnMento: [{ max: 55, value: "au", label: "Ausente" }, { max: 80, value: "le", label: "Leve" }, { max: 100, value: "pj", label: "Projetado (queixo definido)" }],
+  crnToro: [{ max: 35, value: "au", label: "Ausente" }, { max: 70, value: "le", label: "Leve" }, { max: 100, value: "ma", label: "Maciço (arcada saliente)" }],
+  crnAbobada: [{ max: 35, value: "ba", label: "Baixa e recuada" }, { max: 70, value: "me", label: "Média" }, { max: 100, value: "gl", label: "Alta e globular" }],
+  facNariz: [{ max: 45, value: "pl", label: "Plano (narinas rasas)" }, { max: 75, value: "le", label: "Levemente projetado" }, { max: 100, value: "pj", label: "Projetado (nariz externo)" }],
+  facEsclera: [{ max: 55, value: "oc", label: "Oculta (olho uniformemente escuro)" }, { max: 80, value: "pa", label: "Parcialmente visível" }, { max: 100, value: "vi", label: "Visível e clara" }],
+  memRazao: [{ max: 35, value: "br", label: "Braços mais longos que pernas" }, { max: 65, value: "eq", label: "Braços e pernas equivalentes" }, { max: 100, value: "pn", label: "Pernas mais longas que braços" }],
+  memPreensao: [{ max: 30, value: "ne", label: "Nenhuma" }, { max: 65, value: "fo", label: "De força (gancho)" }, { max: 100, value: "pc", label: "De precisão (polegar opositor longo)" }],
+  locPostura: [{ max: 40, value: "qu", label: "Quadrúpede" }, { max: 72, value: "fa", label: "Bípede facultativa" }, { max: 100, value: "er", label: "Ereta obrigatória" }],
+  vocAparato: [{ max: 45, value: "si", label: "Simples (chamados)" }, { max: 78, value: "mo", label: "Modulado (repertório amplo)" }, { max: 100, value: "ar", label: "Articulado (laringe rebaixada, fala)" }],
   // AVE
   bicoFormato: [{ max: 25, value: "gr", label: "Granívoro/curto-grosso" }, { max: 48, value: "in", label: "Insetívoro/fino" }, { max: 70, value: "ca", label: "Carnívoro/gancho" }, { max: 85, value: "fl", label: "Filtrador" }, { max: 100, value: "nc", label: "Nectarívoro/longo-fino" }],
   penaFuncao: [{ max: 40, value: "vo", label: "Só voo" }, { max: 78, value: "vi", label: "Voo + isolamento" }, { max: 100, value: "or", label: "Ornamental proeminente" }],
@@ -390,6 +424,21 @@ const T = {
   paredeCelularTipo: [{ max: 55, value: "gp", label: "Gram-positiva-análoga" }, { max: 100, value: "gn", label: "Gram-negativa-análoga" }],
   metabolismoTipo: [{ max: 40, value: "qm", label: "Quimiossíntese" }, { max: 70, value: "ft", label: "Fotossíntese" }, { max: 100, value: "de", label: "Decomposição/heterotrofia" }],
   formaColonia: [{ max: 40, value: "is", label: "Isolada" }, { max: 75, value: "ca", label: "Cadeia" }, { max: 100, value: "bf", label: "Biofilme" }],
+
+  /* v39 — um gene de alto sinal por reino não-animal. Mesma régua dos
+     diagnósticos de mamífero: são os eixos mais definidores de cada
+     reino, e nenhum deles existia.
+       - fungo sem modo trófico é a lacuna mais grave do sistema:
+         saprófita, micorrízico e parasita são ecologias inteiramente
+         diferentes, e o app tratava os três como o mesmo organismo;
+       - planta tinha `porte` mas não ARQUITETURA: erva, arbusto e árvore
+         de mesma altura são coisas visualmente distintas;
+       - bactéria imóvel e bactéria flagelada não se pareciam em nada e
+         saíam idênticas. */
+  modoTrofico: [{ max: 45, value: "sa", label: "Saprófita (decompositor)" }, { max: 70, value: "mi", label: "Micorrízico (simbionte de raiz)" }, { max: 90, value: "pa", label: "Parasita" }, { max: 100, value: "li", label: "Liquenizado (simbiose com alga)" }],
+  arquiteturaCresc: [{ max: 28, value: "he", label: "Herbácea" }, { max: 50, value: "ab", label: "Arbustiva" }, { max: 72, value: "av", label: "Arbórea" }, { max: 85, value: "tr", label: "Trepadeira" }, { max: 94, value: "su", label: "Suculenta" }, { max: 100, value: "ra", label: "Rastejante" }],
+  motilidade: [{ max: 35, value: "im", label: "Imóvel" }, { max: 68, value: "fl", label: "Flagelada" }, { max: 86, value: "ci", label: "Ciliada" }, { max: 100, value: "de", label: "Deslizante" }],
+  respiracaoO2: [{ max: 40, value: "ae", label: "Aeróbia" }, { max: 72, value: "an", label: "Anaeróbia estrita" }, { max: 100, value: "fc", label: "Anaeróbia facultativa" }],
 };
 const CONS = "BCDFGHJKLMNPQRSTVXZ", VOG = "aeiouy";
 
@@ -1089,9 +1138,50 @@ function runSpeciesSteps(cur, isPrimordialIntent) {
     categoricalStep(cur, "dentesTipo", T.dentesTipo);
     categoricalStep(cur, "termorregulacao", T.termorregulacao);
     categoricalStep(cur, "gestacao", T.gestacao);
+
+    /* v39 — os 12 diagnósticos. O crânio humanoide ENVIESA (não trava)
+       o sorteio para o lado sapiens: `bias` sorteia duas vezes e prefere
+       o valor enviesado, então o traço arcaico continua possível e a
+       deriva continua podendo andar nos dois sentidos. Sem crânio
+       humanoide não há viés nenhum — o sorteio é o da tabela. */
+    const hum = g.crnFormato === "hu";
+    const vies = (lista) => (hum ? { bias: lista } : {});
+    categoricalStep(cur, "facPrognatismo", T.facPrognatismo, vies(["or"]));
+    categoricalStep(cur, "crnMento", T.crnMento, vies(["pj"]));
+    categoricalStep(cur, "crnToro", T.crnToro, vies(["au"]));
+    categoricalStep(cur, "crnAbobada", T.crnAbobada, vies(["gl"]));
+    categoricalStep(cur, "facNariz", T.facNariz, vies(["pj"]));
+    categoricalStep(cur, "facEsclera", T.facEsclera, vies(["vi"]));
+    /* Razão de membros e preensão só fazem sentido com os membros
+       correspondentes. Sem braços, "braços mais longos que pernas" é
+       incoerente — mesma lógica das travas de arma natural. */
+    /* As travas destes quatro saem de opcoesGene() — a MESMA função que a
+       deriva consulta. O viés do crânio humanoide é somado por cima, e só
+       vale quando a trava não fixou o gene. */
+    const comTrava = (key, biasHum) => {
+      const trava = opcoesGene(g, key);
+      if (trava.fixed !== undefined) return trava;
+      return hum ? { ...trava, bias: biasHum } : trava;
+    };
+    categoricalStep(cur, "memRazao", T.memRazao, comTrava("memRazao", ["pn"]));
+    categoricalStep(cur, "memPreensao", T.memPreensao, comTrava("memPreensao", ["pc"]));
+    categoricalStep(cur, "locPostura", T.locPostura, comTrava("locPostura", ["er"]));
+    categoricalStep(cur, "vocAparato", T.vocAparato, comTrava("vocAparato", ["ar"]));
+    /* Sudorese écrina é a termorregulação humana e só existe com pele
+       exposta: pelagem densa a torna inútil. Dimorfismo é reduzido em
+       sapiens e acentuado nos hominídeos arcaicos. */
+    /* Idem para os escalares: o teto vem de limitesEscalar(), que a deriva
+       também consulta (ver deslocarGeneEscalar). O piso do humanoide é
+       viés de criação, não trava — por isso fica fora daquela função. */
+    scalarStep(cur, "pelSudorese", { ...limitesEscalar(g, "pelSudorese"), ...(hum && g.pelagemDensidade < 6 ? { min: 5 } : {}) });
+    scalarStep(cur, "dimorfismo", hum ? { max: 5 } : {});
   } else {
     g.glandulaMamaria = undefined; g.pelagemDensidade = undefined; g.dentesTipo = undefined;
     g.termorregulacao = undefined; g.gestacao = undefined;
+    g.facPrognatismo = undefined; g.crnMento = undefined; g.crnToro = undefined;
+    g.crnAbobada = undefined; g.facNariz = undefined; g.facEsclera = undefined;
+    g.memRazao = undefined; g.memPreensao = undefined; g.locPostura = undefined;
+    g.vocAparato = undefined; g.pelSudorese = undefined; g.dimorfismo = undefined;
   }
 
   if (g.classe === "AVE") {
@@ -1150,16 +1240,31 @@ function runSpeciesSteps(cur, isPrimordialIntent) {
     categoricalStep(cur, "folhaTipo", T.folhaTipo);
     categoricalStep(cur, "reproducaoEstrutura", T.reproducaoEstrutura);
     scalarStep(cur, "fotossinteseIntensidade");
+    /* v39 — porte diz o TAMANHO; arquitetura diz a FORMA de ocupar o
+       espaço. Uma erva e uma árvore jovem de mesma altura eram idênticas
+       para o sistema e para o gerador de imagem. Porte grande exclui as
+       formas que não sustentam massa em altura. */
+    categoricalStep(cur, "arquiteturaCresc", T.arquiteturaCresc,
+      ["gr", "cl", "tt"].includes(g.porte) ? { restrict: ["av", "ab"] }
+        : g.porte === "mn" ? { restrict: ["he", "ra", "su"] } : {});
   } else {
     g.raizTipo = undefined; g.folhaTipo = undefined; g.reproducaoEstrutura = undefined; g.fotossinteseIntensidade = undefined;
+    g.arquiteturaCresc = undefined;
   }
 
   if (g.reino === "Fu") {
     categoricalStep(cur, "corpoFrutiferoTipo", T.corpoFrutiferoTipo);
     scalarStep(cur, "redeMicelialAlcance");
     categoricalStep(cur, "esporoDispersao", T.esporoDispersao);
+    /* v39 — a lacuna mais grave do sistema. Saprófita, micorrízico e
+       parasita são ecologias completamente distintas, e o app tratava as
+       três como o mesmo organismo. Amarrado à dieta já sorteada, para não
+       sair um "parasita" que se alimenta por detritivoria. */
+    categoricalStep(cur, "modoTrofico", T.modoTrofico,
+      g.dieBase === "de" ? { bias: ["sa"] } : {});
   } else {
     g.corpoFrutiferoTipo = undefined; g.redeMicelialAlcance = undefined; g.esporoDispersao = undefined;
+    g.modoTrofico = undefined;
   }
 
   if (g.reino === "Ba") {
@@ -1172,8 +1277,15 @@ function runSpeciesSteps(cur, isPrimordialIntent) {
        outro gene travado por condição. */
     categoricalStep(cur, "metabolismoTipo", T.metabolismoTipo, { fixed: ["de", "qm", "ft"].includes(g.dieBase) ? g.dieBase : "de" });
     categoricalStep(cur, "formaColonia", T.formaColonia);
+    /* v39 — motilidade e respiração. Uma bactéria flagelada e uma imóvel
+       não se parecem em nada e saíam idênticas. Fotossintetizante é
+       aeróbia por definição do próprio metabolismo. */
+    categoricalStep(cur, "motilidade", T.motilidade);
+    categoricalStep(cur, "respiracaoO2", T.respiracaoO2,
+      g.dieBase === "ft" ? { fixed: "ae" } : {});
   } else {
     g.paredeCelularTipo = undefined; g.metabolismoTipo = undefined; g.formaColonia = undefined;
+    g.motilidade = undefined; g.respiracaoO2 = undefined;
   }
 
   // Passo 17 — Anomalia
@@ -1251,16 +1363,22 @@ function runSpeciesSteps(cur, isPrimordialIntent) {
    que é o comportamento antigo.
    ============================================================ */
 const GENES_TAXON_POR_CLASSE = {
-  MAM: ["glandulaMamaria", "pelagemDensidade", "dentesTipo", "termorregulacao", "gestacao"],
+  MAM: ["glandulaMamaria", "pelagemDensidade", "dentesTipo", "termorregulacao", "gestacao",
+    /* v39 — os 12 diagnósticos entram no FIM da lista, nunca no meio: a
+       posição é o que identifica o gene no bloco TXN, então inserir no
+       meio invalidaria todo código DRN2 já anotado. Acrescentar no fim é
+       sempre seguro — um código antigo simplesmente não traz estes campos. */
+    "facPrognatismo", "crnMento", "crnToro", "crnAbobada", "facNariz", "facEsclera",
+    "memRazao", "memPreensao", "locPostura", "vocAparato", "pelSudorese", "dimorfismo"],
   AVE: ["bicoFormato", "penaFuncao", "ovoCasca", "migratorio"],
   REP: ["escamaTipo", "venenoAparato", "regeneracaoCauda", "ectotermiaDependencia"],
   AMP: ["metamorfose", "peleToxinas", "respiracaoCutanea"],
   PSC: ["nadadeiraConfiguracao", "respiracaoBranquial", "bexigaNatatoria"],
   INS: ["metamorfoseTipo", "patasQtdEspecializada", "venenoOuFerroao", "coloniaTipo"],
   MOL: ["concha", "tentaculosQtd", "tintaDefensiva"],
-  VEG: ["raizTipo", "folhaTipo", "reproducaoEstrutura", "fotossinteseIntensidade"],
-  FUN: ["corpoFrutiferoTipo", "redeMicelialAlcance", "esporoDispersao"],
-  MIC: ["paredeCelularTipo", "metabolismoTipo", "formaColonia"],
+  VEG: ["raizTipo", "folhaTipo", "reproducaoEstrutura", "fotossinteseIntensidade", "arquiteturaCresc"],
+  FUN: ["corpoFrutiferoTipo", "redeMicelialAlcance", "esporoDispersao", "modoTrofico"],
+  MIC: ["paredeCelularTipo", "metabolismoTipo", "formaColonia", "motilidade", "respiracaoO2"],
 };
 /* Toda chave de táxon que existe em qualquer grupo — usada para estender
    DL_PESOS sem repetir a lista à mão. */
@@ -2092,10 +2210,17 @@ const ESTRATO_II = ["porte", "densidade", "morTorso", "locSecundario", "locVeloc
   "concha", "tentaculosQtd", "tintaDefensiva",
   "raizTipo", "folhaTipo", "reproducaoEstrutura",
   "corpoFrutiferoTipo", "esporoDispersao",
-  "paredeCelularTipo", "metabolismoTipo", "formaColonia"];
+  "paredeCelularTipo", "metabolismoTipo", "formaColonia",
+  /* v39 — os diagnósticos que mexem em ESTRUTURA (crânio, face, plano de
+     membros, postura) entram no Estrato II: são caros de mudar, como o
+     resto da arquitetura corporal. Os de acabamento ficam no III. */
+  "facPrognatismo", "crnMento", "crnToro", "crnAbobada", "memRazao", "memPreensao", "locPostura",
+  "modoTrofico", "arquiteturaCresc", "motilidade", "respiracaoO2"];
 const ESTRATO_III = ["tegCor", "tegPadrao", "asaFuncionalidade", "cdaFuncao", "dieFrequencia", "dieRestricao", "senVisao", "senOlfato", "senAudicao", "senTato", "senEspecial", "tolCiclo", "socEstrutura", "socAgressividade", "socSenciencia", "defArma", "defBlindagem", "defEstrategia",
   // Fase 3 — genes escalares novos por táxon (detalhe fino)
-  "pelagemDensidade", "ovoCasca", "ectotermiaDependencia", "respiracaoCutanea", "fotossinteseIntensidade", "redeMicelialAlcance"];
+  "pelagemDensidade", "ovoCasca", "ectotermiaDependencia", "respiracaoCutanea", "fotossinteseIntensidade", "redeMicelialAlcance",
+  // v39 — acabamento: nariz, esclera, voz, sudorese, dimorfismo
+  "facNariz", "facEsclera", "vocAparato", "pelSudorese", "dimorfismo"];
 
 /* Genes categóricos com tabela fixa — usados para rerrolar em deriva.
    Escalares (3d4-3, 0-9) deslocam ±1 em vez de rerrolar. */
@@ -2111,6 +2236,11 @@ const GENE_TABLE_MAP = {
   senEspecial: T.senEspecial, socEstrutura: T.socEstrutura, defArma: T.defArma, defEstrategia: T.defEstrategia,
   // Fase 3 — genes categóricos novos por táxon
   glandulaMamaria: T.glandulaMamaria, dentesTipo: T.dentesTipo, termorregulacao: T.termorregulacao, gestacao: T.gestacao,
+  // v39 — diagnósticos de mamífero e genes de alto sinal dos outros reinos
+  facPrognatismo: T.facPrognatismo, crnMento: T.crnMento, crnToro: T.crnToro, crnAbobada: T.crnAbobada,
+  facNariz: T.facNariz, facEsclera: T.facEsclera, memRazao: T.memRazao, memPreensao: T.memPreensao,
+  locPostura: T.locPostura, vocAparato: T.vocAparato,
+  modoTrofico: T.modoTrofico, arquiteturaCresc: T.arquiteturaCresc, motilidade: T.motilidade, respiracaoO2: T.respiracaoO2,
   bicoFormato: T.bicoFormato, penaFuncao: T.penaFuncao, migratorio: T.migratorio,
   escamaTipo: T.escamaTipo, venenoAparato: T.venenoAparato, regeneracaoCauda: T.regeneracaoCauda,
   metamorfose: T.metamorfose, peleToxinas: T.peleToxinas,
@@ -2123,7 +2253,9 @@ const GENE_TABLE_MAP = {
 };
 const ESCALAR_KEYS = new Set(["densidade", "locVelocidade", "repProle", "repMaturacao", "repLongevidade", "tegResistencia", "tegCorIntensidade", "cdaFuncao", "senVisao", "senOlfato", "senAudicao", "senTato", "senEspecialIntensidade", "socAgressividade", "defBlindagem", "asaFuncionalidade", "dieFrequencia", "socSenciencia", "socSencienciaBruta",
   // Fase 3 — genes escalares novos por táxon
-  "pelagemDensidade", "ovoCasca", "ectotermiaDependencia", "respiracaoCutanea", "fotossinteseIntensidade", "redeMicelialAlcance"]);
+  "pelagemDensidade", "ovoCasca", "ectotermiaDependencia", "respiracaoCutanea", "fotossinteseIntensidade", "redeMicelialAlcance",
+  // v39
+  "pelSudorese", "dimorfismo"]);
 
 /* Genes cujo valor decide se OUTROS genes existem, quais opções eles têm,
    ou que faixa podem assumir — ou seja, os que aparecem em alguma condição
@@ -2146,7 +2278,13 @@ const TETO_ESCALAR_POR_REINO = {
   Pl: { senVisao: { max: 1 }, senOlfato: { max: 4 }, senAudicao: { min: 0, max: 0 }, senTato: { max: 4 }, densidade: { min: 1, max: 6 } },
   Fu: { senVisao: { max: 1 }, senOlfato: { max: 4 }, senAudicao: { min: 0, max: 0 }, senTato: { max: 3 }, densidade: { min: 0, max: 4 } },
 };
-function limitesEscalar(g, key) { return TETO_ESCALAR_POR_REINO[g.reino]?.[key] || {}; }
+function limitesEscalar(g, key) {
+  /* v39 — sudorese écrina depende da pelagem: suar sob pelo denso não
+     resfria, então o teto cai. Trava condicional, logo tem de valer também
+     na deriva — é por isso que mora aqui e não no passo de construção. */
+  if (key === "pelSudorese" && g.classe === "MAM" && (g.pelagemDensidade ?? 0) >= 6) return { max: 3 };
+  return TETO_ESCALAR_POR_REINO[g.reino]?.[key] || {};
+}
 
 /* v28 — o mesmo princípio para genes CATEGÓRICOS. As restrições por reino
    introduzidas nesta versão (simetria, porte, estrutura social, modo de
@@ -2189,6 +2327,62 @@ const OPCOES_CATEGORICAS_POR_REINO = {
 function opcoesCategoricas(g, key) {
   const lista = OPCOES_CATEGORICAS_POR_REINO[g.reino]?.[key];
   return lista ? { restrict: lista } : {};
+}
+
+/* ============================================================
+   v39 — TRAVAS CONDICIONAIS (dependem de outro gene, não do reino)
+   ============================================================
+   `OPCOES_CATEGORICAS_POR_REINO` resolve travas que dependem do REINO.
+   Os diagnósticos precisam de travas que dependem de OUTRO GENE: preensão
+   exige braço, postura tem de concordar com a locomoção, fala exige
+   cognição. Isso não cabia naquela tabela.
+
+   A regra que o próprio código já enunciava na v28 vale aqui: uma trava
+   só é confiável quando os DOIS caminhos que escrevem o gene a respeitam.
+   Na primeira tentativa estas travas viviam só no passo de construção — a
+   deriva rerrolava na tabela inteira, produzia um mamífero sem braços com
+   "preensão de precisão", e a reconstrução pela seed normalizava de volta
+   e divergia. A suíte D7 pegou: 1 a 3 genomas infiéis em 300.
+
+   Por isso a função é única e é consultada nos dois lugares:
+   `runSpeciesSteps` na criação e `rerollGeneCategorico` na deriva.
+   ============================================================ */
+function opcoesCondicionais(g, key) {
+  if (g.classe !== "MAM") return {};
+  const sup = Number(String(g.memSup).replace("S", "")) || 0;
+  const inf = Number(String(g.memInf).replace("I", "")) || 0;
+  switch (key) {
+    case "memRazao":
+      // sem um dos pares, não há razão entre eles para declarar
+      return (!sup || !inf) ? { fixed: "eq" } : {};
+    case "memPreensao":
+      if (!sup) return { fixed: "ne" };
+      // preensão de precisão exige mão preênsil; casco e pata não pinçam
+      return g.memTerm === "mo" ? {} : { restrict: ["ne", "fo"] };
+    case "locPostura":
+      if (g.locPrimario === "Q") return { fixed: "qu" };
+      if (g.locPrimario === "B") return { restrict: ["er", "fa"] };
+      return {};
+    case "vocAparato":
+      // fala articulada exige cognição alta
+      return (g.socSenciencia ?? 0) >= 8 ? {} : { restrict: ["si", "mo"] };
+    default:
+      return {};
+  }
+}
+
+/* Mescla as travas de reino com as condicionais. `fixed` vence tudo: é a
+   trava mais forte e significa que o gene não tem escolha. Duas listas
+   `restrict` viram a interseção — e se a interseção for vazia, a trava
+   condicional (mais específica) prevalece. */
+function opcoesGene(g, key) {
+  const porReino = opcoesCategoricas(g, key);
+  const cond = opcoesCondicionais(g, key);
+  if (cond.fixed !== undefined) return cond;
+  if (!porReino.restrict) return cond;
+  if (!cond.restrict) return porReino;
+  const inter = porReino.restrict.filter((v) => cond.restrict.includes(v));
+  return { restrict: inter.length ? inter : cond.restrict };
 }
 
 const GENES_CONDICIONANTES = new Set([
@@ -2515,7 +2709,13 @@ function describeCreatureProse(g) {
   }
   p.push(locFrase);
 
-  let tegFrase = `O corpo é revestido por ${labelOf(T.tegTipo, g.tegTipo).toLowerCase()}, na cor ${labelOf(T.tegCor, g.tegCor).toLowerCase()} (intensidade ${g.tegCorIntensidade}), em padrão ${labelOf(T.tegPadrao, g.tegPadrao).toLowerCase()}, com resistência ${tier(g.tegResistencia)}.`;
+  /* v39 — "revestido por couro nu" é uma contradição literal, e "revestido
+     por pelo" com densidade 0 é outra. O verbo agora acompanha o tegumento:
+     couro/mucosa a criatura TEM; pelo, escama, pena ela é revestida por. */
+  const tegNu = ["Cr", "Mu"].includes(g.tegTipo);
+  let tegFrase = tegNu
+    ? `A superfície do corpo é ${labelOf(T.tegTipo, g.tegTipo).toLowerCase()}, sem pelagem, escama ou pena, na cor ${labelOf(T.tegCor, g.tegCor).toLowerCase()} (intensidade ${g.tegCorIntensidade}), em padrão ${labelOf(T.tegPadrao, g.tegPadrao).toLowerCase()}, com resistência ${tier(g.tegResistencia)}.`
+    : `O corpo é revestido por ${labelOf(T.tegTipo, g.tegTipo).toLowerCase()}, na cor ${labelOf(T.tegCor, g.tegCor).toLowerCase()} (intensidade ${g.tegCorIntensidade}), em padrão ${labelOf(T.tegPadrao, g.tegPadrao).toLowerCase()}, com resistência ${tier(g.tegResistencia)}.`;
   p.push(tegFrase);
 
   /* v26, correção #1 — a frase do crânio só existe para quem tem plano
@@ -2529,7 +2729,14 @@ function describeCreatureProse(g) {
     p.push(crnFrase);
 
     if (g.crnFormato !== "0") {
-      p.push(`No rosto: orelha ${labelOf(T.facOrelha, g.facOrelha).toLowerCase()}, focinho ${labelOf(T.facFocinho, g.facFocinho).toLowerCase()}, dentição ${g.facDenticao === "0" ? "ausente" : labelOf(T.facDenticao, g.facDenticao).toLowerCase()}.`);
+      /* v39 — a palavra "focinho" era, sozinha, metade do problema do
+         rosto simiesco: um gerador de imagem desenha focinho ao ler
+         "focinho", mesmo qualificado como "plano". Crânio humanoide passa
+         a usar "face"; o resto do bestiário continua com focinho, que ali
+         é a palavra certa. */
+      const humano = g.crnFormato === "hu";
+      const termoFocinho = humano ? "perfil facial" : "focinho"; // v39 — masculino, concorda com os rótulos da tabela
+      p.push(`No rosto: orelha ${labelOf(T.facOrelha, g.facOrelha).toLowerCase()}, ${termoFocinho} ${labelOf(T.facFocinho, g.facFocinho).toLowerCase()}, dentição ${g.facDenticao === "0" ? "ausente" : labelOf(T.facDenticao, g.facDenticao).toLowerCase()}.`);
     }
   }
   if (g.facOlhosQtd !== 0 && g.facOlhosQtd !== "0") {
@@ -2568,7 +2775,20 @@ function describeCreatureProse(g) {
 
   // Fase 3 — frases dos genes novos por táxon
   if (g.classe === "MAM") {
-    p.push(`Mamífero com termorregulação ${labelOf(T.termorregulacao, g.termorregulacao).toLowerCase()}, dentição ${labelOf(T.dentesTipo, g.dentesTipo).toLowerCase()}, gestação ${labelOf(T.gestacao, g.gestacao).toLowerCase()}, pelagem de densidade ${tier(g.pelagemDensidade)}${g.glandulaMamaria !== "au" ? ` e glândulas mamárias ${labelOf(T.glandulaMamaria, g.glandulaMamaria).toLowerCase()}` : ""}.`);
+    /* v39 — a menção à pelagem some quando o tegumento é nu: "couro nu" e
+       "pelagem de densidade muito baixo" na mesma criatura era a
+       contradição que sobrou da correção anterior. */
+    const trechoPelagem = tegNu
+      ? `, sem pelagem${g.pelSudorese >= 5 ? ` e com sudorese écrina ${g.pelSudorese >= 8 ? "intensa" : "desenvolvida"}` : ""}`
+      : `, pelagem de densidade ${tier(g.pelagemDensidade)}`;
+    p.push(`Mamífero com termorregulação ${labelOf(T.termorregulacao, g.termorregulacao).toLowerCase()}, dentição ${labelOf(T.dentesTipo, g.dentesTipo).toLowerCase()}, gestação ${labelOf(T.gestacao, g.gestacao).toLowerCase()}${trechoPelagem}${g.glandulaMamaria !== "au" ? ` e glândulas mamárias ${labelOf(T.glandulaMamaria, g.glandulaMamaria).toLowerCase()}` : ""}.`);
+
+    /* v39 — os diagnósticos ganham frase própria, em ordem de peso visual
+       (crânio e face primeiro, que é o que o gerador desenha em close). */
+    if (g.facPrognatismo !== undefined) {
+      p.push(`Crânio de abóbada ${labelOf(T.crnAbobada, g.crnAbobada).toLowerCase()}, face ${labelOf(T.facPrognatismo, g.facPrognatismo).toLowerCase()}, arcada superciliar ${labelOf(T.crnToro, g.crnToro).toLowerCase()}, queixo ${labelOf(T.crnMento, g.crnMento).toLowerCase()}, nariz ${labelOf(T.facNariz, g.facNariz).toLowerCase()}, esclera ${labelOf(T.facEsclera, g.facEsclera).toLowerCase()}.`);
+      p.push(`Postura ${labelOf(T.locPostura, g.locPostura).toLowerCase()}, com ${labelOf(T.memRazao, g.memRazao).toLowerCase()} e preensão manual ${labelOf(T.memPreensao, g.memPreensao).toLowerCase()}. Aparato vocal ${labelOf(T.vocAparato, g.vocAparato).toLowerCase()}, dimorfismo sexual ${tier(g.dimorfismo)}.`);
+    }
   }
   if (g.classe === "AVE") {
     p.push(`Ave de bico ${labelOf(T.bicoFormato, g.bicoFormato).toLowerCase()}, penas com função ${labelOf(T.penaFuncao, g.penaFuncao).toLowerCase()}, casca de ovo com resistência ${tier(g.ovoCasca)}, hábito ${labelOf(T.migratorio, g.migratorio).toLowerCase()}.`);
@@ -2589,16 +2809,18 @@ function describeCreatureProse(g) {
     p.push(`Molusco de concha ${labelOf(T.concha, g.concha).toLowerCase()}, ${g.tentaculosQtd === 99 ? "muitos" : g.tentaculosQtd} tentáculo(s)${g.tintaDefensiva === "pr" ? ", com tinta defensiva" : ""}.`);
   }
   if (g.reino === "Pl") {
+    p.push(`Arquitetura de crescimento ${labelOf(T.arquiteturaCresc, g.arquiteturaCresc).toLowerCase()}.`);
     p.push(`Raiz ${labelOf(T.raizTipo, g.raizTipo).toLowerCase()}, folhas do tipo ${g.folhaTipo === "au" ? "ausentes" : labelOf(T.folhaTipo, g.folhaTipo).toLowerCase()}, reprodução por ${labelOf(T.reproducaoEstrutura, g.reproducaoEstrutura).toLowerCase()}, intensidade fotossintética ${tier(g.fotossinteseIntensidade)}.`);
   }
   if (g.reino === "Fu") {
+    p.push(`Modo trófico ${labelOf(T.modoTrofico, g.modoTrofico).toLowerCase()}.`);
     p.push(`Corpo frutífero: ${labelOf(T.corpoFrutiferoTipo, g.corpoFrutiferoTipo).toLowerCase()}. Alcance da rede micelial ${tier(g.redeMicelialAlcance)}, dispersão de esporos por ${labelOf(T.esporoDispersao, g.esporoDispersao).toLowerCase()}.`);
   }
   if (g.reino === "Ba") {
     /* v32 — o metabolismo agora É a dieta (ver Passo 16.5), então a frase
        diz isso explicitamente em vez de listar dois rótulos que pareciam
        independentes e às vezes se contradiziam. */
-    p.push(`Parede celular ${labelOf(T.paredeCelularTipo, g.paredeCelularTipo).toLowerCase()}, obtendo energia por ${labelOf(T.metabolismoTipo, g.metabolismoTipo).toLowerCase()} (o mesmo modo de alimentação declarado no bloco DIE), colônia em formação ${labelOf(T.formaColonia, g.formaColonia).toLowerCase()}.`);
+    p.push(`Parede celular ${labelOf(T.paredeCelularTipo, g.paredeCelularTipo).toLowerCase()}, obtendo energia por ${labelOf(T.metabolismoTipo, g.metabolismoTipo).toLowerCase()} (o mesmo modo de alimentação declarado no bloco DIE), colônia em formação ${labelOf(T.formaColonia, g.formaColonia).toLowerCase()}, ${labelOf(T.motilidade, g.motilidade).toLowerCase()}, respiração ${labelOf(T.respiracaoO2, g.respiracaoO2).toLowerCase()}.`);
   }
 
   if (g.anomalias?.length) p.push(`Carrega ${g.anomalias.length > 1 ? "as anomalias" : "a anomalia"}: ${g.anomalias.map((a) => labelOf(T.ano, a).toLowerCase()).join(", ")}.`);
@@ -2719,13 +2941,34 @@ const CUSTO_ESTRATO = { I: 12, II: 4, III: 1 };
    banda fecha: o resultado deixa de depender de sorte. */
 const PESO_SALTO_REINO_BA = 0.85;
 
+/* ============================================================
+   v39 — BUG ANTIGO: metade dos genes era inalcançável pela deriva
+   ============================================================
+   Os limites deste sorteio eram números FIXOS — 11 para o Estrato I, 26
+   para o II, 18 para o III. Eram os tamanhos das listas na versão em que
+   a função foi escrita, e nunca foram atualizados quando as listas
+   cresceram.
+
+   Medido agora: ESTRATO_I tem 12, ESTRATO_II tem 66 e ESTRATO_III tem 29.
+   Ou seja, os genes das posições 27..66 do Estrato II e 19..29 do III
+   NUNCA eram sorteados. Na prática isso significa que os 36 genes por
+   táxon da Fase 3 (v25) jamais sofreram deriva em versão nenhuma: eles
+   eram gerados na criação da espécie e depois congelavam para sempre.
+   O último gene do Estrato I também estava fora.
+
+   Descoberto porque a suíte II mediu 0/12 diagnósticos alcançados em 720
+   ciclos e a causa não era dos genes novos — era desta função.
+
+   O limite agora sai do tamanho da lista, então nenhuma adição futura
+   volta a cair nesse buraco silenciosamente.
+   ============================================================ */
 function sortGeneAlvo(estrato, g) {
   if (estrato === "I") {
     if (g && g.reino === "Ba" && rnd() < PESO_SALTO_REINO_BA) return "reino";
-    let n; do { n = rollD(12); } while (n > 11); return ESTRATO_I[n - 1];
+    return ESTRATO_I[rollD(ESTRATO_I.length) - 1];
   }
-  if (estrato === "II") { let n; do { n = rollD(14) + (rnd() < 0.5 ? 0 : 14); } while (n > 26); return ESTRATO_II[n - 1]; }
-  let n; do { n = rollD(20); } while (n > 18); return ESTRATO_III[n - 1];
+  if (estrato === "II") return ESTRATO_II[rollD(ESTRATO_II.length) - 1];
+  return ESTRATO_III[rollD(ESTRATO_III.length) - 1];
 }
 
 function rerollGeneCategorico(g, key, fonte) {
@@ -2739,7 +2982,11 @@ function rerollGeneCategorico(g, key, fonte) {
      linhagem é a única que PODE atravessar; cair de volta em Ba gastava o
      salto estrutural mais caro do sistema para não mudar nada — e era 6% dos
      sorteios de travessia. */
-  const opts = (key === "reino" && g.reino === "Ba") ? { exclude: ["Ba"] } : opcoesCategoricas(g, key);
+  /* v39 — era opcoesCategoricas() (só travas de reino). Passou a ser
+     opcoesGene(), que soma as condicionais — senão a deriva reintroduz
+     exatamente as incoerências que a construção evita. */
+  const opts = (key === "reino" && g.reino === "Ba") ? { exclude: ["Ba"] } : opcoesGene(g, key);
+  if (opts.fixed !== undefined) return false; // gene sem escolha: a deriva não tem o que mexer
   const nums = validNumbers(table, opts);
   if (!nums.length) return false;
   let novoValor;
@@ -3980,6 +4227,15 @@ function normalizarGenomaEstavel(g, isPrimordial) {
 const GENE_TAXON_APLICAVEL = {
   glandulaMamaria: (g) => g.classe === "MAM", dentesTipo: (g) => g.classe === "MAM",
   termorregulacao: (g) => g.classe === "MAM", gestacao: (g) => g.classe === "MAM", pelagemDensidade: (g) => g.classe === "MAM",
+  // v39 — os 12 diagnósticos valem para toda a classe MAM (ver nota de escopo nas tabelas)
+  facPrognatismo: (g) => g.classe === "MAM", crnMento: (g) => g.classe === "MAM",
+  crnToro: (g) => g.classe === "MAM", crnAbobada: (g) => g.classe === "MAM",
+  facNariz: (g) => g.classe === "MAM", facEsclera: (g) => g.classe === "MAM",
+  memRazao: (g) => g.classe === "MAM", memPreensao: (g) => g.classe === "MAM",
+  locPostura: (g) => g.classe === "MAM", vocAparato: (g) => g.classe === "MAM",
+  pelSudorese: (g) => g.classe === "MAM", dimorfismo: (g) => g.classe === "MAM",
+  modoTrofico: (g) => g.reino === "Fu", arquiteturaCresc: (g) => g.reino === "Pl",
+  motilidade: (g) => g.reino === "Ba", respiracaoO2: (g) => g.reino === "Ba",
   bicoFormato: (g) => g.classe === "AVE", penaFuncao: (g) => g.classe === "AVE", migratorio: (g) => g.classe === "AVE", ovoCasca: (g) => g.classe === "AVE",
   escamaTipo: (g) => g.classe === "REP", venenoAparato: (g) => g.classe === "REP", regeneracaoCauda: (g) => g.classe === "REP", ectotermiaDependencia: (g) => g.classe === "REP",
   metamorfose: (g) => g.classe === "AMP", peleToxinas: (g) => g.classe === "AMP", respiracaoCutanea: (g) => g.classe === "AMP",
@@ -5787,9 +6043,38 @@ function gerarPromptImagem(g, individual, linhagemId) {
     Fu: " no animal anatomy, no face, no eyes, no mouth, no skull, no limbs, no legs, no wings, no fur, no scales",
     Ba: " no animal anatomy, no face, no limbs, no macroscopic creature",
   };
+  /* v39 — ÂNCORA DE CONJUNTO. A descrição sempre foi uma lista de traços
+     e nunca dizia o que a criatura É. Um gerador de imagem que recebe só
+     traços monta o bicho a partir do protótipo mais próximo que conhece —
+     e "mamífero bípede de mão preênsil" tem como protótipo um símio, por
+     mais que cada traço individual esteja correto.
+
+     A âncora é derivada, não um gene: ela lê os diagnósticos já sorteados
+     e nomeia o gestalt resultante. Só dispara quando os traços de fato
+     convergem, então ela nunca contradiz o genoma — se a criatura tiver
+     arcada maciça e face prognata, a âncora arcaica é a verdadeira. */
+  const ancoraGestalt = (() => {
+    if (g.classe !== "MAM" || g.crnFormato !== "hu") return null;
+    const pontosSapiens =
+      (g.facPrognatismo === "or" ? 1 : 0) + (g.crnMento === "pj" ? 1 : 0) +
+      (g.crnToro === "au" ? 1 : 0) + (g.crnAbobada === "gl" ? 1 : 0) +
+      (g.facNariz === "pj" ? 1 : 0) + (g.facEsclera === "vi" ? 1 : 0) +
+      (g.memRazao === "pn" ? 1 : 0) + (g.memPreensao === "pc" ? 1 : 0) +
+      (g.locPostura === "er" ? 1 : 0) + (g.vocAparato === "ar" ? 1 : 0) +
+      (["Cr", "Mu"].includes(g.tegTipo) ? 1 : 0);
+    if (pontosSapiens >= 9) {
+      return "an anatomically fully modern human being (Homo sapiens) — NOT an ape, NOT a primate, NOT an early hominid, NOT Australopithecus or Homo erectus";
+    }
+    if (pontosSapiens >= 6) return "an archaic human — hominid, clearly not an ape but not fully modern either";
+    if (pontosSapiens >= 3) return "an early hominid, ape-like but bipedal";
+    return null;
+  })();
+
   const abertura = ANCORA_REINO[g.reino]
     ? `${ANCORA_REINO[g.reino]}. Subject: ${nomeRef}.`
-    : `Fantasy creature concept art of ${nomeRef}.`;
+    : ancoraGestalt
+      ? `Character concept art of ${nomeRef}. OVERALL IDENTITY (read this before the trait list — it is the gestalt the traits add up to): ${ancoraGestalt}.`
+      : `Fantasy creature concept art of ${nomeRef}.`;
   const linhas = [
     abertura,
     ``,
@@ -5801,7 +6086,9 @@ function gerarPromptImagem(g, individual, linhagemId) {
     ``,
     ANCORA_REINO[g.reino]
       ? `STYLE: detailed naturalist/botanical plate illustration, digital painting, soft directional lighting, structurally coherent with the description above, highly detailed surface texture (bark, cuticle, membrane, mycelium), muted natural color palette unless the description states otherwise.`
-      : `STYLE: detailed fantasy concept art, digital painting, dramatic rim lighting, anatomically coherent with the description above, highly detailed skin/scale/fur texture, muted natural color palette unless the description states otherwise.`,
+      : ancoraGestalt
+        ? `STYLE: realistic character concept art, digital painting, soft natural lighting, strictly anatomically coherent with the description above, highly detailed bare skin texture, natural skin tones.`
+        : `STYLE: detailed fantasy concept art, digital painting, dramatic rim lighting, anatomically coherent with the description above, highly detailed skin/scale/fur texture, muted natural color palette unless the description states otherwise.`,
     ANCORA_REINO[g.reino]
       ? `COMPOSITION: single full specimen reference plate, plain neutral background so the structure reads clearly, no other organisms, no scenery, no characters.`
       : `COMPOSITION: single full-body reference shot, slight 3/4 angle, plain neutral studio background so the anatomy reads clearly, no other characters, no scenery.`,

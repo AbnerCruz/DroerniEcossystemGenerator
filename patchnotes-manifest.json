@@ -1,5 +1,11 @@
 [
   {
+    "id": "v39",
+    "titulo": "v39 — Genes diagnósticos, âncora de gestalt e correção da deriva",
+    "arquivo": "patchnotes-v39.md",
+    "data": "2026-08-08"
+  },
+  {
     "id": "v38",
     "titulo": "v38 — Genes por táxon dentro do código DRN2 (bloco TXN)",
     "arquivo": "patchnotes-v38.md",
