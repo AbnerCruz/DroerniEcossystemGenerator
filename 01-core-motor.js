@@ -2296,7 +2296,7 @@ const ESTRATO_II = ["porte", "densidade", "morTorso", "locSecundario", "locVeloc
   // v40 — BAS. Sem isto os três genes do nó basal nunca derivariam, e
   // `organizacaoTecidual` é pré-requisito das DUAS saídas do cladograma:
   // a linhagem ficaria presa em BAS para sempre (medido: 0 travessias).
-  "organizacaoTecidual", "alimentacaoBasal", "esqueletoHidrostatico",
+  "organizacaoTecidual", "alimentacaoBasal",
   "raizTipo", "folhaTipo", "reproducaoEstrutura",
   "corpoFrutiferoTipo", "esporoDispersao",
   "paredeCelularTipo", "metabolismoTipo", "formaColonia",
@@ -2308,6 +2308,14 @@ const ESTRATO_II = ["porte", "densidade", "morTorso", "locSecundario", "locVeloc
 const ESTRATO_III = ["tegCor", "tegPadrao", "asaFuncionalidade", "cdaFuncao", "dieFrequencia", "dieRestricao", "senVisao", "senOlfato", "senAudicao", "senTato", "senEspecial", "tolCiclo", "socEstrutura", "socAgressividade", "socSenciencia", "defArma", "defBlindagem", "defEstrategia",
   // Fase 3 — genes escalares novos por táxon (detalhe fino)
   "pelagemDensidade", "ovoCasca", "ectotermiaDependencia", "respiracaoCutanea", "fotossinteseIntensidade", "redeMicelialAlcance",
+  /* v40.1 — `esqueletoHidrostatico` estava no Estrato II, sozinho entre os
+     escalares de táxon (todos os outros sempre foram III). Era incoerência
+     minha, e cara: com custo 4 dentro de um sorteio de ~30 genes
+     aplicáveis, ele quase não derivava — a distribuição real ficava
+     empilhada no valor ancestral (1.767 de 4.475 invertebrados basais no
+     exato 4). Como ele é pré-requisito das DUAS saídas do nó basal, era o
+     gargalo que represava 64% da árvore inteira em BAS. */
+  "esqueletoHidrostatico",
   // v39 — acabamento: nariz, esclera, voz, sudorese, dimorfismo
   "facNariz", "facEsclera", "vocAparato", "pelSudorese", "dimorfismo"];
 
@@ -4227,6 +4235,9 @@ const ESCADA_HIDRICA = ["aq", "sa", "um", "ms", "xe"];
    consulta exatamente a mesma função que a deriva. */
 /* Até que degrau cada estágio permite chegar. Índices de ESCADA_HIDRICA. */
 const TETO_HIDRICO_POR_ESTAGIO = [0, 3, 4];
+/* v40.1 — sinaliza para o ciclo de deriva seguinte que a classe já foi
+   atravessada neste tique pela conquista de ambiente. */
+let __travessiaDeColonizacaoPendente = false;
 const CLASSES_POR_ESTAGIO = [["BAS", "PSC", "MOL", "INS"], ["BAS", "PSC", "MOL", "INS", "AMP", "REP"], null];
 const CHANCE_COLONIZACAO_HIDRICA = 0.05;
 const CHANCE_COLONIZACAO_CLASSE = 0.04;
@@ -4263,7 +4274,7 @@ function avancarColonizacao(g, estagio, ehConquistadora) {
     const opcoes = destinosDeClasse(g).filter((c) => !permitidas || permitidas.includes(c));
     if (opcoes.length) {
       const destino = opcoes[Math.floor(rnd() * opcoes.length)];
-      if (aplicarTransicaoClasse(g, destino)) mudou = { gene: "classe", valor: g.classe };
+      if (aplicarTransicaoClasse(g, destino)) { mudou = { gene: "classe", valor: g.classe }; __travessiaDeColonizacaoPendente = true; }
     }
   }
   if (mudou && mudou.gene !== "classe") Object.assign(g, normalizarGenoma(g, false));
@@ -4520,11 +4531,21 @@ const PRE_REQUISITOS_CLASSE = {
      leva ciclos se comprometendo com um lado antes de poder atravessar —
      que é o comportamento gradual pedido. */
   "BAS>MOL": { teste: (g) => g.organizacaoTecidual === "ce" && Number(g.esqueletoHidrostatico ?? 0) >= 6 && ["Mu", "Cs", "Cn"].includes(g.tegTipo), falta: "celoma, corpo hidrostático firme e tegumento capaz de secretar concha" },
-  "BAS>PSC": { teste: (g) => g.organizacaoTecidual === "ce" && Number(g.esqueletoHidrostatico ?? 9) <= 3 && g.locPrimario === "N", falta: "celoma, enrijecimento axial e natação como locomoção primária" },
+  "BAS>PSC": { teste: (g) => g.organizacaoTecidual === "ce" && Number(g.esqueletoHidrostatico ?? 9) <= 3, falta: "celoma e enrijecimento axial" },
   "MOL>INS": { teste: (g) => ["Cs", "Cn"].includes(g.tegTipo) || g.memApendices !== "0X", falta: "exoesqueleto endurecido ou apêndices articulados" },
   "PSC>AMP": { teste: (g) => g.tolHidrica !== "aq" && g.memApendices !== "0X", falta: "saída da água obrigatória e nadadeiras lobadas" },
   "AMP>REP": { teste: (g) => g.tegTipo === "Cr" && !["aq", "sa"].includes(g.tolHidrica), falta: "pele impermeável e independência da água" },
-  "REP>MAM": { teste: (g) => Number(g.ectotermiaDependencia ?? 9) <= 4, falta: "dependência de ectotermia reduzida a 4 ou menos" },
+  /* v40.1 — o portão do mamífero era assimétrico em relação ao da ave, e a
+     assimetria não era intencional. Medido em 71 répteis: 9 já satisfaziam
+     o portão da ave (asa + par superior livre) e só 3 satisfaziam o do
+     mamífero, porque este exigia uma caminhada aleatória de 3 degraus para
+     baixo num escalar que parte de 7 — e a distribuição real do gene fica
+     empilhada em 7, já que uma linhagem de réptil raramente vive ciclos
+     suficientes para andar tanto. Resultado prático: ave saía, mamífero
+     nunca. Agora o portão são as DUAS apomorfias que de fato definem o
+     grupo — pele nua (de onde sai o pelo) e endotermia parcial —, com o
+     escalar a 2 degraus em vez de 3. */
+  "REP>MAM": { teste: (g) => g.tegTipo === "Cr" && Number(g.ectotermiaDependencia ?? 9) <= 5, falta: "pele nua e dependência de ectotermia reduzida a 5 ou menos" },
   "REP>AVE": { teste: (g) => g.asaQtd === 2 && g.memSup === "0S", falta: "um par de asas ocupando o par de membros superiores" },
 };
 
@@ -4639,7 +4660,13 @@ function aplicarCicloDeriva(g, orcamentoAtual, fonteFixa) {
      de a especiação registrar o peixe do meio. Cada travessia é um evento
      de especiação por si só — o degrau seguinte espera o próximo ciclo, e é
      assim que a espécie intermediária existe na árvore. */
-  let travessiaNesteCiclo = false;
+  /* v40.1 — a conquista de ambiente roda ANTES do ciclo de deriva, no mesmo
+     tique (ver avancarCicloNaLinhagem). Se as duas atravessassem a classe,
+     saíam dois degraus antes de a especiação cortar: legal no cladograma,
+     mas o usuário vê BAS→AMP num salto só, que é o que a v40 existe para
+     eliminar. Uma travessia por tique, venha de onde vier. */
+  let travessiaNesteCiclo = __travessiaDeColonizacaoPendente;
+  __travessiaDeColonizacaoPendente = false;
 
   let guard = 0;
   while (guard++ < 200) {

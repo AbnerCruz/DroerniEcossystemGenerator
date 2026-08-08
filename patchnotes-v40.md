@@ -238,3 +238,79 @@ tem quatro travessias, cada uma com apomorfia própria. Em 1.000 ciclos com 4
 primordiais saem poucas unidades. Isso é o comportamento pedido (nada de
 salto brusco), mas quem quiser um mamífero rápido deve usar o montador ou a
 busca por DNA-alvo, não esperar a deriva.
+
+---
+
+# v40.1 — Correção de escala: o mamífero que nunca chegava
+
+## O relato
+
+> "Testei várias vezes, 1, 2, 3 primordiais, 1000 ciclos de deriva. Na
+> prática, na mediana, nenhum mamífero está sendo gerado. Acredito que o
+> sistema esteja certo, então é uma questão de escala."
+
+Metade certo. A cadeia estava correta, mas a escala necessária era maior do
+que precisava ser — por uma incoerência que ficou na v40.
+
+## O gargalo real
+
+Medido em 4.475 invertebrados basais: **1.767 deles tinham
+`esqueletoHidrostatico` exatamente no valor ancestral (4)**. O gene mal
+derivava. E ele é pré-requisito das **duas** saídas do nó basal.
+
+Causa: eu o havia colocado no Estrato II (custo 4), sozinho entre os
+escalares de táxon — `ectotermiaDependencia`, `respiracaoCutanea`,
+`pelagemDensidade`, `ovoCasca`, `fotossinteseIntensidade` e
+`redeMicelialAlcance` sempre estiveram no Estrato III (custo 1). Com custo 4
+dentro de um sorteio de ~30 genes aplicáveis, ele praticamente congelava —
+e represava 64% da árvore inteira em BAS.
+
+Corrigido: `esqueletoHidrostatico` foi para o Estrato III, onde os outros
+escalares de táxon sempre estiveram.
+
+## O portão do mamífero era assimétrico
+
+Medido em 71 répteis: 9 já satisfaziam o portão da ave (asa + par superior
+livre) e só 3 satisfaziam o do mamífero, que exigia uma caminhada aleatória
+de **três** degraus para baixo num escalar que parte de 7. Resultado
+prático: ave saía, mamífero nunca.
+
+O portão passou a ser as duas apomorfias que de fato definem o grupo — pele
+nua (de onde sai o pelo) e endotermia parcial:
+
+`REP → MAM` agora exige `tegTipo = "Cr"` **e** `ectotermiaDependencia ≤ 5`.
+
+## Uma travessia por tique
+
+A conquista de ambiente roda **antes** do ciclo de deriva, no mesmo tique.
+Quando as duas atravessavam a classe, saíam dois degraus antes de a
+especiação cortar — legal no cladograma, mas o usuário via `BAS→AMP` num
+salto só, que é justamente o que a v40 existe para eliminar. Agora vale uma
+travessia por tique, venha da deriva ou da conquista. Medido depois da
+correção: 0 saltos de dois degraus.
+
+## Números
+
+**3 primordiais, 1.000 ciclos, 10 rodadas:**
+
+| | v40 | v40.1 |
+|---|---|---|
+| rodadas com ao menos 1 mamífero | 0/6 | **7/10** |
+| mamíferos (mediana) | 0 | **5** |
+| profundidade máxima do clado | 3 | 4 |
+
+**3 primordiais, 2.000 ciclos:** mediana de 11 mamíferos e 46 aves,
+profundidade 4 em todas as rodadas.
+
+**1 primordial, 1.000 ciclos:** 3/8 rodadas com mamífero. Uma linhagem só é
+volátil por natureza — quem quiser mamífero com confiança usa 2-3
+primordiais, ou 2.000 ciclos.
+
+**Bateria:** 245 checagens, 0 falhas reais. Suíte JJ estável em 5 rodadas.
+
+## O que continua valendo
+
+Mamífero e ave seguem sendo o fim de uma cadeia de quatro travessias, cada
+uma com apomorfia própria. Eles chegam **tarde** de propósito — é o preço de
+não haver salto brusco. O que a v40.1 corrige é a cadeia estar mais lenta do
+que o projeto pedia, não a lentidão em si.

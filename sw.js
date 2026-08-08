@@ -22,7 +22,7 @@
    inclusive instalado na tela inicial.
    ============================================================ */
 
-const VERSAO = "drn2-v40";
+const VERSAO = "drn2-v40-1";
 const CACHE_CASCA = `${VERSAO}-casca`;
 const CACHE_CDN = `${VERSAO}-cdn`;
 
