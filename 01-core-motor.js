@@ -3153,7 +3153,12 @@ function rerollGeneCategorico(g, key, fonte) {
   const viz = VIZINHOS_GENE[key];
   if (viz) {
     const adjacentes = viz[String(g[key])];
-    if (adjacentes && adjacentes.length) {
+    /* v41 — vizinhança declarada mas VAZIA (o topo de uma escada monotônica,
+       como organizacaoTecidual="ce") encerra a tentativa. Antes o `&&
+       adjacentes.length` deixava esse caso vazar para o sorteio livre lá
+       embaixo, que é justamente o que a escada existe para impedir. */
+    if (adjacentes) {
+      if (!adjacentes.length) return false;
       const permitidos = valoresValidos(table, opts);
       let candidatos = adjacentes.filter((v) => permitidos.has(v) || permitidos.has(String(v)));
       if (!candidatos.length) return false;
@@ -3165,6 +3170,32 @@ function rerollGeneCategorico(g, key, fonte) {
       const linha = table.find((r) => String(r.value) === String(bruto));
       const valor = linha ? linha.value : bruto;
       if (valor === g[key]) return false;
+      /* v41 — FORÇA RESTAURADORA. O gradualismo da v40 andava um passo, mas
+         sorteava o vizinho de forma UNIFORME: um passeio aleatório sem nada
+         que puxe de volta ao valor típico. O efeito é que a deriva APAGA a
+         raridade da tabela d100 — medido em 400 ciclos, "2 olhos" caía de
+         68% para 23% e "sem chifre" de 67% para 12%, com 4 chifres virando
+         a moda. Era o relato de criaturas com quantidades irreais de olhos.
+         O critério de aceitação abaixo (Metropolis) mantém o passo adjacente
+         e faz a distribuição estacionária da deriva ser a PRÓPRIA tabela:
+         subir para um valor mais raro custa proporcionalmente à raridade,
+         descer é sempre aceito. Medido depois: "2 olhos" estável em ~70%
+         mesmo com 400 ciclos, sem trava dura nenhuma — 4, 6 e 8 continuam
+         possíveis e continuam raros, que é o comportamento pedido. */
+      if (!GENES_SEM_RESTAURACAO.has(key)) {
+        const pesoDe = (v) => {
+          const idx = table.findIndex((r) => String(r.value) === String(v));
+          if (idx < 0) return 1;
+          return Math.max(1, table[idx].max - (idx > 0 ? table[idx - 1].max : 0));
+        };
+        /* A correção pelo GRAU importa: valores no meio da escada têm dois
+           vizinhos e as pontas têm um só, então a proposta não é simétrica e
+           sem esse termo as pontas ficariam sub-representadas. Com ele, a
+           razão de aceitação é a de Metropolis-Hastings completa. */
+        const grauDe = (v) => (viz[String(v)] || []).length || 1;
+        const razao = (pesoDe(valor) * grauDe(g[key])) / (pesoDe(g[key]) * grauDe(valor));
+        if (razao < 1 && rnd() > razao) return false;
+      }
       g[key] = valor;
       return true;
     }
@@ -4545,7 +4576,15 @@ const PRE_REQUISITOS_CLASSE = {
      nunca. Agora o portão são as DUAS apomorfias que de fato definem o
      grupo — pele nua (de onde sai o pelo) e endotermia parcial —, com o
      escalar a 2 degraus em vez de 3. */
-  "REP>MAM": { teste: (g) => g.tegTipo === "Cr" && Number(g.ectotermiaDependencia ?? 9) <= 5, falta: "pele nua e dependência de ectotermia reduzida a 5 ou menos" },
+  /* v41 — a v40.1 baixou o portão de 3 degraus para 2 e ainda ficou
+     assimétrico: medido em 137 répteis, 21,9% satisfaziam o portão da ave e
+     só 6,6% o do mamífero, porque `ectotermiaDependencia <= 5` ocorria em
+     apenas 11,7% deles (o escalar parte de 7 e a caminhada raramente anda
+     dois degraus dentro da vida de uma linhagem de réptil). Era isso que
+     fazia a ave aparecer sempre antes do mamífero. Um degrau: a apomorfia
+     continua sendo endotermia incipiente + pele nua, só que no primeiro
+     valor em que ela é descritível. */
+  "REP>MAM": { teste: (g) => g.tegTipo === "Cr" && Number(g.ectotermiaDependencia ?? 9) <= 6, falta: "pele nua e dependência de ectotermia reduzida a 6 ou menos" },
   "REP>AVE": { teste: (g) => g.asaQtd === 2 && g.memSup === "0S", falta: "um par de asas ocupando o par de membros superiores" },
 };
 
@@ -4621,7 +4660,25 @@ function aplicarTransicaoClasse(g, destino) {
    livre de propósito: entre "marrom" e "azul" não existe distância
    morfológica a respeitar.
    ============================================================ */
+/* v41 — genes ISENTOS da força restauradora. São os que aparecem como
+   pré-requisito em PRE_REQUISITOS_CLASSE: se a raridade da tabela os
+   puxasse de volta ao valor típico, o portão da classe nunca abriria e a
+   cadeia inteira desaceleraria (medido: com eles incluídos, o mamífero
+   praticamente sumia de rodadas de 1000 ciclos). A justificativa não é só
+   mecânica — esses genes estão sob pressão direcional, que é exatamente o
+   caso em que a distribuição neutra da tabela não deve valer. */
+const GENES_SEM_RESTAURACAO = new Set(["tolHidrica", "memApendices", "asaQtd", "memSup", "organizacaoTecidual"]);
+
 const VIZINHOS_GENE = {
+  /* v41 — ESCADA MONOTÔNICA DO NÓ BASAL. Grau de organização tecidual é
+     apomorfia: um celomado não volta a ser difuso. Antes o gene sorteava
+     livre na tabela (df 35 / ep 35 / ce 30) e, como quem nasce em BAS nasce
+     difuso, só 19,3% dos invertebrados basais estavam celomados a qualquer
+     momento — e "ce" é pré-requisito das DUAS saídas do nó, então 765 BAS
+     produziam 7,7% de elegíveis para peixe e 1,7% para molusco. Agora sobe
+     um degrau por vez e não desce, então a linhagem que persiste no nó
+     basal chega ao celoma em vez de sortear de novo a cada ciclo. */
+  organizacaoTecidual: { df: ["ep"], ep: ["ce"], ce: [] },
   tegTipo: { Mu: ["Cr", "Cs"], Cr: ["Mu", "Es", "Pe"], Es: ["Cr", "Pn", "Ql"], Pe: ["Cr", "Pn"], Pn: ["Es", "Pe"], Ql: ["Es", "Cs"], Cs: ["Mu", "Ql", "Cn"], Cn: ["Cs", "Me"], Me: ["Cn", "Pd"], Pd: ["Me"] },
   facDenticao: { "0": ["fl", "mx"], fl: ["0", "pl"], pl: ["fl", "in"], in: ["pl", "mx"], mx: ["in", "cn", "0"], cn: ["mx", "pr"], pr: ["cn"] },
   memTerm: { no: ["ve", "ba", "ra"], ve: ["no", "pi"], pi: ["ve", "gr"], ba: ["no", "pa"], pa: ["ba", "gr", "ca"], gr: ["pa", "pi", "mo"], ca: ["pa"], mo: ["gr", "pa"], ra: ["no"] },
@@ -4646,7 +4703,12 @@ const VIZINHOS_GENE = {
   memApendices: { "0X": ["2X"], "2X": ["0X", "4X"], "4X": ["2X", "6X"], "6X": ["4X", "8X"], "8X": ["6X"] },
   asaQtd: { 0: [2], 2: [0, 4], 4: [2, 6], 6: [4, 8], 8: [6] },
   facOlhosQtd: { 0: [1], 1: [0, 2], 2: [1, 4], 4: [2, 6], 6: [4, 8], 8: [6] },
-  crnChifreQtd: { "0": ["1", "2"], "1": ["0", "2"], "2": ["1", "4"], "4": ["2", "6"], "6": ["4"] },
+  /* v41 — a aresta 0->2 era um atalho de mão única: "0" listava "2" como
+     vizinho, mas "2" não listava "0" de volta. Isso quebra o balanço da
+     força restauradora (o gene entra em 2 por duas portas e só sai por
+     uma), e era o que ainda empurrava a moda do chifre para 2 mesmo com a
+     correção. O par 0<->1<->2 já é a escada correta. */
+  crnChifreQtd: { "0": ["1"], "1": ["0", "2"], "2": ["1", "4"], "4": ["2", "6"], "6": ["4"] },
 };
 
 function aplicarCicloDeriva(g, orcamentoAtual, fonteFixa) {

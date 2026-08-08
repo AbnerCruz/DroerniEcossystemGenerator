@@ -543,6 +543,106 @@ async function suiteEcossistema({ suite, chk, info }, prog) {
   prog(1);
 }
 
+/* ============================================================
+   KK · Força restauradora e escada do nó basal (v41)
+   ------------------------------------------------------------
+   A v40 introduziu o gradualismo (VIZINHOS_GENE) mas sorteava o vizinho
+   uniformemente: um passeio aleatório sem nada que puxe de volta. O efeito
+   medido era que a deriva APAGAVA a raridade da tabela d100 — "2 olhos"
+   caía de 68% para 23% em 400 ciclos e 4 chifres virava a moda. Esta suíte
+   existe para que isso não volte por descuido: ela compara a distribuição
+   de um gene ornamental na criação e depois de muitos ciclos de deriva, e
+   exige que o valor modal continue modal.
+   ============================================================ */
+async function suiteForcaRestauradora({ suite, chk, info }, prog) {
+  suite("KK · Força restauradora e escada basal (v41)");
+  resetarMotor(); setLogVerbosidade("resumido");
+
+  const N = 160, CICLOS = 400;
+  const amostrar = (ciclos) => {
+    const cont = { facOlhosQtd: {}, crnChifreQtd: {} };
+    let feitas = 0;
+    while (feitas < N) {
+      const { g } = buildSpecies(null, undefined, false, false);
+      if (g.reino !== "An") continue;
+      let orc = 0;
+      for (let i = 0; i < ciclos; i++) { const r = aplicarCicloDeriva(g, orc); orc = (r && r.orcamentoRestante) || 0; }
+      for (const k of Object.keys(cont)) cont[k][g[k]] = (cont[k][g[k]] || 0) + 1;
+      feitas++;
+    }
+    return cont;
+  };
+  const antes = amostrar(0);
+  prog(0.5);
+  const depois = amostrar(CICLOS);
+  prog(0.85);
+
+  const frac = (c, v) => (c[v] || 0) / N;
+  chk("Dois olhos continuam sendo o padrão depois de 400 ciclos de deriva",
+    frac(depois.facOlhosQtd, 2) >= 0.5,
+    `criação ${(100 * frac(antes.facOlhosQtd, 2)).toFixed(0)}% → deriva ${(100 * frac(depois.facOlhosQtd, 2)).toFixed(0)}%`);
+  chk("Olho poliocular (6 ou 8) continua raro depois da deriva",
+    frac(depois.facOlhosQtd, 6) + frac(depois.facOlhosQtd, 8) <= 0.25,
+    JSON.stringify(depois.facOlhosQtd));
+  chk("Ausência de chifre continua sendo o valor modal depois da deriva",
+    frac(depois.crnChifreQtd, "0") >= 0.4,
+    `criação ${(100 * frac(antes.crnChifreQtd, "0")).toFixed(0)}% → deriva ${(100 * frac(depois.crnChifreQtd, "0")).toFixed(0)}%`);
+
+  /* A vizinhança precisa ser um grafo SIMÉTRICO para o critério de
+     aceitação valer: uma aresta de mão única faz o valor de destino
+     acumular probabilidade que a tabela não lhe deu (era o caso de
+     crnChifreQtd 0->2). As exceções abaixo são deliberadas: valores de
+     saída única, dos quais a deriva sai mas não volta. */
+  const SAIDA_UNICA = new Set(["organizacaoTecidual", "memTerm", "locPrimario", "dieBase", "repModo", "cdaTipo", "asaTipo"]);
+  const assimetricos = [];
+  for (const [gene, mapa] of Object.entries(VIZINHOS_GENE)) {
+    if (SAIDA_UNICA.has(gene)) continue;
+    for (const [origem, vizinhos] of Object.entries(mapa)) {
+      for (const destino of vizinhos) {
+        const volta = mapa[String(destino)];
+        if (!volta || !volta.map(String).includes(String(origem))) assimetricos.push(`${gene}:${origem}->${destino}`);
+      }
+    }
+  }
+  chk("A vizinhança dos genes ornamentais é simétrica", assimetricos.length === 0, assimetricos.join(", "));
+
+  chk("Os genes-portão de classe estão isentos da força restauradora",
+    ["tolHidrica", "memApendices", "asaQtd", "memSup"].every((k) => GENES_SEM_RESTAURACAO.has(k)),
+    [...GENES_SEM_RESTAURACAO].join(", "));
+
+  /* A escada do nó basal é monotônica: quem chega a celomado não volta. */
+  chk("A organização tecidual só avança, nunca regride",
+    VIZINHOS_GENE.organizacaoTecidual.df.join() === "ep"
+    && VIZINHOS_GENE.organizacaoTecidual.ep.join() === "ce"
+    && VIZINHOS_GENE.organizacaoTecidual.ce.length === 0);
+
+  let regrediu = 0, chegouCe = 0;
+  for (let i = 0; i < 60; i++) {
+    const { g } = buildSpecies(null, { reino: "An", classe: "BAS" }, false, false);
+    if (g.classe !== "BAS") continue;
+    g.organizacaoTecidual = "df";
+    const ordem = { df: 0, ep: 1, ce: 2 };
+    let anterior = 0, orc = 0;
+    for (let ciclo = 0; ciclo < 120; ciclo++) {
+      const r = aplicarCicloDeriva(g, orc); orc = (r && r.orcamentoRestante) || 0;
+      if (g.classe !== "BAS") break;
+      const atual = ordem[g.organizacaoTecidual] ?? 0;
+      if (atual < anterior) regrediu++;
+      anterior = atual;
+    }
+    if ((ordem[g.organizacaoTecidual] ?? 0) === 2) chegouCe++;
+  }
+  chk("Nenhuma linhagem basal regride o grau de organização tecidual", regrediu === 0, `${regrediu} regressão(ões)`);
+  info("Basais que alcançam o celoma em 120 ciclos", `${chegouCe}/60`);
+
+  /* O portão do mamífero deixou de ser mais estreito que o da ave. */
+  chk("O portão do mamífero pede um degrau de ectotermia, não dois",
+    PRE_REQUISITOS_CLASSE["REP>MAM"].teste({ tegTipo: "Cr", ectotermiaDependencia: 6 })
+    && !PRE_REQUISITOS_CLASSE["REP>MAM"].teste({ tegTipo: "Es", ectotermiaDependencia: 6 })
+    && !PRE_REQUISITOS_CLASSE["REP>MAM"].teste({ tegTipo: "Cr", ectotermiaDependencia: 7 }));
+  prog(1);
+}
+
 async function suitePerformance({ suite, chk, info }, prog) {
   suite("H · Performance neste aparelho");
   const g = buildSpecies(null, {}, false).g;
@@ -2362,6 +2462,7 @@ const SUITES_TESTE = [
   { id: "genestaxon38", nome: "Genes por táxon no código (TXN)", fn: suiteGenesTaxon, peso: 4, nivel: "rapida" },
   { id: "diagnosticos39", nome: "Genes diagnósticos e gestalt", fn: suiteDiagnosticos, peso: 6, nivel: "rapida" },
   { id: "cladograma40", nome: "Cladograma de classes e gradualismo", fn: suiteCladograma, peso: 7, nivel: "completa" },
+  { id: "restauradora41", nome: "Força restauradora e escada basal", fn: suiteForcaRestauradora, peso: 6, nivel: "completa" },
   { id: "performance", nome: "Performance neste aparelho", fn: suitePerformance, peso: 5, nivel: "completa" },
 ];
 
