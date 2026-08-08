@@ -1,5 +1,11 @@
 [
   {
+    "id": "v40",
+    "titulo": "v40 — Cladograma de classes, gradualismo e o fim dos saltos evolutivos",
+    "arquivo": "patchnotes-v40.md",
+    "data": "2026-08-08"
+  },
+  {
     "id": "v39",
     "titulo": "v39 — Genes diagnósticos, âncora de gestalt e correção da deriva",
     "arquivo": "patchnotes-v39.md",

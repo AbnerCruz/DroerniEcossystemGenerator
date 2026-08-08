@@ -304,7 +304,11 @@ const T = {
   // Fase 2, item 5.3 — reinos Ar (construto) e Sp (espiritual) removidos
   // por completo; pesos redistribuídos entre os quatro restantes.
   reino: [{ max: 70, value: "An", label: "Animal" }, { max: 86, value: "Pl", label: "Planta" }, { max: 94, value: "Fu", label: "Fungo" }, { max: 100, value: "Ba", label: "Bactéria" }],
-  classeAn: [{ max: 25, value: "MAM", label: "Mamífero" }, { max: 42, value: "AVE", label: "Ave" }, { max: 58, value: "REP", label: "Réptil" }, { max: 68, value: "AMP", label: "Anfíbio" }, { max: 82, value: "PSC", label: "Peixe" }, { max: 94, value: "INS", label: "Inseto / artrópode" }, { max: 100, value: "MOL", label: "Molusco" }],
+  /* v40 — entra BAS (invertebrado basal). É a RAIZ do cladograma animal:
+     todo animal descende dela, e é o único ponto por onde a bactéria
+     atravessa para o reino Animal. Sem esse nó, "bactéria vira mamífero"
+     era um sorteio de uma tabela de sete valores. */
+  classeAn: [{ max: 22, value: "MAM", label: "Mamífero" }, { max: 37, value: "AVE", label: "Ave" }, { max: 52, value: "REP", label: "Réptil" }, { max: 62, value: "AMP", label: "Anfíbio" }, { max: 75, value: "PSC", label: "Peixe" }, { max: 86, value: "INS", label: "Inseto / artrópode" }, { max: 94, value: "MOL", label: "Molusco" }, { max: 100, value: "BAS", label: "Invertebrado basal" }],
   mag: [{ max: 30, value: "A0", label: "Nulo" }, { max: 48, value: "A1", label: "Latente" }, { max: 60, value: "A2", label: "Residual" }, { max: 75, value: "A3", label: "Instintivo" }, { max: 85, value: "A4", label: "Funcional" }, { max: 93, value: "A5", label: "Disciplinado" }, { max: 97, value: "A6", label: "Versátil" }, { max: 98, value: "A7", label: "Dominante" }, { max: 99, value: "A8", label: "Excepcional" }, { max: 100, value: "A9", label: "Ápice" }],
   simetria: [{ max: 78, value: "bi", label: "Bilateral" }, { max: 88, value: "rd", label: "Radial" }, { max: 94, value: "es", label: "Espiral" }, { max: 98, value: "as", label: "Assimétrica" }, { max: 100, value: "am", label: "Amorfa" }],
   porte: [{ max: 12, value: "mn", label: "Minúsculo", n: 0 }, { max: 42, value: "pq", label: "Pequeno", n: 1 }, { max: 70, value: "md", label: "Médio", n: 2 }, { max: 88, value: "gr", label: "Grande", n: 3 }, { max: 97, value: "cl", label: "Colossal", n: 4 }, { max: 100, value: "tt", label: "Titânico", n: 5 }],
@@ -320,6 +324,11 @@ const T = {
   locPrim: [{ max: 24, value: "Q", label: "Quadrúpede" }, { max: 38, value: "B", label: "Bípede" }, { max: 48, value: "S", label: "Serpentiforme" }, { max: 60, value: "N", label: "Natação" }, { max: 70, value: "H", label: "Hexápode" }, { max: 78, value: "V", label: "Voo" }, { max: 84, value: "O", label: "Octópode+" }, { max: 88, value: "E", label: "Escalada" }, { max: 92, value: "C", label: "Escavação" }, { max: 96, value: "F", label: "Fixo / séssil" }, { max: 98, value: "P", label: "Planeio" }, { max: 99, value: "R", label: "Rolante" }, { max: 100, value: "Z", label: "Fásico" }],
   // Passo 5, gene 2: 01-50 = nenhum; 51-100 reescala a tabela de locPrim (mesma proporção, metade do espaço)
   locSec: [{ max: 50, value: "0", label: "Nenhum" }, { max: 63, value: "Q", label: "Quadrúpede" }, { max: 70, value: "B", label: "Bípede" }, { max: 75, value: "S", label: "Serpentiforme" }, { max: 81, value: "N", label: "Natação" }, { max: 86, value: "H", label: "Hexápode" }, { max: 90, value: "V", label: "Voo" }, { max: 93, value: "O", label: "Octópode+" }, { max: 95, value: "E", label: "Escalada" }, { max: 97, value: "C", label: "Escavação" }, { max: 99, value: "F", label: "Fixo / séssil" }, { max: 100, value: "P", label: "Planeio" }],
+  // v40 — a tabela de apêndices vivia inline dentro do Passo 6 e por isso
+  // não estava em GENE_TABLE_MAP: `memApendices` NUNCA sofreu deriva em
+  // versão nenhuma (mesma família do bug de sortGeneAlvo achado na v39).
+  // Era o que travava PSC -> AMP: a nadadeira lobada nunca aparecia.
+  memApendices: [{ max: 75, value: "0X", label: "0 apêndices" }, { max: 90, value: "2X", label: "2 apêndices" }, { max: 96, value: "4X", label: "4 apêndices" }, { max: 99, value: "6X", label: "6 apêndices" }, { max: 100, value: "8X", label: "8 apêndices" }],
   memSup: [{ max: 35, value: "0S", label: "0 superiores" }, { max: 85, value: "2S", label: "2 superiores" }, { max: 95, value: "4S", label: "4 superiores" }, { max: 99, value: "6S", label: "6 superiores" }, { max: 100, value: "8S", label: "8 superiores" }],
   memTerm: [{ max: 22, value: "pa", label: "Pata almofadada" }, { max: 42, value: "gr", label: "Garra" }, { max: 55, value: "ca", label: "Casco" }, { max: 70, value: "mo", label: "Mão preênsil" }, { max: 80, value: "ba", label: "Barbatana" }, { max: 88, value: "pi", label: "Pinça" }, { max: 94, value: "ve", label: "Ventosa" }, { max: 98, value: "ra", label: "Raiz" }, { max: 100, value: "no", label: "Nenhuma diferenciada" }],
   repModo: [{ max: 32, value: "ov", label: "Ovíparo" }, { max: 58, value: "vv", label: "Vivíparo" }, { max: 70, value: "oz", label: "Ovovivíparo" }, { max: 79, value: "sp", label: "Esporos" }, { max: 86, value: "gm", label: "Gemação" }, { max: 92, value: "fs", label: "Fissão" }, { max: 96, value: "ax", label: "Assexuado" }, { max: 98, value: "an", label: "Animação" }, { max: 100, value: "ni", label: "Não se reproduz" }],
@@ -413,6 +422,9 @@ const T = {
   concha: [{ max: 30, value: "au", label: "Ausente/nu" }, { max: 55, value: "in", label: "Interna" }, { max: 80, value: "es", label: "Externa espiralada" }, { max: 100, value: "bv", label: "Externa bivalve" }],
   tentaculosQtd: [{ max: 25, value: 0, label: "0" }, { max: 50, value: 2, label: "2" }, { max: 75, value: 8, label: "8" }, { max: 92, value: 10, label: "10" }, { max: 100, value: 99, label: "Muitos" }],
   tintaDefensiva: [{ max: 60, value: "au", label: "Ausente" }, { max: 100, value: "pr", label: "Presente" }],
+  // BAS (v40) — os três eixos que definem um metazoário basal
+  organizacaoTecidual: [{ max: 35, value: "df", label: "Difusa (sem tecidos verdadeiros)" }, { max: 70, value: "ep", label: "Epitelial com cavidade digestiva" }, { max: 100, value: "ce", label: "Celomada (cavidade interna revestida)" }],
+  alimentacaoBasal: [{ max: 45, value: "fi", label: "Filtração" }, { max: 75, value: "pa", label: "Pastoreio de biofilme" }, { max: 100, value: "ca", label: "Captura por tentáculo" }],
   // Pl
   raizTipo: [{ max: 45, value: "fa", label: "Fasciculada" }, { max: 85, value: "pi", label: "Pivotante" }, { max: 100, value: "ae", label: "Aérea/epífita" }],
   folhaTipo: [{ max: 15, value: "au", label: "Ausente" }, { max: 45, value: "ag", label: "Agulha" }, { max: 80, value: "la", label: "Larga" }, { max: 100, value: "su", label: "Suculenta" }],
@@ -456,6 +468,7 @@ const CONS = "BCDFGHJKLMNPQRSTVXZ", VOG = "aeiouy";
    ============================================================ */
 const CLASSE_TRAVAS = {
   MAM: { // mamífero: quatro membros no máximo, pelo ou pele nua, vivíparo
+    simetria: { restrict: ["bi"] }, // v40
     locPrimario: { restrict: ["Q", "B", "N", "E", "C", "V", "S"] },
     memSup: { restrict: ["0S", "2S"] },
     memApendices: { fixed: "0X" }, // v29 — tetrápode não tem apêndice locomotor extra
@@ -469,6 +482,7 @@ const CLASSE_TRAVAS = {
     facOrelha: { exclude: ["an", "mb"] },
   },
   AVE: { // ave: bípede ou voadora, pena, bico sem dente, duas asas, ovípara
+    simetria: { restrict: ["bi"] }, // v40
     locPrimario: { restrict: ["V", "B", "N", "P"] },
     memSup: { fixed: "0S" },
     memInf: { fixed: "2I" },
@@ -485,6 +499,7 @@ const CLASSE_TRAVAS = {
     cdaTipo: { restrict: ["pq", "nu"] },
   },
   REP: { // réptil: escama, ovíparo, crânio ossificado — asa liberada (v29, pedido do usuário: dragão)
+    simetria: { restrict: ["bi"] }, // v40
     locPrimario: { restrict: ["Q", "S", "N", "E", "C", "B", "V", "P"] }, // v29 — V/P (voo/planeio) entram para o réptil alado poder ter voo como modo primário
     // sem esta trava, 3,14% dos répteis nasciam sem crânio definido — e daí
     // saíam as combinações contraditórias reportadas (réptil sem crânio com
@@ -514,6 +529,7 @@ const CLASSE_TRAVAS = {
     cdaTipo: { restrict: ["es", "nu", "pr", "lm"] },
   },
   AMP: { // anfíbio: pele mucosa, ovíparo, ligado à água, crânio ossificado
+    simetria: { restrict: ["bi"] }, // v40
     locPrimario: { restrict: ["Q", "S", "N", "B", "E"] },
     crnFormato: { exclude: ["0", "hu"] },
     memSup: { restrict: ["0S", "2S"] },
@@ -527,6 +543,7 @@ const CLASSE_TRAVAS = {
     cdaTipo: { restrict: ["nu", "bq"] },
   },
   PSC: { // peixe: nada, barbatana, escama ou mucosa, sem membro
+    simetria: { restrict: ["bi"] }, // v40
     locPrimario: { fixed: "N" },
     memSup: { fixed: "0S" },
     memApendices: { restrict: ["0X", "2X"] }, // v29 — barbilhões, não membros
@@ -540,6 +557,7 @@ const CLASSE_TRAVAS = {
     crnFormato: { exclude: ["hu"] },
   },
   INS: { // inseto/artrópode: quitina, seis ou oito patas, antena, ovíparo
+    simetria: { restrict: ["bi", "rd"] }, // v40
     locPrimario: { restrict: ["H", "O", "V", "C", "E", "S"] },
     memSup: { restrict: ["0S", "2S"] },
     memTerm: { restrict: ["gr", "pi", "ve", "no"] },
@@ -559,7 +577,26 @@ const CLASSE_TRAVAS = {
     asaQtd: { restrict: [0, 2, 4] },
     cdaTipo: { restrict: ["nu", "fr", "lm"] },
   },
+  BAS: { /* v40 — invertebrado basal: corpo mole aquático, sem crânio, sem
+            membro verdadeiro, sem face. É deliberadamente o plano corporal
+            mais pobre do sistema — tudo o que as outras classes têm, elas
+            têm que CONQUISTAR saindo daqui. */
+    locPrimario: { restrict: ["N", "F", "S"] },
+    memSup: { fixed: "0S" },
+    memInf: { fixed: "0I" },
+    memApendices: { restrict: ["0X", "2X", "4X"] },
+    memTerm: { restrict: ["ve", "no"] },
+    repModo: { restrict: ["ov", "oz", "gm", "fs"] },
+    tegTipo: { restrict: ["Mu", "Cr"] },
+    crnFormato: { fixed: "0" },
+    crnChifreQtd: { fixed: "0" },
+    crnCrista: { fixed: "0" },
+    facDenticao: { fixed: "0" },
+    asaQtd: { fixed: 0 },
+    cdaTipo: { restrict: ["nu", "bq"] },
+  },
   MOL: { // molusco: corpo mole, ventosa, sem esqueleto craniano
+    simetria: { restrict: ["bi", "es", "as"] }, // v40
     locPrimario: { restrict: ["S", "N", "O", "F", "E"] },
     memSup: { fixed: "0S" },
     memApendices: { restrict: ["0X", "2X", "4X"] }, // v29 — tentáculos têm gene próprio
@@ -579,7 +616,7 @@ const CLASSE_TRAVAS = {
    são terminação, não membro). Artrópode e molusco têm planos corporais com
    mais membros, daí o teto de oito. Classes fora desta tabela (VEG, FUN,
    MIC) não têm membro nenhum por trava de reino. */
-const ORCAMENTO_MEMBROS = { MAM: 4, AVE: 4, REP: 4, AMP: 4, PSC: 0, INS: 8, MOL: 8 };
+const ORCAMENTO_MEMBROS = { MAM: 4, AVE: 4, REP: 4, AMP: 4, PSC: 0, INS: 8, MOL: 8, BAS: 0 };
 const CLASSES_TETRAPODES = new Set(["MAM", "AVE", "REP", "AMP"]);
 /* v31 — pedido explícito do usuário: dragão OCIDENTAL, 4 pernas + 2 asas
    (hexápode). Nenhum vertebrado real tem esse plano corporal — toda asa de
@@ -601,7 +638,7 @@ const CLASSES_ASA_INDEPENDENTE = new Set(["REP"]);
    cápsula cefálica sem vértebras cervicais (molusco, artrópode). Para elas
    "ausente"/"curto" é o valor CORRETO, não uma anomalia — a trava de pescoço
    é assimétrica de propósito. */
-const SEM_PESCOCO_VERDADEIRO = ["PSC", "MOL", "INS"];
+const SEM_PESCOCO_VERDADEIRO = ["PSC", "MOL", "INS", "BAS"];
 
 /* Mescla duas restrições: `fixed` prevalece, `restrict` vira interseção,
    `exclude` vira união. Se a interseção esvaziar, mantém a mais específica
@@ -643,7 +680,14 @@ function runSpeciesSteps(cur, isPrimordialIntent) {
   });
 
   // Passo 1 — TOL
-  categoricalStep(cur, "tolHidrica", T.tolHidrica, colonizOpts("tolHidrica")); // v37 — portão de colonização
+  /* v40 — a relação classe x meio foi INVERTIDA. Antes a hídrica escolhia a
+     classe (e trocava a classe de uma linhagem inteira quando derivava);
+     agora a classe já formada é que limita o meio. Peixe e invertebrado
+     basal não saem da água — e como não saem, a exclusão do Passo 2 nunca
+     precisa desfazê-los. Só vale quando existe uma classe prévia a
+     preservar (normalização), nunca na criação de uma espécie nova. */
+  const hidricaClasse = __classeFixaNormalizacao ? (HIDRICA_POR_CLASSE[__classeFixaNormalizacao] || {}) : {};
+  categoricalStep(cur, "tolHidrica", T.tolHidrica, mergeOpts(hidricaClasse, colonizOpts("tolHidrica"))); // v37 — portão de colonização
   categoricalStep(cur, "tolTermica", T.tolTermica);
   const cicloBias = (g.tolHidrica === "xe" || g.tolTermica === "qt") ? ["no", "cr"] : undefined;
   categoricalStep(cur, "tolCiclo", T.tolCiclo, { bias: cicloBias });
@@ -654,13 +698,38 @@ function runSpeciesSteps(cur, isPrimordialIntent) {
   else if (g.reino === "Fu") g.classe = "FUN";
   else if (g.reino === "Ba") g.classe = "MIC"; // Fase 1, item 4.1
   else {
-    // a tolerância hídrica já está definida (Passo 1) e limita quais classes fazem sentido
-    let classeOptsHid = {};
-    if (g.tolHidrica === "aq") classeOptsHid = { restrict: ["PSC", "MOL", "MAM", "REP"] };
-    else if (g.tolHidrica === "sa") classeOptsHid = { restrict: ["AMP", "REP", "MAM", "MOL", "AVE"] };
-    else if (g.tolHidrica === "xe") classeOptsHid = { exclude: ["PSC", "AMP", "MOL"] };
-    else classeOptsHid = { exclude: ["PSC"] }; // peixe exige água
-    categoricalStep(cur, "classe", T.classeAn, mergeOpts(classeOptsHid, colonizOpts("classe"))); // v37 — portão de colonização
+    /* v40 — A TOLERÂNCIA HÍDRICA DEIXOU DE TROCAR A CLASSE.
+       Antes ela RESTRINGIA: `aq` só admitia PSC/MOL/MAM/REP. Como a
+       normalização roda este mesmo passo a cada ciclo de deriva, bastava a
+       tolerância hídrica derivar para que a classe da linhagem fosse
+       RESSORTEADA dentro da nova lista — uma ave que voltava para a água
+       renascia peixe sem que nenhuma mutação de classe tivesse acontecido.
+       Era um dos caminhos de salto brusco relatados, e o mais invisível:
+       não aparecia como mutação em log nenhum.
+       Agora a hídrica só ENVIESA. As duas únicas impossibilidades reais
+       continuam duras: peixe e invertebrado basal fora d'água.
+       Consequência pedida explicitamente: a READAPTAÇÃO AQUÁTICA (baleia,
+       pinguim) acontece sem trocar de classe. */
+    /* A criação tem que respeitar exatamente as mesmas travas de meio que
+       HIDRICA_POR_CLASSE impõe na normalização — senão nasce um peixe
+       eurihídrico que a primeira normalização "corrige" mexendo na
+       tolerância hídrica, e a seed deixa de reconstruir o genoma. */
+    const soAgua = ["aq", "sa"].includes(g.tolHidrica);
+    let classeOptsHid = soAgua ? {} : { exclude: ["PSC", "BAS"] };
+    if (g.tolHidrica === "xe") classeOptsHid = { exclude: ["PSC", "BAS", "AMP"] };
+    if (g.tolHidrica === "aq") classeOptsHid.bias = ["PSC", "MOL", "BAS"];
+    else if (g.tolHidrica === "sa") classeOptsHid.bias = ["AMP", "MOL"];
+    else if (g.tolHidrica === "xe") classeOptsHid.bias = ["REP", "INS"];
+    /* v40 — durante a normalização de um genoma JÁ EXISTENTE, a classe é
+       intocável: só o cladograma (aplicarTransicaoClasse) tem autoridade
+       para mudá-la. A trava não vale na criação nem no encode/decode de
+       seed, então a fidelidade da seed não muda. */
+    const classeTravada = __classeFixaNormalizacao;
+    if (classeTravada) {
+      categoricalStep(cur, "classe", T.classeAn, { fixed: classeTravada });
+    } else {
+      categoricalStep(cur, "classe", T.classeAn, mergeOpts(classeOptsHid, colonizOpts("classe"))); // v37 — portão de colonização
+    }
   }
   if (!g.classe) g.classe = cur.ctx.classe;
 
@@ -674,7 +743,13 @@ function runSpeciesSteps(cur, isPrimordialIntent) {
      amorfa; planta e fungo crescem em torno de um eixo (radial), com espiral
      e amorfo possíveis. Bilateral fica com o reino animal, que é onde ela
      descreve alguma coisa. */
-  categoricalStep(cur, "simetria", T.simetria, opcoesCategoricas(g, "simetria"));
+  /* v40 — a simetria também é travada pela CLASSE, não só pelo reino. Um
+     mamífero de simetria amorfa não é uma criatura estranha, é um erro de
+     leitura do próprio conceito de classe; e medido na primeira rodada com
+     o cladograma, só 5 de 562 invertebrados basais eram bilaterais, o que
+     fechava a saída para a linha vertebrada. Bilateralidade passa a ser a
+     apomorfia que o nó basal transmite para tudo que vem depois dele. */
+  categoricalStep(cur, "simetria", T.simetria, mergeOpts(opcoesCategoricas(g, "simetria"), classeOpts(g, "simetria")));
 
   /* v28 — PORTE POR REINO. Antes a tabela de porte era única e o reino não
      entrava na conta: bactéria sorteava "titânico" em 3% dos casos, e o
@@ -807,7 +882,7 @@ function runSpeciesSteps(cur, isPrimordialIntent) {
     }
   }
 
-  categoricalStep(cur, "memApendices", [{ max: 75, value: "0X" }, { max: 90, value: "2X" }, { max: 96, value: "4X" }, { max: 99, value: "6X" }, { max: 100, value: "8X" }], mergeOpts((g.reino === "Pl" || g.reino === "Fu" || g.reino === "Ba") ? { fixed: "0X" } : g.isPrimordial ? { restrict: ["0X", "2X"] } : {}, classeOpts(g, "memApendices"))); // Fase 1, item 4.1 + v29 (trava por classe)
+  categoricalStep(cur, "memApendices", T.memApendices, mergeOpts((g.reino === "Pl" || g.reino === "Fu" || g.reino === "Ba") ? { fixed: "0X" } : g.isPrimordial ? { restrict: ["0X", "2X"] } : {}, classeOpts(g, "memApendices"))); // Fase 1, item 4.1 + v29 (trava por classe)
   categoricalStep(cur, "memTerm", T.memTerm, mergeOpts(g.reino === "Pl" ? { fixed: "ra" } : (g.reino === "Fu" || g.reino === "Ba") ? { fixed: "no" } : g.tolHidrica === "aq" ? { bias: ["ba", "ve"] } : {}, classeOpts(g, "memTerm"))); // Fase 1, item 4.1
   if (g.memSup !== "0S" || g.memInf !== "0I") {
     const memPropOpts = g.locPrimario === "C" ? { bias: ["cu"] } : ["V", "E"].includes(g.locPrimario) ? { bias: ["lo", "ex"] } : {};
@@ -1235,6 +1310,15 @@ function runSpeciesSteps(cur, isPrimordialIntent) {
     g.concha = undefined; g.tentaculosQtd = undefined; g.tintaDefensiva = undefined;
   }
 
+  // v40 — BAS
+  if (g.classe === "BAS") {
+    categoricalStep(cur, "organizacaoTecidual", T.organizacaoTecidual);
+    categoricalStep(cur, "alimentacaoBasal", T.alimentacaoBasal, g.locPrimario === "F" ? { restrict: ["fi", "ca"] } : {});
+    scalarStep(cur, "esqueletoHidrostatico");
+  } else {
+    g.organizacaoTecidual = undefined; g.alimentacaoBasal = undefined; g.esqueletoHidrostatico = undefined;
+  }
+
   if (g.reino === "Pl") {
     categoricalStep(cur, "raizTipo", T.raizTipo);
     categoricalStep(cur, "folhaTipo", T.folhaTipo);
@@ -1376,6 +1460,7 @@ const GENES_TAXON_POR_CLASSE = {
   PSC: ["nadadeiraConfiguracao", "respiracaoBranquial", "bexigaNatatoria"],
   INS: ["metamorfoseTipo", "patasQtdEspecializada", "venenoOuFerroao", "coloniaTipo"],
   MOL: ["concha", "tentaculosQtd", "tintaDefensiva"],
+  BAS: ["organizacaoTecidual", "alimentacaoBasal", "esqueletoHidrostatico"],
   VEG: ["raizTipo", "folhaTipo", "reproducaoEstrutura", "fotossinteseIntensidade", "arquiteturaCresc"],
   FUN: ["corpoFrutiferoTipo", "redeMicelialAlcance", "esporoDispersao", "modoTrofico"],
   MIC: ["paredeCelularTipo", "metabolismoTipo", "formaColonia", "motilidade", "respiracaoO2"],
@@ -2208,6 +2293,10 @@ const ESTRATO_II = ["porte", "densidade", "morTorso", "locSecundario", "locVeloc
   "nadadeiraConfiguracao", "respiracaoBranquial", "bexigaNatatoria",
   "patasQtdEspecializada", "venenoOuFerroao", "coloniaTipo",
   "concha", "tentaculosQtd", "tintaDefensiva",
+  // v40 — BAS. Sem isto os três genes do nó basal nunca derivariam, e
+  // `organizacaoTecidual` é pré-requisito das DUAS saídas do cladograma:
+  // a linhagem ficaria presa em BAS para sempre (medido: 0 travessias).
+  "organizacaoTecidual", "alimentacaoBasal", "esqueletoHidrostatico",
   "raizTipo", "folhaTipo", "reproducaoEstrutura",
   "corpoFrutiferoTipo", "esporoDispersao",
   "paredeCelularTipo", "metabolismoTipo", "formaColonia",
@@ -2227,7 +2316,7 @@ const ESTRATO_III = ["tegCor", "tegPadrao", "asaFuncionalidade", "cdaFuncao", "d
 const GENE_TABLE_MAP = {
   tolHidrica: T.tolHidrica, tolTermica: T.tolTermica, tolCiclo: T.tolCiclo,
   reino: T.reino, mag: T.mag, simetria: T.simetria, porte: T.porte, morTorso: T.morTorso,
-  locPrimario: T.locPrim, locSecundario: T.locSec, memSup: T.memSup, memTerm: T.memTerm, memProp: T.memProp,
+  locPrimario: T.locPrim, locSecundario: T.locSec, memSup: T.memSup, memApendices: T.memApendices, memTerm: T.memTerm, memProp: T.memProp,
   repModo: T.repModo, crnFormato: T.crnFormato, crnChifreQtd: T.crnChifreQtd, crnChifreForma: T.crnChifreForma, crnCrista: T.crnCrista, crnPescoco: T.crnPescoco,
   dieBase: T.dieBase, dieRestricao: T.dieRestricao,
   facFocinho: T.facFocinho, facOrelha: T.facOrelha, facOlhosQtd: T.facOlhosQtd, facOlhosTipo: T.facOlhosTipo, facDenticao: T.facDenticao,
@@ -2247,6 +2336,7 @@ const GENE_TABLE_MAP = {
   nadadeiraConfiguracao: T.nadadeiraConfiguracao, respiracaoBranquial: T.respiracaoBranquial, bexigaNatatoria: T.bexigaNatatoria,
   metamorfoseTipo: T.metamorfoseTipo, patasQtdEspecializada: T.patasQtdEspecializada, venenoOuFerroao: T.venenoOuFerroao, coloniaTipo: T.coloniaTipo,
   concha: T.concha, tentaculosQtd: T.tentaculosQtd, tintaDefensiva: T.tintaDefensiva,
+  organizacaoTecidual: T.organizacaoTecidual, alimentacaoBasal: T.alimentacaoBasal,
   raizTipo: T.raizTipo, folhaTipo: T.folhaTipo, reproducaoEstrutura: T.reproducaoEstrutura,
   corpoFrutiferoTipo: T.corpoFrutiferoTipo, esporoDispersao: T.esporoDispersao,
   paredeCelularTipo: T.paredeCelularTipo, metabolismoTipo: T.metabolismoTipo, formaColonia: T.formaColonia,
@@ -2255,7 +2345,9 @@ const ESCALAR_KEYS = new Set(["densidade", "locVelocidade", "repProle", "repMatu
   // Fase 3 — genes escalares novos por táxon
   "pelagemDensidade", "ovoCasca", "ectotermiaDependencia", "respiracaoCutanea", "fotossinteseIntensidade", "redeMicelialAlcance",
   // v39
-  "pelSudorese", "dimorfismo"]);
+  "pelSudorese", "dimorfismo",
+  // v40
+  "esqueletoHidrostatico"]);
 
 /* Genes cujo valor decide se OUTROS genes existem, quais opções eles têm,
    ou que faixa podem assumir — ou seja, os que aparecem em alguma condição
@@ -2376,10 +2468,16 @@ function opcoesCondicionais(g, key) {
    `restrict` viram a interseção — e se a interseção for vazia, a trava
    condicional (mais específica) prevalece. */
 function opcoesGene(g, key) {
-  const porReino = opcoesCategoricas(g, key);
+  /* v40 — entram também as TRAVAS DE CLASSE. Até aqui a deriva só
+     respeitava reino + condicionais: podia mover o tegumento de uma ave
+     para "escama", e a normalização seguinte desfazia. Isso gastava ciclo
+     à toa e, pior, tornava o gradualismo mentiroso — o passo adjacente era
+     dado e depois revertido para um valor não-adjacente. */
+  const porReino = mergeOpts(opcoesCategoricas(g, key), classeOpts(g, key));
   const cond = opcoesCondicionais(g, key);
   if (cond.fixed !== undefined) return cond;
-  if (!porReino.restrict) return cond;
+  if (porReino.fixed !== undefined) return porReino;
+  if (!porReino.restrict) return cond.restrict ? { ...cond, ...(porReino.exclude ? { exclude: porReino.exclude } : {}) } : porReino;
   if (!cond.restrict) return porReino;
   const inter = porReino.restrict.filter((v) => cond.restrict.includes(v));
   return { restrict: inter.length ? inter : cond.restrict };
@@ -2805,6 +2903,9 @@ function describeCreatureProse(g) {
   if (g.classe === "INS") {
     p.push(`Inseto/artrópode de metamorfose ${labelOf(T.metamorfoseTipo, g.metamorfoseTipo).toLowerCase()}, patas ${labelOf(T.patasQtdEspecializada, g.patasQtdEspecializada).toLowerCase()}, colônia ${labelOf(T.coloniaTipo, g.coloniaTipo).toLowerCase()}${g.venenoOuFerroao !== "au" ? `, com ${labelOf(T.venenoOuFerroao, g.venenoOuFerroao).toLowerCase()}` : ""}.`);
   }
+  if (g.classe === "BAS") {
+    p.push(`Invertebrado basal de organização ${labelOf(T.organizacaoTecidual, g.organizacaoTecidual).toLowerCase()}, alimentação por ${labelOf(T.alimentacaoBasal, g.alimentacaoBasal).toLowerCase()}, corpo sustentado por pressão interna (firmeza ${tier(g.esqueletoHidrostatico)}). Não tem crânio, esqueleto rígido, membros nem face — é o plano corporal do qual todos os outros animais descendem.`);
+  }
   if (g.classe === "MOL") {
     p.push(`Molusco de concha ${labelOf(T.concha, g.concha).toLowerCase()}, ${g.tentaculosQtd === 99 ? "muitos" : g.tentaculosQtd} tentáculo(s)${g.tintaDefensiva === "pr" ? ", com tinta defensiva" : ""}.`);
   }
@@ -2962,17 +3063,58 @@ const PESO_SALTO_REINO_BA = 0.85;
    O limite agora sai do tamanho da lista, então nenhuma adição futura
    volta a cair nesse buraco silenciosamente.
    ============================================================ */
+/* v40 — peso da travessia. Quando os pré-requisitos de alguma saída do
+   cladograma JÁ estão satisfeitos, a inovação-chave existe no genoma e é
+   ela que dispara a radiação: `classe` passa a concorrer com peso alto em
+   vez de ser 1 de 12 genes do Estrato I. Medido sem este peso: 1 travessia
+   de classe em 4 linhagens x 250 ciclos — a árvore inteira parava no nó
+   basal. O custo continua sendo o do Estrato I (12), e os pré-requisitos
+   continuam sendo o único filtro real. */
+const PESO_TRAVESSIA_CLASSE = 0.5;
 function sortGeneAlvo(estrato, g) {
   if (estrato === "I") {
+    if (g && g.reino === "An" && rnd() < PESO_TRAVESSIA_CLASSE && destinosDeClasse(g).length) return "classe";
     if (g && g.reino === "Ba" && rnd() < PESO_SALTO_REINO_BA) return "reino";
     return ESTRATO_I[rollD(ESTRATO_I.length) - 1];
   }
-  if (estrato === "II") return ESTRATO_II[rollD(ESTRATO_II.length) - 1];
-  return ESTRATO_III[rollD(ESTRATO_III.length) - 1];
+  /* v40 — o sorteio de Estrato II/III passa a olhar só os genes que a
+     espécie DE FATO tem. Antes ele sorteava entre os 66 do Estrato II, dos
+     quais ~36 são genes de táxon de OUTRAS classes: a tentativa caía no
+     guard de GENE_TAXON_APLICAVEL logo adiante, gastava orçamento e não
+     mudava nada. Medido: mais da metade das tentativas de Estrato II de
+     uma bactéria ou de um invertebrado basal era desperdiçada assim, o que
+     na prática dividia por dois a velocidade de toda a deriva do sistema —
+     e era o motivo de os pré-requisitos de travessia quase nunca serem
+     alcançados. */
+  const lista = genesAplicaveisDoEstrato(estrato, g);
+  return lista[rollD(lista.length) - 1];
+}
+
+const __cacheEstratoAplicavel = new Map();
+function genesAplicaveisDoEstrato(estrato, g) {
+  const base = estrato === "II" ? ESTRATO_II : ESTRATO_III;
+  if (!g) return base;
+  // as condições de GENE_TAXON_APLICAVEL dependem só de reino/classe
+  const chave = estrato + "|" + g.reino + "|" + g.classe;
+  let hit = __cacheEstratoAplicavel.get(chave);
+  if (!hit) {
+    hit = base.filter((k) => { const f = GENE_TAXON_APLICAVEL[k]; return !f || f(g); });
+    if (!hit.length) hit = base;
+    __cacheEstratoAplicavel.set(chave, hit);
+  }
+  return hit;
+}
+
+/* v40 — `morForma` tem tabela DIFERENTE por reino (planta, fungo, bactéria)
+   e por isso também nunca entrou em GENE_TABLE_MAP: a forma de crescimento
+   de toda planta, fungo e bactéria do sistema era decidida na criação e
+   congelava ali. Animal não usa o gene (fica "0"). */
+function tabelaMorFormaDe(g) {
+  return g.reino === "Pl" ? T.morFormaPl : g.reino === "Fu" ? T.morFormaFu : g.reino === "Ba" ? T.morFormaBa : null;
 }
 
 function rerollGeneCategorico(g, key, fonte) {
-  const table = GENE_TABLE_MAP[key];
+  const table = key === "morForma" ? tabelaMorFormaDe(g) : GENE_TABLE_MAP[key];
   if (!table) return false;
   const bias = fonte?.vies?.[key];
   // v28 — a deriva sorteia dentro do MESMO recorte por reino que a
@@ -2985,10 +3127,41 @@ function rerollGeneCategorico(g, key, fonte) {
   /* v39 — era opcoesCategoricas() (só travas de reino). Passou a ser
      opcoesGene(), que soma as condicionais — senão a deriva reintroduz
      exatamente as incoerências que a construção evita. */
+  /* v40 — `classe` não passa mais por aqui. Ela é a única mutação do
+     sistema que reescreve o plano corporal inteiro, e agora tem caminho
+     próprio (aplicarTransicaoClasse, pelo cladograma). Se chegou aqui, é
+     chamada indevida. */
+  if (key === "classe") return false;
   const opts = (key === "reino" && g.reino === "Ba") ? { exclude: ["Ba"] } : opcoesGene(g, key);
   if (opts.fixed !== undefined) return false; // gene sem escolha: a deriva não tem o que mexer
   const nums = validNumbers(table, opts);
   if (!nums.length) return false;
+
+  /* v40 — GRADUALISMO. Para os genes com vizinhança declarada, a deriva
+     anda um passo, não um sorteio. Se as travas fecharem toda a vizinhança
+     (ex.: ave com tegumento fixo em pena), o ciclo simplesmente não muda
+     este gene — o orçamento é gasto igual, como em qualquer tentativa
+     recusada. */
+  const viz = VIZINHOS_GENE[key];
+  if (viz) {
+    const adjacentes = viz[String(g[key])];
+    if (adjacentes && adjacentes.length) {
+      const permitidos = valoresValidos(table, opts);
+      let candidatos = adjacentes.filter((v) => permitidos.has(v) || permitidos.has(String(v)));
+      if (!candidatos.length) return false;
+      if (Array.isArray(bias) && bias.length) {
+        const enviesados = candidatos.filter((v) => bias.includes(v));
+        if (enviesados.length) candidatos = enviesados;
+      }
+      const bruto = candidatos[Math.floor(rnd() * candidatos.length)];
+      const linha = table.find((r) => String(r.value) === String(bruto));
+      const valor = linha ? linha.value : bruto;
+      if (valor === g[key]) return false;
+      g[key] = valor;
+      return true;
+    }
+  }
+
   let novoValor;
   if (Array.isArray(bias) && bias.length) {
     const n1 = nums[Math.floor(rnd() * nums.length)];
@@ -4007,13 +4180,13 @@ const COLONIZACAO_TRAVAS = [
        tolera tudo também não descreve o estágio em que a vida só existe na
        água. Ele entra a partir do estágio 1. */
     tolHidrica: { restrict: ["aq", "sa"] },
-    classe: { restrict: ["PSC", "MOL", "INS"] },
+    classe: { restrict: ["BAS", "PSC", "MOL", "INS"] }, // v40 — BAS é o nó basal aquático
     locPrimario: { restrict: ["N", "F", "S", "O", "R", "Z", "C"] },
     asaQtd: { fixed: 0 },
   },
   { // estágio 1 — colonização da terra
     tolHidrica: { restrict: ["aq", "sa", "um", "ms", "eu"] },
-    classe: { restrict: ["PSC", "MOL", "INS", "AMP", "REP"] },
+    classe: { restrict: ["BAS", "PSC", "MOL", "INS", "AMP", "REP"] }, // v40
     locPrimario: { exclude: ["V", "P"] },
     asaQtd: { fixed: 0 },
   },
@@ -4047,10 +4220,14 @@ function colonizOpts(gene) {
    Um degrau por vez, nunca dois, para que a passagem tenha espécies
    intermediárias em vez de virar salto. */
 const ESCADA_HIDRICA = ["aq", "sa", "um", "ms", "xe"];
-const ESCADA_CLASSE = { PSC: ["AMP"], MOL: ["INS"], INS: ["AMP"], AMP: ["REP"], REP: ["MAM", "AVE"] };
+/* v40 — a escada da v37 virou o CLADOGRAMA (ver CLADOGRAMA_CLASSE). Ela
+   tinha MOL -> INS -> AMP, ou seja, molusco virava inseto que virava
+   anfíbio: a linha invertebrada desembocava direto na vertebrada, sem nó
+   comum. Agora as duas se encontram só em BAS, e o evento de colonização
+   consulta exatamente a mesma função que a deriva. */
 /* Até que degrau cada estágio permite chegar. Índices de ESCADA_HIDRICA. */
 const TETO_HIDRICO_POR_ESTAGIO = [0, 3, 4];
-const CLASSES_POR_ESTAGIO = [["PSC", "MOL", "INS"], ["PSC", "MOL", "INS", "AMP", "REP"], null];
+const CLASSES_POR_ESTAGIO = [["BAS", "PSC", "MOL", "INS"], ["BAS", "PSC", "MOL", "INS", "AMP", "REP"], null];
 const CHANCE_COLONIZACAO_HIDRICA = 0.05;
 const CHANCE_COLONIZACAO_CLASSE = 0.04;
 
@@ -4077,16 +4254,19 @@ function avancarColonizacao(g, estagio, ehConquistadora) {
      anfíbio não nasce dentro de um peixe estritamente aquático, ele nasce
      na margem. Essa ordem é o que produz a sequência peixe -> anfíbio ->
      réptil -> mamífero/ave em vez de saltos aleatórios. */
+  /* v40 — a colonização deixou de ter escada própria: ela apenas dá um
+     EMPURRÃO extra na mesma travessia que a deriva já poderia fazer, com os
+     mesmos pré-requisitos. Antes ela trocava `classe` na mão e normalizava,
+     o que pulava tanto o cladograma quanto o estado ancestral. */
   const permitidas = CLASSES_POR_ESTAGIO[estagio];
-  const proximas = ESCADA_CLASSE[g.classe];
-  if (g.reino === "An" && g.tolHidrica !== "aq" && proximas && rnd() < CHANCE_COLONIZACAO_CLASSE) {
-    const opcoes = permitidas ? proximas.filter((c) => permitidas.includes(c)) : proximas;
+  if (g.reino === "An" && g.tolHidrica !== "aq" && rnd() < CHANCE_COLONIZACAO_CLASSE) {
+    const opcoes = destinosDeClasse(g).filter((c) => !permitidas || permitidas.includes(c));
     if (opcoes.length) {
-      g.classe = opcoes[Math.floor(rnd() * opcoes.length)];
-      mudou = { gene: "classe", valor: g.classe };
+      const destino = opcoes[Math.floor(rnd() * opcoes.length)];
+      if (aplicarTransicaoClasse(g, destino)) mudou = { gene: "classe", valor: g.classe };
     }
   }
-  if (mudou) Object.assign(g, normalizarGenoma(g, false));
+  if (mudou && mudou.gene !== "classe") Object.assign(g, normalizarGenoma(g, false));
   return mudou;
 }
 
@@ -4196,10 +4376,33 @@ function clonarGenoma(g) {
   return c;
 }
 
+/* v40 — ver Passo 2. Enquanto isto está preenchido, a classe do genoma que
+   está sendo normalizado é intocável: nenhuma trava lateral (tolerância
+   hídrica, portão de colonização) pode reescrevê-la. Só o cladograma muda
+   classe, e ele muda ANTES de chamar a normalização. Mesmo padrão de estado
+   mutável que ESCALA_TEMPO e o portão de colonização já usam. */
+let __classeFixaNormalizacao = null;
+const CLASSES_ANIMAIS = ["MAM", "AVE", "REP", "AMP", "PSC", "INS", "MOL", "BAS"];
+/* v40 — travas de meio impostas PELA classe (ver Passo 1). Sem elas, um
+   peixe cuja tolerância hídrica derivasse para "mesófilo" caía na exclusão
+   do Passo 2 e era RESSORTEADO em outra classe qualquer — o vazamento que
+   ainda produzia BAS->REP e BAS->AVE depois do cladograma entrar. */
+const HIDRICA_POR_CLASSE = {
+  PSC: { restrict: ["aq", "sa"] },
+  BAS: { restrict: ["aq", "sa"] },
+  AMP: { exclude: ["xe"] },
+};
+
 function normalizarGenoma(g, isPrimordial) {
-  const cur = newCursor("randomize", { manual: { ...g } });
-  runSpeciesSteps(cur, isPrimordial);
-  return cur.ctx;
+  const anterior = __classeFixaNormalizacao;
+  __classeFixaNormalizacao = (g.reino === "An" && CLASSES_ANIMAIS.includes(g.classe)) ? g.classe : null;
+  try {
+    const cur = newCursor("randomize", { manual: { ...g } });
+    runSpeciesSteps(cur, isPrimordial);
+    return cur.ctx;
+  } finally {
+    __classeFixaNormalizacao = anterior;
+  }
 }
 
 /* v37 — NORMALIZAÇÃO ESTÁVEL, para a edição manual.
@@ -4242,9 +4445,187 @@ const GENE_TAXON_APLICAVEL = {
   nadadeiraConfiguracao: (g) => g.classe === "PSC", respiracaoBranquial: (g) => g.classe === "PSC", bexigaNatatoria: (g) => g.classe === "PSC",
   metamorfoseTipo: (g) => g.classe === "INS", patasQtdEspecializada: (g) => g.classe === "INS", venenoOuFerroao: (g) => g.classe === "INS", coloniaTipo: (g) => g.classe === "INS",
   concha: (g) => g.classe === "MOL", tentaculosQtd: (g) => g.classe === "MOL", tintaDefensiva: (g) => g.classe === "MOL",
+  organizacaoTecidual: (g) => g.classe === "BAS", alimentacaoBasal: (g) => g.classe === "BAS", esqueletoHidrostatico: (g) => g.classe === "BAS",
   raizTipo: (g) => g.reino === "Pl", folhaTipo: (g) => g.reino === "Pl", reproducaoEstrutura: (g) => g.reino === "Pl", fotossinteseIntensidade: (g) => g.reino === "Pl",
   corpoFrutiferoTipo: (g) => g.reino === "Fu", redeMicelialAlcance: (g) => g.reino === "Fu", esporoDispersao: (g) => g.reino === "Fu",
   paredeCelularTipo: (g) => g.reino === "Ba", metabolismoTipo: (g) => g.reino === "Ba", formaColonia: (g) => g.reino === "Ba",
+};
+
+
+/* ============================================================
+   v40 — CLADOGRAMA DE CLASSES (substitui o reroll livre de `classe`)
+   ============================================================
+   O relato: "mamífero virando ave, ave virando mamífero; os genes não são
+   construídos de forma a respeitar a origem".
+
+   Causa medida na v39: `classe` é gene de Estrato I, e a deriva a tratava
+   como qualquer outro categórico — `rerollGeneCategorico` sorteava na
+   tabela d100 INTEIRA. A barreira da Fase 2 (item 5.1) protegia só
+   `reino`; `classe` nunca teve barreira nenhuma. Em 1.744 especiações
+   medidas: 14,9% trocavam classe/reino, e dentro do reino Animal 33 das
+   118 trocas eram saltos impossíveis (PSC->MAM, MOL->AVE, AMP->INS) mais 2
+   reversões. Pior: 55 travessias Ba->An caíam em classe aleatória — 10
+   delas direto em mamífero. No log do próprio usuário, a espécie 1111
+   (bactéria) especiou em 11111 (An.MAM) depois de TRÊS ciclos de deriva.
+
+   A `ESCADA_CLASSE` da v37 existia, mas só o evento de colonização a
+   usava; a deriva normal a ignorava. E ela também não era cladística: tinha
+   MOL -> INS -> AMP, fundindo a linha invertebrada com a vertebrada.
+
+   Agora a classe só anda pelo cladograma abaixo, UM degrau por vez, e
+   nunca para trás (decisões do usuário: as duas linhas se encontram só no
+   nó basal comum; a bactéria entra só pela classe basal aquática; não há
+   reversão de classe — o retorno à água é readaptação de `tolHidrica`, sem
+   trocar de classe, e é por isso que a hídrica deixou de restringir a
+   classe no Passo 2).
+
+                     BAS  (invertebrado basal, aquático)
+                    /   \
+                 MOL     PSC
+                  |       |
+                 INS     AMP
+                          |
+                         REP
+                        /   \
+                     MAM     AVE
+   ============================================================ */
+const CLADOGRAMA_CLASSE = {
+  BAS: ["MOL", "PSC"],
+  MOL: ["INS"],
+  INS: [],
+  PSC: ["AMP"],
+  AMP: ["REP"],
+  REP: ["MAM", "AVE"],
+  MAM: [],
+  AVE: [],
+};
+const CLASSE_BASAL_ANIMAL = "BAS";
+const PROFUNDIDADE_CLADO = { BAS: 0, MOL: 1, PSC: 1, INS: 2, AMP: 2, REP: 3, MAM: 4, AVE: 4 };
+
+/* Pré-requisitos (apomorfias). Estar no cladograma dá a PERMISSÃO; o
+   pré-requisito é o que faz a travessia ser um evento CONQUISTADO e não um
+   sorteio. A linhagem precisa já ter derivado, por conta própria, o traço
+   que a transição pressupõe — senão a mutação é recusada e o orçamento do
+   ciclo é gasto do mesmo jeito (mesmo padrão dos guards de tolHidrica e
+   reino, que já existiam).
+
+   É isto que estica a evolução no tempo: para virar mamífero, uma linhagem
+   de réptil precisa antes baixar a dependência de ectotermia de 8 para 3,
+   e isso é um escalar que anda de 1 em 1 por ciclo. */
+const PRE_REQUISITOS_CLASSE = {
+  /* As duas saídas do nó basal divergem no MESMO escalar, em sentidos
+     opostos: corpo mole sustentado por pressão vai para o ramo
+     invertebrado; enrijecimento axial (proto-notocorda) vai para o
+     vertebrado. Escalar é de Estrato II e anda de 1 em 1, então a linhagem
+     leva ciclos se comprometendo com um lado antes de poder atravessar —
+     que é o comportamento gradual pedido. */
+  "BAS>MOL": { teste: (g) => g.organizacaoTecidual === "ce" && Number(g.esqueletoHidrostatico ?? 0) >= 6 && ["Mu", "Cs", "Cn"].includes(g.tegTipo), falta: "celoma, corpo hidrostático firme e tegumento capaz de secretar concha" },
+  "BAS>PSC": { teste: (g) => g.organizacaoTecidual === "ce" && Number(g.esqueletoHidrostatico ?? 9) <= 3 && g.locPrimario === "N", falta: "celoma, enrijecimento axial e natação como locomoção primária" },
+  "MOL>INS": { teste: (g) => ["Cs", "Cn"].includes(g.tegTipo) || g.memApendices !== "0X", falta: "exoesqueleto endurecido ou apêndices articulados" },
+  "PSC>AMP": { teste: (g) => g.tolHidrica !== "aq" && g.memApendices !== "0X", falta: "saída da água obrigatória e nadadeiras lobadas" },
+  "AMP>REP": { teste: (g) => g.tegTipo === "Cr" && !["aq", "sa"].includes(g.tolHidrica), falta: "pele impermeável e independência da água" },
+  "REP>MAM": { teste: (g) => Number(g.ectotermiaDependencia ?? 9) <= 4, falta: "dependência de ectotermia reduzida a 4 ou menos" },
+  "REP>AVE": { teste: (g) => g.asaQtd === 2 && g.memSup === "0S", falta: "um par de asas ocupando o par de membros superiores" },
+};
+
+/* Estado ancestral da classe de destino. Metade do relato era "os genes não
+   são construídos de maneira a respeitar sua origem": ao trocar de classe,
+   os genes de táxon da classe nova eram sorteados DO ZERO, então uma
+   linhagem que acabava de virar mamífero podia nascer com endotermia plena,
+   gestação placentária longa e queixo projetado no mesmo instante em que
+   deixou de ser réptil.
+
+   Agora quem atravessa nasce PRIMITIVO dentro da classe nova, no estado
+   mais próximo do ancestral, e tem que derivar dali em diante. Um mamífero
+   recém-formado é ectotérmico residual, marsupial, prognata e quadrúpede —
+   ou seja, ainda quase um réptil. Isso encaixa com os 12 diagnósticos da
+   v39: o rosto humano deixa de ser sorteio e passa a ser trajetória. */
+const ESTADO_ANCESTRAL_TAXON = {
+  BAS: { organizacaoTecidual: "df", alimentacaoBasal: "fi", esqueletoHidrostatico: 4 },
+  MOL: { concha: "au", tentaculosQtd: 2, tintaDefensiva: "au" },
+  PSC: { nadadeiraConfiguracao: "pa", respiracaoBranquial: "sb", bexigaNatatoria: "au" },
+  INS: { metamorfoseTipo: "am", patasQtdEspecializada: "pd", venenoOuFerroao: "au", coloniaTipo: "so" },
+  AMP: { metamorfose: "la", peleToxinas: "au", respiracaoCutanea: 7 },
+  REP: { escamaTipo: "li", venenoAparato: "au", regeneracaoCauda: "pa", ectotermiaDependencia: 7 },
+  MAM: {
+    glandulaMamaria: "ve", pelagemDensidade: 2, dentesTipo: "ho", termorregulacao: "er", gestacao: "ma",
+    facPrognatismo: "pr", crnMento: "au", crnToro: "ma", crnAbobada: "ba", facNariz: "pl", facEsclera: "oc",
+    memRazao: "br", memPreensao: "ne", locPostura: "qu", vocAparato: "si", pelSudorese: 0, dimorfismo: 7,
+  },
+  AVE: { bicoFormato: "in", penaFuncao: "vo", ovoCasca: 4, migratorio: "se" },
+};
+
+function classesFilhas(classe) { return CLADOGRAMA_CLASSE[classe] || []; }
+
+function transicaoClassePermitida(g, destino) {
+  if (g.reino !== "An") return { ok: false, motivo: "fora do reino Animal" };
+  if (!classesFilhas(g.classe).includes(destino)) return { ok: false, motivo: "fora do cladograma" };
+  const req = PRE_REQUISITOS_CLASSE[`${g.classe}>${destino}`];
+  if (req && !req.teste(g)) return { ok: false, motivo: `falta ${req.falta}` };
+  return { ok: true };
+}
+
+/* Para onde esta linhagem PODE ir agora. Vazio é o caso normal: a maioria
+   dos ciclos não tem travessia disponível, e é isso que faz a classe ser
+   rara em vez de um sorteio a cada 12 de orçamento. */
+function destinosDeClasse(g) {
+  return classesFilhas(g.classe).filter((c) => transicaoClassePermitida(g, c).ok);
+}
+
+function aplicarTransicaoClasse(g, destino) {
+  if (!transicaoClassePermitida(g, destino).ok) return null;
+  const origem = g.classe;
+  g.classe = destino;
+  const ancestral = ESTADO_ANCESTRAL_TAXON[destino] || {};
+  for (const k of Object.keys(ancestral)) g[k] = ancestral[k];
+  Object.assign(g, normalizarGenoma(g, false));
+  return { origem, destino };
+}
+
+/* ============================================================
+   v40 — GRADUALISMO NOS GENES CATEGÓRICOS MORFOLÓGICOS
+   ============================================================
+   A outra metade do relato. Genes escalares já andavam de 1 em 1
+   (deslocarGeneEscalar), mas os categóricos rerrolavam na tabela inteira,
+   sem nenhuma noção de distância: medido em 1.744 especiações, mucosa ->
+   quitina 29 vezes e mucosa -> cristalino 20 vezes — um corpo mole
+   ganhando exoesqueleto quitinoso numa mutação só. Dentição saía de
+   "ausente" direto para "mista" 29 vezes.
+
+   Aqui cada um desses genes ganha uma VIZINHANÇA: a deriva só pode andar
+   para um valor adjacente. Chegar de mucosa a cristalino continua possível
+   — via casca —, mas custa três especiações em vez de uma.
+
+   Genes fora deste mapa (cor, padrão, anomalia...) continuam com reroll
+   livre de propósito: entre "marrom" e "azul" não existe distância
+   morfológica a respeitar.
+   ============================================================ */
+const VIZINHOS_GENE = {
+  tegTipo: { Mu: ["Cr", "Cs"], Cr: ["Mu", "Es", "Pe"], Es: ["Cr", "Pn", "Ql"], Pe: ["Cr", "Pn"], Pn: ["Es", "Pe"], Ql: ["Es", "Cs"], Cs: ["Mu", "Ql", "Cn"], Cn: ["Cs", "Me"], Me: ["Cn", "Pd"], Pd: ["Me"] },
+  facDenticao: { "0": ["fl", "mx"], fl: ["0", "pl"], pl: ["fl", "in"], in: ["pl", "mx"], mx: ["in", "cn", "0"], cn: ["mx", "pr"], pr: ["cn"] },
+  memTerm: { no: ["ve", "ba", "ra"], ve: ["no", "pi"], pi: ["ve", "gr"], ba: ["no", "pa"], pa: ["ba", "gr", "ca"], gr: ["pa", "pi", "mo"], ca: ["pa"], mo: ["gr", "pa"], ra: ["no"] },
+  crnFormato: { "0": ["am"], am: ["0", "ch"], ch: ["am", "br", "bi"], br: ["ch", "dl", "hu"], dl: ["br", "bi"], bi: ["dl", "ch"], hu: ["br"] },
+  facFocinho: { "0": ["cu", "tu"], cu: ["0", "pl", "lo"], pl: ["cu", "bi"], lo: ["cu", "bi", "tr"], bi: ["lo", "pl"], tr: ["lo", "tu"], tu: ["tr", "0", "mn"], mn: ["tu"] },
+  facOrelha: { "0": ["in"], in: ["0", "rd", "mb"], rd: ["in", "pn", "cd"], pn: ["rd", "lg"], cd: ["rd", "lg"], lg: ["pn", "cd"], mb: ["in", "an"], an: ["mb"] },
+  locPrimario: { N: ["S", "F", "Z"], S: ["N", "Q", "C", "E"], Q: ["S", "B", "H", "E", "C"], B: ["Q", "E", "V"], H: ["Q", "O", "E"], O: ["H", "E"], E: ["Q", "B", "S", "H", "O", "C"], C: ["S", "Q", "E"], V: ["P", "B"], P: ["V", "E"], F: ["N", "S"], R: ["S", "Q"], Z: ["N", "S"] },
+  dieBase: { hb: ["fr", "on"], fr: ["hb", "nc", "on"], nc: ["fr"], on: ["hb", "cn", "in", "fr"], in: ["on", "cn", "de"], cn: ["on", "in", "nf", "he"], nf: ["cn", "de"], de: ["nf", "in", "qm"], he: ["cn"], qm: ["de", "ft"], ft: ["qm"], au: ["qm"], ni: ["de"] },
+  repModo: { ov: ["oz", "sp"], oz: ["ov", "vv"], vv: ["oz"], sp: ["ov", "gm"], gm: ["sp", "fs"], fs: ["gm", "ax"], ax: ["fs"], an: ["ax"], ni: ["ax"] },
+  cdaTipo: { nu: ["pl", "es", "pr", "bq"], pl: ["nu", "pq"], es: ["nu", "lm"], pq: ["pl"], pr: ["nu", "lm"], bq: ["nu"], lm: ["es", "pr", "fr"], fr: ["lm"], lq: ["nu"] },
+  socEstrutura: { so: ["ba", "pa"], pa: ["so", "ba"], ba: ["so", "pa", "ma"], ma: ["ba", "co"], co: ["ma", "en"], en: ["co", "me"], me: ["en"] },
+  simetria: { bi: ["rd", "as"], rd: ["bi", "es"], es: ["rd", "am"], as: ["bi", "am"], am: ["es", "as"] },
+  tolTermica: { tp: ["qt", "fr", "eu"], qt: ["tp", "eu"], fr: ["tp", "eu"], eu: ["tp", "qt", "fr"] },
+  tolHidrica: { aq: ["sa"], sa: ["aq", "um"], um: ["sa", "ms"], ms: ["um", "xe", "eu"], xe: ["ms"], eu: ["ms"] },
+  porte: { mn: ["pq"], pq: ["mn", "md"], md: ["pq", "gr"], gr: ["md", "cl"], cl: ["gr", "tt"], tt: ["cl"] },
+  crnPescoco: { au: ["cu"], cu: ["au", "pr"], pr: ["cu", "lo"], lo: ["pr", "el"], el: ["lo"] },
+  memProp: { cu: ["pr"], pr: ["cu", "lo"], lo: ["pr", "ex"], ex: ["lo"] },
+  morTorso: { co: ["pr"], pr: ["co", "al"], al: ["pr", "se"], se: ["al"] },
+  asaTipo: { mb: ["pn", "qt"], pn: ["mb"], qt: ["mb", "el"], el: ["qt"], vg: ["mb"] },
+  cdaComp: { "0": ["ct"], ct: ["0", "md"], md: ["ct", "lg"], lg: ["md", "xl"], xl: ["lg"] },
+  memSup: { "0S": ["2S"], "2S": ["0S", "4S"], "4S": ["2S", "6S"], "6S": ["4S", "8S"], "8S": ["6S"] },
+  memApendices: { "0X": ["2X"], "2X": ["0X", "4X"], "4X": ["2X", "6X"], "6X": ["4X", "8X"], "8X": ["6X"] },
+  asaQtd: { 0: [2], 2: [0, 4], 4: [2, 6], 6: [4, 8], 8: [6] },
+  facOlhosQtd: { 0: [1], 1: [0, 2], 2: [1, 4], 4: [2, 6], 6: [4, 8], 8: [6] },
+  crnChifreQtd: { "0": ["1", "2"], "1": ["0", "2"], "2": ["1", "4"], "4": ["2", "6"], "6": ["4"] },
 };
 
 function aplicarCicloDeriva(g, orcamentoAtual, fonteFixa) {
@@ -4252,6 +4633,13 @@ function aplicarCicloDeriva(g, orcamentoAtual, fonteFixa) {
   const fonte = fonteFixa || sortFontePressao();
   let orcamento = Math.min(24, orcamentoAtual + pressaoValor);
   const genesAlterados = { I: [], II: [], III: [] };
+  /* v40 — no máximo UMA travessia de classe por ciclo. O orçamento pode
+     chegar a 24 e o Estrato I custa 12, então dois degraus cabiam no mesmo
+     ciclo: a linhagem saía de invertebrado basal e chegava a anfíbio antes
+     de a especiação registrar o peixe do meio. Cada travessia é um evento
+     de especiação por si só — o degrau seguinte espera o próximo ciclo, e é
+     assim que a espécie intermediária existe na árvore. */
+  let travessiaNesteCiclo = false;
 
   let guard = 0;
   while (guard++ < 200) {
@@ -4284,6 +4672,21 @@ function aplicarCicloDeriva(g, orcamentoAtual, fonteFixa) {
       orcamento -= CUSTO_ESTRATO.I;
       continue;
     }
+    /* v40 — `classe` sai do caminho genérico de mutação e passa pelo
+       cladograma: um degrau por vez, só para baixo, e só se os
+       pré-requisitos daquela travessia já estiverem satisfeitos. Quando não
+       há destino disponível — o caso da esmagadora maioria dos ciclos — o
+       orçamento é gasto e nada acontece, exatamente como no guard de
+       tolHidrica logo acima. */
+    if (estrato === "I" && key === "classe") {
+      orcamento -= CUSTO_ESTRATO.I;
+      if (g.reino !== "An" || travessiaNesteCiclo) continue;
+      const destinos = destinosDeClasse(g);
+      if (!destinos.length) continue;
+      const destino = destinos[Math.floor(rnd() * destinos.length)];
+      if (aplicarTransicaoClasse(g, destino)) { genesAlterados.I.push("classe"); travessiaNesteCiclo = true; }
+      continue;
+    }
     // Fase 3 — gene de táxon sorteado, mas a espécie atual não pertence
     // àquela classe/reino (o gene é undefined nela): descarta a tentativa,
     // mesmo padrão dos guards de tolHidrica/reino acima.
@@ -4293,6 +4696,20 @@ function aplicarCicloDeriva(g, orcamentoAtual, fonteFixa) {
       continue;
     }
     const mudou = aplicarMutacaoGene(g, key, fonte);
+    /* v40 — A PORTA DE ENTRADA DO REINO ANIMAL É ÚNICA.
+       A bactéria continua sendo a única linhagem que atravessa reino (Fase
+       2, item 5.1), mas a classe em que ela caía era um sorteio da tabela
+       inteira: 55 travessias medidas na v39, 10 delas direto em mamífero e
+       4 em ave. Agora toda travessia chega na raiz do cladograma — um
+       invertebrado basal aquático — e o resto do caminho tem que ser
+       percorrido degrau a degrau. */
+    if (mudou && key === "reino" && g.reino === "An") {
+      g.classe = CLASSE_BASAL_ANIMAL;
+      if (!["aq", "sa"].includes(g.tolHidrica)) g.tolHidrica = "sa";
+      const base = ESTADO_ANCESTRAL_TAXON[CLASSE_BASAL_ANIMAL];
+      for (const k of Object.keys(base)) g[k] = base[k];
+      travessiaNesteCiclo = true; // entrar no reino já é a travessia do ciclo
+    }
     orcamento -= CUSTO_ESTRATO[estrato];
     if (mudou) genesAlterados[estrato].push(key);
   }
@@ -4342,13 +4759,27 @@ function aplicarCicloDeriva(g, orcamentoAtual, fonteFixa) {
    precisa acumular bem mais deriva de Estrato II para valer uma espécie
    nova. Ela continua existindo do começo ao fim da simulação — só para de
    ocupar a maior parte da árvore. */
-const LIMIAR_ESTRATO_II_POR_REINO = { Ba: 8, Fu: 8, Pl: 7, An: 6 };
+/* v40 — limiares dobrados. A correção de sortGeneAlvo (só sorteia genes que
+   a espécie tem) e a volta de memApendices/morForma à deriva mais que
+   dobraram a quantidade de mutações EFETIVAS por ciclo; com os limiares
+   antigos, 600 ciclos passaram de ~4 mil para ~9,5 mil espécies. Dobrar o
+   limiar devolve a árvore ao tamanho anterior e, de quebra, deixa cada
+   linhagem acumular mais deriva antes de cortar — que é o que permite
+   alcançar os pré-requisitos das travessias mais profundas. */
+const LIMIAR_ESTRATO_II_POR_REINO = { Ba: 16, Fu: 16, Pl: 14, An: 12 };
+/* v40 — mesmo raciocínio da v32, agora para o nó basal: BAS tem quase todo
+   o Estrato I travado (sem membro, sem crânio, sem face, sem asa), então
+   uma linhagem basal quase nunca corta por via estrutural, mas cortava por
+   acúmulo de Estrato II na mesma taxa de qualquer animal — e o mundo
+   enchia de invertebrados basais levemente diferentes (medido: 47% da
+   árvore). Ele continua sendo a raiz de tudo; só para de ser a maioria. */
+const LIMIAR_ESTRATO_II_POR_CLASSE = { BAS: 22 };
 
 function checarEspeciacao(acumEstratoI, acumII, dlAcumulada, g) {
   if (acumEstratoI > 0) return true;
-  const limiar = (g && LIMIAR_ESTRATO_II_POR_REINO[g.reino]) || 6;
+  const limiar = (g && LIMIAR_ESTRATO_II_POR_CLASSE[g.classe]) || (g && LIMIAR_ESTRATO_II_POR_REINO[g.reino]) || 6;
   if (acumII >= limiar) return true;
-  if (dlAcumulada >= 3) return true;
+  if (dlAcumulada >= 6) return true;
   return false;
 }
 
@@ -6037,6 +6468,16 @@ function gerarPromptImagem(g, individual, linhagemId) {
     Pl: "Fantasy BOTANICAL illustration of a plant organism — NOT an animal, NOT a creature with a face or limbs",
     Fu: "Fantasy MYCOLOGICAL illustration of a fungal organism — NOT an animal, NOT a creature with a face or limbs",
     Ba: "Scientific microscopy-style illustration of a single-celled microorganism — NOT an animal, NOT a multicellular creature",
+  };
+  /* v40 — o invertebrado basal precisa de âncora própria pelo mesmo motivo
+     que planta e fungo precisaram: sem ela, "creature" leva o gerador a
+     desenhar um bicho com cara e patas, e este é justamente o plano
+     corporal que não tem nem uma coisa nem outra. */
+  const ANCORA_CLASSE = {
+    BAS: "Fantasy zoological illustration of a BASAL INVERTEBRATE — a soft-bodied aquatic organism with no skull, no bones, no legs and no face (in the manner of a sponge, cnidarian, flatworm or annelid)",
+  };
+  const NEG_CLASSE = {
+    BAS: " no skull, no face, no vertebrae, no legs, no arms, no wings, no fur, no feathers",
   };
   const NEG_REINO = {
     Pl: " no animal anatomy, no face, no eyes, no mouth, no skull, no limbs, no legs, no wings, no fur, no scales",

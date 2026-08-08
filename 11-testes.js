@@ -2170,6 +2170,165 @@ async function suiteDiagnosticos({ suite, chk, info }, prog) {
   prog && prog(1);
 }
 
+
+/* ============================================================
+   JJ · CLADOGRAMA DE CLASSES E GRADUALISMO (v40)
+   ============================================================
+   O relato que originou a v40: "mamífero virando ave, ave virando
+   mamífero; os genes não são construídos de maneira a respeitar sua
+   origem". As checagens aqui são o contrato dessa correção — se alguma
+   delas voltar a falhar, a evolução voltou a dar saltos.
+   ============================================================ */
+async function suiteCladograma({ suite, chk, info }, prog) {
+  suite("JJ · Cladograma de classes e gradualismo (v40)");
+  resetarMotor(); setLogVerbosidade("resumido");
+
+  /* (1) O cladograma é uma ÁRVORE de verdade: sem ciclo, um pai por nó,
+     raiz única em BAS. Se alguém acrescentar uma aresta que fecha ciclo,
+     "só para frente" deixa de significar alguma coisa. */
+  const pais = {};
+  let arestas = 0;
+  for (const origem of Object.keys(CLADOGRAMA_CLASSE)) {
+    for (const destino of CLADOGRAMA_CLASSE[origem]) { (pais[destino] = pais[destino] || []).push(origem); arestas++; }
+  }
+  const comDoisPais = Object.keys(pais).filter((c) => pais[c].length > 1);
+  const raizes = Object.keys(CLADOGRAMA_CLASSE).filter((c) => !pais[c]);
+  chk("Cada classe tem no máximo um ancestral no cladograma", comDoisPais.length === 0, JSON.stringify(comDoisPais));
+  chk("A raiz do cladograma é única e é o nó basal", raizes.length === 1 && raizes[0] === "BAS", JSON.stringify(raizes));
+  info("Arestas do cladograma", `${arestas} (${Object.keys(CLADOGRAMA_CLASSE).length} classes)`);
+
+  /* (2) A profundidade só cresce ao longo das arestas — é o que garante
+     que "descer o cladograma" nunca é voltar. */
+  let profInvalida = 0;
+  for (const origem of Object.keys(CLADOGRAMA_CLASSE)) {
+    for (const destino of CLADOGRAMA_CLASSE[origem]) {
+      if (!(PROFUNDIDADE_CLADO[destino] > PROFUNDIDADE_CLADO[origem])) profInvalida++;
+    }
+  }
+  chk("Toda aresta aumenta a profundidade do clado", profInvalida === 0, `${profInvalida} aresta(s) fora de ordem`);
+
+  /* (3) `classe` não muda mais por reroll — a porta genérica está fechada. */
+  let rerollMudou = 0;
+  for (let i = 0; i < 200; i++) {
+    const g = buildSpecies(null, { reino: "An" }, false, false).g;
+    const antes = g.classe;
+    rerollGeneCategorico(g, "classe", null);
+    if (g.classe !== antes) rerollMudou++;
+  }
+  chk("rerollGeneCategorico recusa mexer em `classe`", rerollMudou === 0, `${rerollMudou}/200 mudaram`);
+
+  /* (4) Nenhuma transição fora do cladograma numa árvore inteira. É a
+     checagem central da versão: na v39 este número era 33 saltos + 2
+     reversões em 1.744 especiações. */
+  resetarMotor();
+  const massas = gerarGeografiaAleatoria(3);
+  const eco = await gerarEcossistema({ quantidade: 3, ciclosPorPrimordial: 500, auInicial: 0, massaIds: massas.map((m) => m.id) });
+  const porId = {};
+  for (const n of eco.nodes) porId[n.id] = n;
+  let cladograma = 0, salto = 0, reversao = 0, baFora = 0, baTotal = 0;
+  const detalhe = {};
+  for (const n of eco.nodes) {
+    const mae = (n.pais || []).map((id) => porId[id]).filter(Boolean)[0];
+    if (!mae) continue;
+    const a = mae.g, b = n.g;
+    if (a.reino === "Ba" && b.reino === "An") { baTotal++; if (b.classe !== "BAS") baFora++; }
+    if (a.reino !== "An" || b.reino !== "An" || a.classe === b.classe) continue;
+    detalhe[`${a.classe}>${b.classe}`] = (detalhe[`${a.classe}>${b.classe}`] || 0) + 1;
+    if ((CLADOGRAMA_CLASSE[a.classe] || []).includes(b.classe)) cladograma++;
+    else if (PROFUNDIDADE_CLADO[b.classe] < PROFUNDIDADE_CLADO[a.classe]) reversao++;
+    else salto++;
+  }
+  chk("Nenhum salto de classe fora do cladograma", salto === 0, `${salto} salto(s) em ${eco.nodes.length} espécies — ${JSON.stringify(detalhe)}`);
+  chk("Nenhuma reversão de classe", reversao === 0, `${reversao} reversão(ões)`);
+  chk("Toda travessia Bactéria→Animal chega no nó basal", baFora === 0, `${baTotal} travessia(s), ${baFora} fora de BAS`);
+  info("Travessias observadas", `${cladograma} pelo cladograma — ${JSON.stringify(detalhe)}`);
+
+  /* (5) A cadeia inteira continua alcançável. Uma trava boa demais que
+     impedisse a chegada a mamífero seria tão errada quanto o salto. */
+  const classesVistas = {};
+  for (const n of eco.nodes) { const k = n.g.reino === "An" ? n.g.classe : n.g.reino; classesVistas[k] = (classesVistas[k] || 0) + 1; }
+  chk("O nó basal existe e é povoado", (classesVistas.BAS || 0) > 0, JSON.stringify(classesVistas));
+  /* O contrato é que a linha vertebrada AVANÇA além do peixe dentro do
+     orçamento de ciclos desta suíte — não que ela chegue sempre a uma
+     classe específica. Quanto ela avança depende de quantas linhagens
+     sortearam ser conquistadoras e de quanto tempo geológico coube; exigir
+     réptil aqui reprovava ~1 rodada em 4 sem que nada estivesse errado. A
+     alcançabilidade de mamífero é garantida pela checagem (6), que é
+     determinística. */
+  const profundidadeMax = Math.max(0, ...Object.keys(classesVistas).map((c) => PROFUNDIDADE_CLADO[c] ?? -1));
+  chk("A deriva atravessa o cladograma sem intervenção manual", cladograma > 0, `${cladograma} travessia(s)`);
+  info("Profundidade máxima alcançada no cladograma", `${profundidadeMax} (0=basal, 4=mamífero/ave) — AMP=${classesVistas.AMP || 0} REP=${classesVistas.REP || 0} MAM=${classesVistas.MAM || 0} AVE=${classesVistas.AVE || 0}`);
+  chk("A linha invertebrada chega ao menos a molusco", (classesVistas.MOL || 0) > 0 || (classesVistas.INS || 0) > 0,
+    `MOL=${classesVistas.MOL || 0} INS=${classesVistas.INS || 0}`);
+  info("Composição da árvore", JSON.stringify(classesVistas));
+  prog && prog(0.6); await respirar();
+
+  /* (6) Quem atravessa nasce PRIMITIVO. Aplicar a transição tem que deixar
+     o genoma no estado ancestral da classe nova, não num sorteio. */
+  let ancestralQuebrado = 0, transicoesTestadas = 0;
+  for (let i = 0; i < 120; i++) {
+    const g = buildSpecies(null, { reino: "An", classe: "REP" }, false, false).g;
+    g.ectotermiaDependencia = 2; // satisfaz o pré-requisito de REP>MAM
+    if (!transicaoClassePermitida(g, "MAM").ok) continue;
+    transicoesTestadas++;
+    aplicarTransicaoClasse(g, "MAM");
+    if (g.classe !== "MAM") { ancestralQuebrado++; continue; }
+    // um mamífero recém-formado não pode nascer com o pacote sapiens pronto
+    if (g.termorregulacao === "el" || g.gestacao === "pl" || g.crnMento === "pj") ancestralQuebrado++;
+  }
+  chk("Quem atravessa para mamífero nasce no estado ancestral", ancestralQuebrado === 0,
+    `${transicoesTestadas} transição(ões), ${ancestralQuebrado} fora do estado ancestral`);
+
+  /* (7) Pré-requisito é filtro de verdade: sem ele a travessia é recusada. */
+  const gRep = buildSpecies(null, { reino: "An", classe: "REP" }, false, false).g;
+  gRep.ectotermiaDependencia = 9;
+  chk("Sem a apomorfia, a travessia é recusada", transicaoClassePermitida(gRep, "MAM").ok === false,
+    transicaoClassePermitida(gRep, "MAM").motivo || "");
+  chk("Transição fora do cladograma é recusada", transicaoClassePermitida(gRep, "INS").ok === false, "REP>INS");
+
+  /* (8) GRADUALISMO. A medição é feita no PONTO DA MUTAÇÃO, não no fim do
+     ciclo: dentro de um mesmo ciclo a normalização pode reescrever, por
+     trava, um gene que a deriva acabou de mover — isso é a trava agindo, e
+     comparar antes/depois do ciclo mediria as duas coisas somadas. O
+     contrato do gradualismo é sobre o passo que a deriva dá.
+     Na v39 este passo era um sorteio na tabela inteira: tegumento pulava
+     mucosa→quitina 29 vezes em 1.744 especiações. */
+  resetarMotor();
+  let passosNaoAdjacentes = 0, passosMedidos = 0;
+  const infratores = {}, porGene = {};
+  const genesComVizinhanca = Object.keys(VIZINHOS_GENE);
+  for (let i = 0; i < 250; i++) {
+    const g = buildSpecies(null, {}, false, false).g;
+    for (const key of genesComVizinhanca) {
+      if (g[key] === undefined) continue;
+      const antes = g[key];
+      const viz = VIZINHOS_GENE[key][String(antes)];
+      if (!viz) continue;
+      if (!rerollGeneCategorico(g, key, null)) continue;
+      passosMedidos++;
+      porGene[key] = (porGene[key] || 0) + 1;
+      if (!viz.map(String).includes(String(g[key]))) {
+        passosNaoAdjacentes++;
+        infratores[`${key}:${antes}>${g[key]}`] = (infratores[`${key}:${antes}>${g[key]}`] || 0) + 1;
+      }
+    }
+    if (i % 40 === 0) { prog && prog(0.6 + 0.4 * (i / 250)); await respirar(); }
+  }
+  chk("A deriva só move genes morfológicos para valores adjacentes", passosNaoAdjacentes === 0,
+    `${passosNaoAdjacentes}/${passosMedidos} fora da vizinhança${passosNaoAdjacentes ? " — " + JSON.stringify(infratores).slice(0, 200) : ""}`);
+  info("Passos de deriva medidos", `${passosMedidos} em ${Object.keys(porGene).length} genes com vizinhança declarada`);
+
+  /* (9) Os genes que voltaram à deriva nesta versão têm tabela mesmo. */
+  chk("memApendices voltou a ter tabela de deriva", !!GENE_TABLE_MAP.memApendices, "");
+  let morFormaDerivou = 0;
+  for (let i = 0; i < 120; i++) {
+    const g = buildSpecies(null, { reino: "Pl" }, false, false).g;
+    const antes = g.morForma;
+    if (rerollGeneCategorico(g, "morForma", null) && g.morForma !== antes) morFormaDerivou++;
+  }
+  chk("morForma deriva em planta (tabela por reino)", morFormaDerivou > 0, `${morFormaDerivou}/120`);
+}
+
 const SUITES_TESTE = [
   { id: "seed", nome: "Seed e determinismo", fn: suiteSeed, peso: 2, nivel: "rapida" },
   { id: "fuzz", nome: "Fuzzing de entrada", fn: suiteFuzz, peso: 1, nivel: "rapida" },
@@ -2202,6 +2361,7 @@ const SUITES_TESTE = [
   { id: "au37", nome: "Unidade AU e formatação", fn: suiteAu37, peso: 1, nivel: "rapida" },
   { id: "genestaxon38", nome: "Genes por táxon no código (TXN)", fn: suiteGenesTaxon, peso: 4, nivel: "rapida" },
   { id: "diagnosticos39", nome: "Genes diagnósticos e gestalt", fn: suiteDiagnosticos, peso: 6, nivel: "rapida" },
+  { id: "cladograma40", nome: "Cladograma de classes e gradualismo", fn: suiteCladograma, peso: 7, nivel: "completa" },
   { id: "performance", nome: "Performance neste aparelho", fn: suitePerformance, peso: 5, nivel: "completa" },
 ];
 

@@ -190,6 +190,14 @@ const GRUPOS_CAMPOS_EDITAVEIS = [
     ],
   },
   {
+    titulo: "Invertebrado basal",
+    aplicavel: (g) => g.classe === "BAS",
+    campos: [
+      { chave: "organizacaoTecidual", label: "Organização tecidual", tabela: () => T.organizacaoTecidual },
+      { chave: "alimentacaoBasal", label: "Modo de alimentação", tabela: () => T.alimentacaoBasal },
+    ],
+  },
+  {
     titulo: "Molusco",
     aplicavel: (g) => g.classe === "MOL",
     campos: [

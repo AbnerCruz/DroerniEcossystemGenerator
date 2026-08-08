@@ -22,7 +22,7 @@
    inclusive instalado na tela inicial.
    ============================================================ */
 
-const VERSAO = "drn2-v39";
+const VERSAO = "drn2-v40";
 const CACHE_CASCA = `${VERSAO}-casca`;
 const CACHE_CDN = `${VERSAO}-cdn`;
 
@@ -79,6 +79,7 @@ const CASCA = [
   "./patchnotes-v37.md",
   "./patchnotes-v38.md",
   "./patchnotes-v39.md",
+  "./patchnotes-v40.md",
 ];
 
 const CDN = [
